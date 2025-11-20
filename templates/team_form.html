@@ -557,7 +557,7 @@
 
                         <!-- Variable Helper (Collapsible) -->
                         <details class="variable-helper" style="margin-bottom: 1.5rem; background: var(--bg-tertiary); padding: 1rem; border-radius: 8px;">
-                            <summary style="cursor: pointer; font-weight: bold; font-size: 1.1rem; margin-bottom: 0.5rem;">📝 Template Variables (175+)</summary>
+                            <summary style="cursor: pointer; font-weight: bold; font-size: 1.1rem; margin-bottom: 0.5rem;">📝 Template Variables (180+)</summary>
 
                             <input type="text" id="variable-search" placeholder="Search variables..." style="width: 100%; margin: 1rem 0; padding: 0.5rem;">
 
@@ -577,7 +577,7 @@
                                     <button type="button" class="chip" onclick="insertVariable('{game_date}')">game_date</button>
                                     <button type="button" class="chip" onclick="insertVariable('{team_record}')">team_record</button>
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_record}')">opponent_record</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{home_away}')">home_away</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{home_away_text}')">home_away_text</button>
                                 </div>
                             </div>
 
@@ -601,16 +601,20 @@
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                                     <button type="button" class="chip" onclick="insertVariable('{venue_city}')">venue_city</button>
                                     <button type="button" class="chip" onclick="insertVariable('{venue_state}')">venue_state</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{venue_capacity}')">venue_capacity</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{venue_indoor_outdoor}')">venue_indoor_outdoor</button>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; font-weight: bold;">🏆 League</summary>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <button type="button" class="chip" onclick="insertVariable('{league}')">league</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{league_name}')">league_name</button>
                                 </div>
                             </details>
 
                             <details style="margin-top: 0.5rem;">
                                 <summary style="cursor: pointer; font-weight: bold;">🏠 Home/Away Context</summary>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
-                                    <button type="button" class="chip" onclick="insertVariable('{is_home}')">is_home</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_away}')">is_away</button>
                                     <button type="button" class="chip" onclick="insertVariable('{home_away_text}')">home_away_text</button>
                                     <button type="button" class="chip" onclick="insertVariable('{vs_at}')">vs_at</button>
                                     <button type="button" class="chip" onclick="insertVariable('{home_team}')">home_team</button>
@@ -628,10 +632,10 @@
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_wins}')">opponent_wins</button>
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_losses}')">opponent_losses</button>
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_win_pct}')">opponent_win_pct</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{team_rank_division}')">team_rank_division</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{team_rank_conference}')">team_rank_conference</button>
                                     <button type="button" class="chip" onclick="insertVariable('{home_record}')">home_record</button>
                                     <button type="button" class="chip" onclick="insertVariable('{away_record}')">away_record</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{home_win_pct}')">home_win_pct</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{away_win_pct}')">away_win_pct</button>
                                     <button type="button" class="chip" onclick="insertVariable('{conference_record}')">conference_record</button>
                                     <button type="button" class="chip" onclick="insertVariable('{division_record}')">division_record</button>
                                 </div>
@@ -642,18 +646,14 @@
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                                     <button type="button" class="chip" onclick="insertVariable('{team_rank}')">team_rank</button>
                                     <button type="button" class="chip" onclick="insertVariable('{team_rank_formatted}')">team_rank_formatted</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_ranked}')">is_ranked</button>
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_rank}')">opponent_rank</button>
                                     <button type="button" class="chip" onclick="insertVariable('{opponent_rank_formatted}')">opponent_rank_formatted</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{opponent_is_ranked}')">opponent_is_ranked</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_ranked_matchup}')">is_ranked_matchup</button>
                                 </div>
                             </details>
 
                             <details style="margin-top: 0.5rem;">
                                 <summary style="cursor: pointer; font-weight: bold;">🔥 Streaks & Form</summary>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
-                                    <button type="button" class="chip" onclick="insertVariable('{streak}')">streak</button>
                                     <button type="button" class="chip" onclick="insertVariable('{streak_type}')">streak_type</button>
                                     <button type="button" class="chip" onclick="insertVariable('{streak_count}')">streak_count</button>
                                     <button type="button" class="chip" onclick="insertVariable('{win_streak}')">win_streak</button>
@@ -662,6 +662,8 @@
                                     <button type="button" class="chip" onclick="insertVariable('{loss_streak_text}')">loss_streak_text</button>
                                     <button type="button" class="chip" onclick="insertVariable('{last_5_record}')">last_5_record</button>
                                     <button type="button" class="chip" onclick="insertVariable('{last_10_record}')">last_10_record</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{recent_form}')">recent_form</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{scoring_run}')">scoring_run</button>
                                 </div>
                             </details>
 
@@ -669,11 +671,18 @@
                                 <summary style="cursor: pointer; font-weight: bold;">🤝 H2H/Rematch</summary>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                                     <button type="button" class="chip" onclick="insertVariable('{season_series}')">season_series</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{previous_score}')">previous_score</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{previous_result}')">previous_result</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{previous_date}')">previous_date</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{last_win_vs_opponent}')">last_win_vs_opponent</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{last_loss_vs_opponent}')">last_loss_vs_opponent</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{season_series_leader}')">season_series_leader</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{season_series_team_wins}')">season_series_team_wins</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{season_series_opponent_wins}')">season_series_opponent_wins</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_date}')">rematch_date</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_result}')">rematch_result</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_score}')">rematch_score</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_score_abbrev}')">rematch_score_abbrev</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_winner}')">rematch_winner</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_loser}')">rematch_loser</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_location}')">rematch_location</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_days_since}')">rematch_days_since</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{rematch_season_series}')">rematch_season_series</button>
                                 </div>
                             </details>
 
@@ -681,7 +690,61 @@
                                 <summary style="cursor: pointer; font-weight: bold;">👥 Attendance</summary>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                                     <button type="button" class="chip" onclick="insertVariable('{attendance}')">attendance</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{has_attendance}')">has_attendance</button>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; font-weight: bold;">🎮 Game Status (Live/Final)</summary>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <button type="button" class="chip" onclick="insertVariable('{game_status}')">game_status</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{game_clock}')">game_clock</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{period}')">period</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{period_short}')">period_short</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{team_score}')">team_score</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{opponent_score}')">opponent_score</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{score}')">score</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{score_diff}')">score_diff</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{final_score}')">final_score</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{score_differential}')">score_differential</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{score_differential_text}')">score_differential_text</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{result}')">result</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{result_text}')">result_text</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{result_verb}')">result_verb</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{outcome}')">outcome</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{overtime_text}')">overtime_text</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{game_summary}')">game_summary</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{game_summary_text}')">game_summary_text</button>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; font-weight: bold;">📈 Team Stats</summary>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <button type="button" class="chip" onclick="insertVariable('{team_ppg}')">team_ppg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{team_papg}')">team_papg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{opponent_ppg}')">opponent_ppg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{opponent_papg}')">opponent_papg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_scorer_name}')">top_scorer_name</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_scorer_ppg}')">top_scorer_ppg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_scorer_position}')">top_scorer_position</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_rebounder_name}')">top_rebounder_name</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_rebounder_rpg}')">top_rebounder_rpg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_assist_name}')">top_assist_name</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{top_assist_apg}')">top_assist_apg</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{injury_count}')">injury_count</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{injury_list}')">injury_list</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{injury_status}')">injury_status</button>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; font-weight: bold;">🔧 Conference/Division</summary>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <button type="button" class="chip" onclick="insertVariable('{college_conference}')">college_conference</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{pro_conference}')">pro_conference</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{pro_conference_abbrev}')">pro_conference_abbrev</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{pro_division}')">pro_division</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{conference_or_division_name}')">conference_or_division_name</button>
                                 </div>
                             </details>
 
@@ -721,6 +784,7 @@
                                     <button type="button" class="chip" onclick="insertVariable('{next_time}')">next_time</button>
                                     <button type="button" class="chip" onclick="insertVariable('{next_datetime}')">next_datetime</button>
                                     <button type="button" class="chip" onclick="insertVariable('{next_matchup}')">next_matchup</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{next_venue}')">next_venue</button>
                                 </div>
                             </details>
 
@@ -735,8 +799,6 @@
                             <details style="margin-top: 0.5rem;">
                                 <summary style="cursor: pointer; font-weight: bold;">🏆 Series & Playoffs</summary>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
-                                    <button type="button" class="chip" onclick="insertVariable('{is_playoff}')">is_playoff</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_regular_season}')">is_regular_season</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_type}')">series_type</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_round}')">series_round</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_summary}')">series_summary</button>
@@ -745,14 +807,16 @@
                                     <button type="button" class="chip" onclick="insertVariable('{series_team_wins}')">series_team_wins</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_opponent_wins}')">series_opponent_wins</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_leader}')">series_leader</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{series_leader_abbrev}')">series_leader_abbrev</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_lead}')">series_lead</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_game_number}')">series_game_number</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{series_games_played}')">series_games_played</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_length}')">series_length</button>
                                     <button type="button" class="chip" onclick="insertVariable('{games_to_win_series}')">games_to_win_series</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_games_remaining}')">series_games_remaining</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_elimination_game}')">is_elimination_game</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_clinch_game}')">is_clinch_game</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_must_win}')">is_must_win</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{playoff_seed}')">playoff_seed</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{playoff_position}')">playoff_position</button>
+                                    <button type="button" class="chip" onclick="insertVariable('{games_back}')">games_back</button>
                                     <button type="button" class="chip" onclick="insertVariable('{can_advance}')">can_advance</button>
                                     <button type="button" class="chip" onclick="insertVariable('{can_be_eliminated}')">can_be_eliminated</button>
                                     <button type="button" class="chip" onclick="insertVariable('{series_clinch_text}')">series_clinch_text</button>
@@ -765,14 +829,11 @@
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
                                     <button type="button" class="chip" onclick="insertVariable('{season_year}')">season_year</button>
                                     <button type="button" class="chip" onclick="insertVariable('{season_type}')">season_type</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_preseason}')">is_preseason</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_regular_season}')">is_regular_season</button>
-                                    <button type="button" class="chip" onclick="insertVariable('{is_playoffs}')">is_playoffs</button>
                                 </div>
                             </details>
 
                             <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">
-                                <strong>175+ variables available.</strong> Click to insert at cursor.
+                                <strong>180+ variables available.</strong> Click to insert at cursor.
                             </p>
                         </details>
 
@@ -1094,21 +1155,6 @@ const sampleData = {
 };
 
 // ============================================================================
-// INITIALIZATION
-// ============================================================================
-document.addEventListener('DOMContentLoaded', function() {
-    initTabs();
-    initTemplatePreview();
-    loadConditions();
-    loadTeamsList();
-
-    // Update previews on input
-    document.querySelectorAll('.template-field').forEach(field => {
-        field.addEventListener('input', updatePreviews);
-    });
-});
-
-// ============================================================================
 // TABBED INTERFACE
 // ============================================================================
 function initTabs() {
@@ -1129,6 +1175,21 @@ function initTabs() {
         });
     });
 }
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    initTabs();
+    initTemplatePreview();
+    loadConditions();
+    loadTeamsList();
+
+    // Update previews on input
+    document.querySelectorAll('.template-field').forEach(field => {
+        field.addEventListener('input', updatePreviews);
+    });
+});
 
 // ============================================================================
 // TEMPLATE PREVIEW

@@ -1,4 +1,4 @@
-"""Database module for TeamArr"""
+"""Database module for Teamarr"""
 import sqlite3
 import os
 import json

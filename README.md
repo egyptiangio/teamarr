@@ -1,8 +1,8 @@
-# TeamArr - Sports EPG Generator
+# Teamarr - Sports EPG Generator
 
 **Transform ESPN's sports schedules into professional XMLTV EPG files for your IPTV system.**
 
-TeamArr is a self-hosted web application that generates customizable electronic program guides (EPG) for sports teams across 13 major leagues, with support for 188+ template variables to create rich, contextual descriptions.
+Teamarr is a self-hosted web application that generates customizable electronic program guides (EPG) for sports teams across 13 major leagues, with support for 188+ template variables to create rich, contextual descriptions.
 
 ---
 
@@ -220,7 +220,7 @@ http://your-stream-url
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE tv SYSTEM "xmltv.dtd">
-<tv generator-info-name="TeamArr Sports EPG Generator">
+<tv generator-info-name="Teamarr Sports EPG Generator">
 
   <channel id="pistons.nba">
     <display-name>Detroit Pistons</display-name>

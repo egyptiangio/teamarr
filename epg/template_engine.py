@@ -1,4 +1,4 @@
-"""Template Variable Resolution Engine for TeamArr"""
+"""Template Variable Resolution Engine for Teamarr"""
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 import random
