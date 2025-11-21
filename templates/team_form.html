@@ -742,9 +742,10 @@
         </div>
         <div class="modal-body">
             <h4 style="margin-top: 0;">Select Team</h4>
-            <div id="team-select-list" class="team-select-list">
+            <select id="team-select-dropdown" class="form-control" style="margin-bottom: 1.5rem;">
+                <option value="">-- Select a team --</option>
                 <!-- Teams will be loaded here -->
-            </div>
+            </select>
 
             <h4>Select Fields to Copy</h4>
             <div style="margin-bottom: 1rem;">
@@ -827,7 +828,6 @@ let teamsCache = [];
 // Conditions will be stored directly in the DOM as form inputs (no hidden field)
 let conditions = {{ description_options_json | default('[]') | safe }};
 let conditionCounter = 0;
-let selectedCopyTeam = null;
 
 // Sample data for preview (league-aware in production)
 const sampleData = {
@@ -1052,19 +1052,15 @@ async function loadTeamsList() {
 
 function showCopyModal() {
     const modal = document.getElementById('copyModal');
-    const teamList = document.getElementById('team-select-list');
+    const dropdown = document.getElementById('team-select-dropdown');
 
-    // Clear and populate team list
-    teamList.innerHTML = '';
+    // Clear and populate dropdown (keep the first "Select a team" option)
+    dropdown.innerHTML = '<option value="">-- Select a team --</option>';
     teamsCache.forEach(team => {
-        const div = document.createElement('div');
-        div.className = 'team-select-item';
-        div.innerHTML = `
-            <strong>${team.team_name}</strong>
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${team.league_name || team.league}</div>
-        `;
-        div.onclick = () => selectCopyTeam(team.id, div);
-        teamList.appendChild(div);
+        const option = document.createElement('option');
+        option.value = team.id;
+        option.textContent = `${team.team_name} (${team.league_name || team.league})`;
+        dropdown.appendChild(option);
     });
 
     modal.classList.add('show');
@@ -1072,18 +1068,6 @@ function showCopyModal() {
 
 function closeCopyModal() {
     document.getElementById('copyModal').classList.remove('show');
-    selectedCopyTeam = null;
-}
-
-function selectCopyTeam(teamId, element) {
-    // Deselect all
-    document.querySelectorAll('.team-select-item').forEach(item => {
-        item.classList.remove('selected');
-    });
-
-    // Select clicked
-    element.classList.add('selected');
-    selectedCopyTeam = teamId;
 }
 
 function selectAllFields(checked) {
@@ -1093,7 +1077,10 @@ function selectAllFields(checked) {
 }
 
 async function applyCopyTemplates() {
-    if (!selectedCopyTeam) {
+    const dropdown = document.getElementById('team-select-dropdown');
+    const selectedTeamId = dropdown.value;
+
+    if (!selectedTeamId) {
         alert('Please select a team to copy from');
         return;
     }
@@ -1107,7 +1094,7 @@ async function applyCopyTemplates() {
     }
 
     try {
-        const response = await fetch(`/api/teams/${selectedCopyTeam}/templates`);
+        const response = await fetch(`/api/teams/${selectedTeamId}/templates`);
         const templates = await response.json();
 
         selectedFields.forEach(field => {
