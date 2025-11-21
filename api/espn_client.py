@@ -433,6 +433,7 @@ class ESPNClient:
                 'venue': {
                     'name': competition['venue']['fullName'] if 'venue' in competition else None,
                     'city': competition['venue']['address']['city'] if 'venue' in competition and 'address' in competition['venue'] else None,
+                    'state': competition['venue']['address']['state'] if 'venue' in competition and 'address' in competition['venue'] else None,
                 },
 
                 # Broadcast
