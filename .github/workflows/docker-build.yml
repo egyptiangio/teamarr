@@ -40,6 +40,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get short SHA
+        id: slug
+        run: echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -65,4 +69,4 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             GIT_BRANCH=${{ github.ref_name }}
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ steps.slug.outputs.sha_short }}
