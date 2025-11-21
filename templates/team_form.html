@@ -539,22 +539,24 @@
                         <h4 style="margin: 1.5rem 0 0.5rem 0;">XMLTV Tags</h4>
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" name="include_date_tag" {% if team and team.include_date_tag %}checked{% endif %}>
-                                Include Date Tag (YYYY-MM-DD format)
+                                <input type="checkbox" name="include_date_tag" {% if team and team.flags and team.flags.date %}checked{% endif %}>
+                                Include Date Tag
                             </label>
-                            <small class="help-text">Adds program start date to EPG output</small>
+                            <small class="help-text">Adds &lt;date&gt; tag with program air date (YYYYMMDD format)</small>
                         </div>
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" name="include_live_tag" {% if team and team.include_live_tag %}checked{% endif %}>
-                                Include Live Tag (for main events only)
+                                <input type="checkbox" name="include_live_tag" {% if team and team.flags and team.flags.live %}checked{% endif %}>
+                                Include Live Tag
                             </label>
+                            <small class="help-text">Adds &lt;live/&gt; tag to scheduled game events</small>
                         </div>
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" name="include_new_tag" {% if team and team.include_new_tag %}checked{% endif %}>
-                                Include New Tag (for main events only)
+                                <input type="checkbox" name="include_new_tag" {% if team and team.flags and team.flags.new %}checked{% endif %}>
+                                Include New Tag
                             </label>
+                            <small class="help-text">Adds &lt;new/&gt; tag to scheduled game events</small>
                         </div>
                     </fieldset>
                 </div>

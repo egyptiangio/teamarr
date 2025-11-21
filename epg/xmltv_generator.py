@@ -116,13 +116,19 @@ class XMLTVGenerator:
                     self._add_category(programme, category)
                     added_categories.add(category)
 
+        # Date (program air date in YYYYMMDD format)
+        flags = team.get('flags', {})
+        if flags.get('date', False):
+            date_elem = ET.SubElement(programme, 'date')
+            # Use the start date of the event
+            date_elem.text = event['start_datetime'].strftime('%Y%m%d')
+
         # Icon (team logo)
         if team.get('team_logo_url'):
             icon = ET.SubElement(programme, 'icon')
             icon.set('src', team['team_logo_url'])
 
         # Flags (Gracenote: both new AND live for upcoming live events)
-        flags = team.get('flags', {})
         game_status = event.get('status', 'scheduled')
 
         if game_status == 'scheduled':

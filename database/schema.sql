@@ -477,17 +477,6 @@ INSERT OR IGNORE INTO condition_presets (id, name, description, condition_type, 
 -- =============================================================================
 
 -- Add XMLTV tag columns (if they don't exist)
--- These control which XMLTV tags are included in the EPG output
-
--- Date tag: YYYYMMDD format in <date> element (added to all programs)
-ALTER TABLE teams ADD COLUMN include_date_tag BOOLEAN DEFAULT 1;
-
--- Live tag: <live /> element (only added to main event, not filler)
-ALTER TABLE teams ADD COLUMN include_live_tag BOOLEAN DEFAULT 0;
-
--- New tag: <new /> element (only added to main event, not filler)
-ALTER TABLE teams ADD COLUMN include_new_tag BOOLEAN DEFAULT 0;
-
 -- Add simplified pregame/postgame content fields (alternative to complex JSON periods)
 ALTER TABLE teams ADD COLUMN pregame_title TEXT DEFAULT 'Pregame Coverage';
 ALTER TABLE teams ADD COLUMN pregame_description TEXT DEFAULT '{team_name} plays {opponent} today at {game_time}';

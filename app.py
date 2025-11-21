@@ -483,6 +483,14 @@ def edit_team(team_id):
         print(f"JSON to save: {json.dumps(description_options)}")
         print(f"======================\n")
 
+        # Build flags JSON from checkboxes
+        flags = {
+            'new': data.get('include_new_tag') == 'on',
+            'live': data.get('include_live_tag') == 'on',
+            'date': data.get('include_date_tag') == 'on',
+            'premiere': False  # Not currently exposed in UI
+        }
+
         conn.execute("""
             UPDATE teams SET
                 espn_team_id = ?, league = ?, sport = ?, team_name = ?,
@@ -498,7 +506,6 @@ def edit_team(team_id):
                 between_games_enabled = ?, between_games_title = ?, between_games_description = ?,
                 enable_records = ?, enable_streaks = ?, enable_head_to_head = ?,
                 enable_standings = ?, enable_statistics = ?, enable_players = ?,
-                include_date_tag = ?, include_live_tag = ?, include_new_tag = ?,
                 midnight_crossover_mode = ?, max_program_hours = ?
             WHERE id = ?
         """, (
@@ -511,7 +518,7 @@ def edit_team(team_id):
             data.get('video_quality'), data.get('audio_quality'),
             1 if data.get('active') == 'on' else 0,
             json.dumps(description_options),
-            data.get('flags', '{"new": true, "live": false, "premiere": false}'),
+            json.dumps(flags),
             1 if data.get('no_game_enabled') == 'on' else 0,
             data.get('no_game_title', 'No Game Today'),
             data.get('no_game_description', 'No {team_name} game scheduled today. Next game: {next_game_date} vs {next_opponent}'),
@@ -533,9 +540,6 @@ def edit_team(team_id):
             1 if data.get('enable_standings') == 'on' else 0,
             1 if data.get('enable_statistics') == 'on' else 0,
             1 if data.get('enable_players') == 'on' else 0,
-            1 if data.get('include_date_tag') == 'on' else 0,
-            1 if data.get('include_live_tag') == 'on' else 0,
-            1 if data.get('include_new_tag') == 'on' else 0,
             data.get('midnight_crossover_mode', 'postgame'),
             float(data.get('max_program_hours', 6.0)),
             team_id
