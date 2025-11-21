@@ -459,6 +459,19 @@ class TemplateEngine:
         variables['home_win_pct'] = calc_win_pct(home_record)
         variables['away_win_pct'] = calc_win_pct(away_record)
 
+        # Home team record and away team record (based on matchup, not our team)
+        # If we're home, use our team's overall record; if we're away, use opponent's overall record
+        if is_home:
+            # We are home team - use our overall record for home_team_record
+            variables['home_team_record'] = variables.get('team_record', '0-0')
+            # Opponent is away - use their overall record for away_team_record
+            variables['away_team_record'] = variables.get('opponent_record', '0-0')
+        else:
+            # We are away team - use our overall record for away_team_record
+            variables['away_team_record'] = variables.get('team_record', '0-0')
+            # Opponent is home - use their overall record for home_team_record
+            variables['home_team_record'] = variables.get('opponent_record', '0-0')
+
         # Conference record already available from schedule API competitor.records
         # Last 5/10 would need historical calculation - future implementation
         variables['last_5_record'] = ''
