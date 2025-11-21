@@ -1698,8 +1698,13 @@ updateRecentlyUsedDisplay = function() {
 };
 
 // Initialize template variables and conditions on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('[DOMCONTENTLOADED] Event fired!');
+
+    // Load variables from API first
+    await loadVariablesFromAPI();
+
+    // Then initialize template variables UI
     initializeTemplateVariables();
 
     // Initialize conditions from server data and render them
