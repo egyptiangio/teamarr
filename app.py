@@ -116,7 +116,7 @@ def run_scheduled_generation():
 
                 xml_content = xmltv_gen.generate(teams_list, all_events, settings)
 
-                output_path = './output/teamarr.xml'
+                output_path = '/app/data/teamarr.xml'
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
                 with open(output_path, 'w', encoding='utf-8') as f:
@@ -922,7 +922,7 @@ def generate_epg():
         xml_content = xmltv_gen.generate(teams_list, all_events, settings)
 
         # Save to file
-        output_path = settings.get('epg_output_path', './output/teamarr.xml')
+        output_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -989,7 +989,7 @@ def serve_epg():
     settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
     conn.close()
 
-    output_path = settings.get('epg_output_path', './output/teamarr.xml')
+    output_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
 
     if not os.path.exists(output_path):
         return "EPG file not found. Generate it first.", 404
@@ -1003,7 +1003,7 @@ def download_epg():
     settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
     conn.close()
 
-    output_path = settings.get('epg_output_path', './output/teamarr.xml')
+    output_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
 
     if not os.path.exists(output_path):
         return "EPG file not found. Generate it first.", 404
@@ -1032,7 +1032,7 @@ def settings():
         """, (
             int(data.get('epg_days_ahead', 14)),
             data.get('epg_update_time', '00:00'),
-            './output/teamarr.xml',  # Fixed filename
+            '/app/data/teamarr.xml',  # Fixed filename
             1 if data.get('cache_enabled') == 'on' else 0,
             int(data.get('cache_duration_hours', 24)),
             data.get('default_timezone', 'America/New_York'),
@@ -2026,6 +2026,9 @@ def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_st
 # ============================================================================
 
 if __name__ == '__main__':
+    # Ensure data directory exists
+    os.makedirs('/app/data', exist_ok=True)
+
     # Get port from settings
     conn = get_connection()
     settings_row = conn.execute("SELECT web_port, web_host FROM settings WHERE id = 1").fetchone()

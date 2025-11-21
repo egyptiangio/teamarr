@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'teamarr.db')
+DB_PATH = '/app/data/teamarr.db'
 
 def get_connection():
     """Get database connection"""
