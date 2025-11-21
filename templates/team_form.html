@@ -522,9 +522,23 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="categories">EPG Categories (comma-separated)</label>
-                            <input type="text" name="categories" id="categories" value="{{ (team.categories | join(', ')) if team and team.categories is not none else '' }}">
-                            <small class="help-text">Categories shown in EPG guide</small>
+                            <label>EPG Categories</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="checkbox" name="category_sports" id="category_sports"
+                                           {% if team and team.categories and 'Sports' in team.categories %}checked{% endif %}>
+                                    <span>Sports</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="checkbox" name="category_sport_variable" id="category_sport_variable"
+                                           {% if team and team.categories and '{sport}' in team.categories %}checked{% endif %}>
+                                    <span><code>{sport}</code> - Auto-populates with team's sport (Basketball, Football, etc.)</span>
+                                </label>
+                            </div>
+                            <label for="categories_custom" style="font-weight: normal; margin-top: 0.5rem;">Custom Categories (comma-separated)</label>
+                            <input type="text" name="categories_custom" id="categories_custom"
+                                   value="{{ (team.categories | reject('in', ['Sports', '{sport}']) | join(', ')) if team and team.categories is not none else '' }}">
+                            <small class="help-text">Categories shown in EPG guide. Check common ones above or add custom categories.</small>
                         </div>
 
                         <div class="form-group">
@@ -766,6 +780,9 @@
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="description_options" checked> Conditions
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="categories" checked> Categories
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="pregame_title" checked> Pregame Title
@@ -1242,6 +1259,30 @@ async function applyCopyTemplates() {
                         ? JSON.parse(templates.description_options)
                         : templates.description_options;
                     renderConditions();
+                }
+            } else if (field === 'categories') {
+                // Handle categories checkboxes and custom field
+                if (templates.categories) {
+                    const categoriesArray = typeof templates.categories === 'string'
+                        ? JSON.parse(templates.categories)
+                        : templates.categories;
+
+                    // Set checkboxes
+                    const sportsCheckbox = document.getElementById('category_sports');
+                    const sportVarCheckbox = document.getElementById('category_sport_variable');
+                    if (sportsCheckbox) {
+                        sportsCheckbox.checked = categoriesArray.includes('Sports');
+                    }
+                    if (sportVarCheckbox) {
+                        sportVarCheckbox.checked = categoriesArray.includes('{sport}');
+                    }
+
+                    // Set custom categories (exclude 'Sports' and '{sport}')
+                    const customCategories = categoriesArray.filter(cat => cat !== 'Sports' && cat !== '{sport}');
+                    const customField = document.getElementById('categories_custom');
+                    if (customField) {
+                        customField.value = customCategories.join(', ');
+                    }
                 }
             } else if (field === 'include_new_tag' || field === 'include_live_tag' || field === 'include_date_tag') {
                 // Handle tag checkboxes from flags object

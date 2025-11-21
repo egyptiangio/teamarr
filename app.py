@@ -396,9 +396,18 @@ def add_team():
         # Get form data
         data = request.form.to_dict()
 
-        # Parse categories from comma-separated string
-        categories_str = data.get('categories', 'Sports, Sports event, Basketball')
-        categories_list = [cat.strip() for cat in categories_str.split(',') if cat.strip()]
+        # Build categories list from checkboxes + custom field
+        categories_list = []
+        if request.form.get('category_sports'):
+            categories_list.append('Sports')
+        if request.form.get('category_sport_variable'):
+            categories_list.append('{sport}')
+
+        # Add custom categories
+        categories_custom = data.get('categories_custom', '')
+        if categories_custom:
+            custom_cats = [cat.strip() for cat in categories_custom.split(',') if cat.strip()]
+            categories_list.extend(custom_cats)
 
         # Parse description options
         description_options = parse_description_options(request.form)
@@ -457,9 +466,18 @@ def edit_team(team_id):
         print(f"\n=== FORM SAVE DEBUG ===")
         print(f"All form keys: {list(request.form.keys())}")
 
-        # Parse categories from comma-separated string
-        categories_str = data.get('categories', '')
-        categories_list = [cat.strip() for cat in categories_str.split(',') if cat.strip()]
+        # Build categories list from checkboxes + custom field
+        categories_list = []
+        if request.form.get('category_sports'):
+            categories_list.append('Sports')
+        if request.form.get('category_sport_variable'):
+            categories_list.append('{sport}')
+
+        # Add custom categories
+        categories_custom = data.get('categories_custom', '')
+        if categories_custom:
+            custom_cats = [cat.strip() for cat in categories_custom.split(',') if cat.strip()]
+            categories_list.extend(custom_cats)
         print(f"Parsed categories list: {categories_list}")
 
         # Parse description options from form arrays (new format!)
@@ -640,6 +658,8 @@ def get_team_templates(team_id):
         team_dict['description_options'] = json.loads(team_dict['description_options'])
     if team_dict.get('flags') and isinstance(team_dict['flags'], str):
         team_dict['flags'] = json.loads(team_dict['flags'])
+    if team_dict.get('categories') and isinstance(team_dict['categories'], str):
+        team_dict['categories'] = json.loads(team_dict['categories'])
 
     # Return only template-related fields
     template_data = {
@@ -648,6 +668,7 @@ def get_team_templates(team_id):
         'description_template': team_dict.get('description_template', ''),
         'description_options': team_dict.get('description_options', []),
         'flags': team_dict.get('flags', {'new': True, 'live': False, 'date': False, 'premiere': False}),
+        'categories': team_dict.get('categories', []),
         'pregame_enabled': team_dict.get('pregame_enabled', True),
         'pregame_title': team_dict.get('pregame_title', ''),
         'pregame_description': team_dict.get('pregame_description', ''),
