@@ -741,11 +741,13 @@
             <button type="button" class="modal-close" onclick="closeCopyModal()">&times;</button>
         </div>
         <div class="modal-body">
-            <h4 style="margin-top: 0;">Select Team</h4>
-            <select id="team-select-dropdown" class="form-control" style="margin-bottom: 1.5rem;">
-                <option value="">-- Select a team --</option>
-                <!-- Teams will be loaded here -->
-            </select>
+            <div class="form-group">
+                <label for="team-select-dropdown">Select Team to Copy From</label>
+                <select id="team-select-dropdown" style="width: 100%; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text);">
+                    <option value="">-- Select a team --</option>
+                    <!-- Teams will be loaded here -->
+                </select>
+            </div>
 
             <h4>Select Fields to Copy</h4>
             <div style="margin-bottom: 1rem;">
@@ -1050,18 +1052,32 @@ async function loadTeamsList() {
     }
 }
 
-function showCopyModal() {
+async function showCopyModal() {
     const modal = document.getElementById('copyModal');
     const dropdown = document.getElementById('team-select-dropdown');
 
+    // Load teams if not already loaded or reload for fresh data
+    if (!teamsCache || teamsCache.length === 0) {
+        await loadTeamsList();
+    }
+
     // Clear and populate dropdown (keep the first "Select a team" option)
     dropdown.innerHTML = '<option value="">-- Select a team --</option>';
-    teamsCache.forEach(team => {
+
+    if (teamsCache && teamsCache.length > 0) {
+        teamsCache.forEach(team => {
+            const option = document.createElement('option');
+            option.value = team.id;
+            option.textContent = `${team.team_name} (${team.league_name || team.league})`;
+            dropdown.appendChild(option);
+        });
+    } else {
+        // Show message if no teams available
         const option = document.createElement('option');
-        option.value = team.id;
-        option.textContent = `${team.team_name} (${team.league_name || team.league})`;
+        option.value = '';
+        option.textContent = 'No teams available';
         dropdown.appendChild(option);
-    });
+    }
 
     modal.classList.add('show');
 }
