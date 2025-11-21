@@ -683,6 +683,10 @@ class TemplateEngine:
         variables['next_matchup'] = next_game.get('matchup', '')
         variables['next_venue'] = next_game.get('venue', '')
 
+        # Legacy/alias variables for backwards compatibility
+        variables['next_game_date'] = next_game.get('date', '')
+        variables['next_game_time'] = next_game.get('time', '')
+
 
         # =====================================================================
         # ODDS & BETTING

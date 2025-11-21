@@ -148,12 +148,17 @@ def run_scheduled_generation():
                 print(f"✅ Scheduled EPG generation completed: {total_programmes} programs from {len(teams_list)} teams in {generation_time:.2f}s")
 
             except Exception as e:
+                import traceback
                 print(f"❌ Scheduled EPG generation failed: {e}")
-                conn.execute("""
-                    INSERT INTO error_log (error_type, error_message, context)
-                    VALUES (?, ?, ?)
-                """, ('scheduled_generation_error', str(e), 'Auto-generation scheduler'))
-                conn.commit()
+                traceback.print_exc()
+                try:
+                    conn.execute("""
+                        INSERT INTO error_log (level, category, message, details)
+                        VALUES (?, ?, ?, ?)
+                    """, ('ERROR', 'GENERATION', str(e), json.dumps({'context': 'Auto-generation scheduler'})))
+                    conn.commit()
+                except Exception as log_error:
+                    print(f"❌ Failed to log error: {log_error}")
 
             finally:
                 conn.close()
