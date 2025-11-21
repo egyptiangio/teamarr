@@ -51,3 +51,7 @@ data/cache/*
 # Logs
 *.log
 logs/
+
+# Claude Code context
+claude.md
+.claude/
