@@ -45,7 +45,7 @@ def run_scheduled_generation():
 
             # Get active teams
             teams = conn.execute("""
-                SELECT t.*, lc.league_name, lc.sport, lc.api_path, lc.default_category as league_category
+                SELECT t.*, lc.league_name, lc.api_path, lc.default_category as league_category
                 FROM teams t
                 LEFT JOIN league_config lc ON t.league = lc.league_code
                 WHERE t.active = 1
@@ -841,7 +841,7 @@ def generate_epg():
     try:
         # Get active teams
         teams = conn.execute("""
-            SELECT t.*, lc.league_name, lc.sport, lc.api_path, lc.default_category as league_category
+            SELECT t.*, lc.league_name, lc.api_path, lc.default_category as league_category
             FROM teams t
             LEFT JOIN league_config lc ON t.league = lc.league_code
             WHERE t.active = 1
