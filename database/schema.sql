@@ -506,6 +506,9 @@ ALTER TABLE teams ADD COLUMN midnight_crossover_mode TEXT DEFAULT 'postgame';
 -- Add max_program_hours column (maximum duration for a single program)
 ALTER TABLE teams ADD COLUMN max_program_hours REAL DEFAULT 6.0;
 
+-- Add categories_apply_to column (controls whether categories apply to all programs or events only)
+ALTER TABLE teams ADD COLUMN categories_apply_to TEXT DEFAULT 'all';
+
 -- =============================================================================
 -- END OF SCHEMA
 -- =============================================================================

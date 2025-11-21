@@ -527,6 +527,15 @@
                             <small class="help-text">Categories shown in EPG guide</small>
                         </div>
 
+                        <div class="form-group">
+                            <label for="categories_apply_to">Apply Categories To</label>
+                            <select name="categories_apply_to" id="categories_apply_to">
+                                <option value="all" {% if not team or team.categories_apply_to == 'all' %}selected{% endif %}>All Programs (Events + Filler)</option>
+                                <option value="events" {% if team and team.categories_apply_to == 'events' %}selected{% endif %}>Events Only</option>
+                            </select>
+                            <small class="help-text">Choose whether categories apply to all programs or only game events</small>
+                        </div>
+
                         <h4 style="margin: 1.5rem 0 0.5rem 0;">XMLTV Tags</h4>
                         <div class="form-group">
                             <label>

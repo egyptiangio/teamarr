@@ -100,11 +100,21 @@ class XMLTVGenerator:
             desc.text = event['description']
 
         # Categories - only user-defined categories
-        added_categories = set()
-        for category in team.get('categories', []):
-            if category not in added_categories:
-                self._add_category(programme, category)
-                added_categories.add(category)
+        # Check if categories should be applied based on team settings and event type
+        categories_apply_to = team.get('categories_apply_to', 'all')
+        is_filler = event.get('status') == 'filler'
+
+        # Apply categories based on setting:
+        # 'all' = apply to all programs (events and filler)
+        # 'events' = apply only to actual game events (not filler)
+        should_add_categories = (categories_apply_to == 'all') or (categories_apply_to == 'events' and not is_filler)
+
+        if should_add_categories:
+            added_categories = set()
+            for category in team.get('categories', []):
+                if category not in added_categories:
+                    self._add_category(programme, category)
+                    added_categories.add(category)
 
         # Icon (team logo)
         if team.get('team_logo_url'):
