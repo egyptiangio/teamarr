@@ -1530,11 +1530,18 @@ let sampleDataFromAPI = {};
 
 // Load variables from API
 async function loadVariablesFromAPI() {
+    console.log('[loadVariablesFromAPI] Starting...');
     try {
+        console.log('[loadVariablesFromAPI] Fetching /api/variables...');
         const response = await fetch('/api/variables');
-        if (!response.ok) throw new Error('Failed to load variables');
+        console.log('[loadVariablesFromAPI] Response status:', response.status);
+
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
 
         const data = await response.json();
+        console.log('[loadVariablesFromAPI] Received data:', data.total_variables, 'variables');
 
         // Group variables by category
         const categoryMap = {};
@@ -1558,10 +1565,11 @@ async function loadVariablesFromAPI() {
         TEMPLATE_VARIABLES = categoryMap;
         sampleDataFromAPI = sampleMap;
 
-        console.log(`✓ Loaded ${data.total_variables} variables from API`);
+        console.log(`✓ Loaded ${data.total_variables} variables into ${Object.keys(categoryMap).length} categories`);
+        console.log('[loadVariablesFromAPI] TEMPLATE_VARIABLES:', Object.keys(TEMPLATE_VARIABLES).slice(0, 3));
         return true;
     } catch (error) {
-        console.error('Failed to load variables from API:', error);
+        console.error('❌ Failed to load variables from API:', error);
         // Fallback: keep empty objects, UI will fail gracefully
         return false;
     }
@@ -1584,6 +1592,13 @@ function generateTemplateVariablesHTML(containerId) {
     `;
 
     // Generate category details
+    const categoryCount = Object.keys(TEMPLATE_VARIABLES).length;
+    console.log(`[generateTemplateVariablesHTML] TEMPLATE_VARIABLES has ${categoryCount} categories`);
+
+    if (categoryCount === 0) {
+        html += `<p style="color: orange; margin: 1rem 0;">⚠️ Loading variables from API...</p>`;
+    }
+
     for (const [categoryName, categoryData] of Object.entries(TEMPLATE_VARIABLES)) {
         html += `
             <details style="margin-top: ${categoryName === 'Game Basics' ? '1rem' : '0.5rem'};" class="variable-category">
