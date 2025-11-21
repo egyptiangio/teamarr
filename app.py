@@ -638,6 +638,8 @@ def get_team_templates(team_id):
     # Parse JSON fields
     if team_dict.get('description_options') and isinstance(team_dict['description_options'], str):
         team_dict['description_options'] = json.loads(team_dict['description_options'])
+    if team_dict.get('flags') and isinstance(team_dict['flags'], str):
+        team_dict['flags'] = json.loads(team_dict['flags'])
 
     # Return only template-related fields
     template_data = {
@@ -645,6 +647,7 @@ def get_team_templates(team_id):
         'subtitle_template': team_dict.get('subtitle_template', ''),
         'description_template': team_dict.get('description_template', ''),
         'description_options': team_dict.get('description_options', []),
+        'flags': team_dict.get('flags', {'new': True, 'live': False, 'date': False, 'premiere': False}),
         'pregame_enabled': team_dict.get('pregame_enabled', True),
         'pregame_title': team_dict.get('pregame_title', ''),
         'pregame_description': team_dict.get('pregame_description', ''),

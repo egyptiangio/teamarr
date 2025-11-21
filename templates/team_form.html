@@ -785,6 +785,15 @@
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="between_games_description" checked> Between Games Description
                 </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="include_new_tag" checked> New Tag
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="include_live_tag" checked> Live Tag
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="include_date_tag" checked> Date Tag
+                </label>
             </div>
         </div>
         <div class="modal-footer">
@@ -1130,6 +1139,13 @@ async function applyCopyTemplates() {
                         ? JSON.parse(templates.description_options)
                         : templates.description_options;
                     renderConditions();
+                }
+            } else if (field === 'include_new_tag' || field === 'include_live_tag' || field === 'include_date_tag') {
+                // Handle tag checkboxes from flags object
+                const element = document.querySelector(`input[name="${field}"]`);
+                if (element && templates.flags) {
+                    const flagKey = field.replace('include_', '').replace('_tag', '');
+                    element.checked = templates.flags[flagKey] || false;
                 }
             } else {
                 const element = document.getElementById(field);
