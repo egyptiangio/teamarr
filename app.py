@@ -2158,7 +2158,8 @@ def _get_head_coach(team_id: str, league: str) -> str:
         Coach's full name or empty string if not found
     """
     try:
-        roster_data = espn._fetch_from_api(f'/sports/{league}/teams/{team_id}/roster')
+        url = f"{espn.base_url}/{league}/teams/{team_id}/roster"
+        roster_data = espn._make_request(url)
 
         if roster_data and 'coach' in roster_data and roster_data['coach']:
             coach = roster_data['coach'][0]
