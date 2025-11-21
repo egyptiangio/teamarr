@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Program Display Settings
     midnight_crossover_mode TEXT DEFAULT 'postgame',  -- How to handle games crossing midnight
     max_program_hours REAL DEFAULT 6.0,       -- Maximum duration for a single program
-    categories_apply_to TEXT DEFAULT 'all',   -- 'all' or 'events' - control category application
+    categories_apply_to TEXT DEFAULT 'events', -- 'all' or 'events' - control category application
 
     -- Active Status
     active BOOLEAN DEFAULT 1,                 -- Is this team active for EPG generation?

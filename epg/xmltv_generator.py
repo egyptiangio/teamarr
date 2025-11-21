@@ -101,7 +101,7 @@ class XMLTVGenerator:
 
         # Categories - only user-defined categories
         # Check if categories should be applied based on team settings and event type
-        categories_apply_to = team.get('categories_apply_to', 'all')
+        categories_apply_to = team.get('categories_apply_to', 'events')
         is_filler = event.get('status') == 'filler'
 
         # Apply categories based on setting:

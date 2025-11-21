@@ -520,7 +520,7 @@ def edit_team(team_id):
             data['channel_id'], data.get('title_format'), data.get('description_template'),
             data.get('subtitle_template'), float(data.get('game_duration', 3.0)),
             data.get('timezone'), json.dumps(categories_list),
-            data.get('categories_apply_to', 'all'),
+            data.get('categories_apply_to', 'events'),
             data.get('video_quality'), data.get('audio_quality'),
             1 if data.get('active') == 'on' else 0,
             json.dumps(description_options),
@@ -1592,8 +1592,10 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
     chunk_duration = timedelta(hours=total_duration / num_chunks)
 
     # Get templates for this filler type
-    title_template = team.get(f'{filler_type}_title', f'{filler_type.capitalize()} Coverage')
-    desc_template = team.get(f'{filler_type}_description', '')
+    # Map 'idle' to 'between_games' for database column names
+    db_filler_type = 'between_games' if filler_type == 'idle' else filler_type
+    title_template = team.get(f'{db_filler_type}_title', f'{filler_type.capitalize()} Coverage')
+    desc_template = team.get(f'{db_filler_type}_description', '')
 
     # Build context for template resolution
     context = {
