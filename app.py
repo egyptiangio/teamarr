@@ -939,7 +939,7 @@ def generate_epg():
 
                 # Generate filler entries (pregame/postgame/idle)
                 # Pass extended events for next/last game context
-                filler_entries = _generate_filler_entries(team, processed_events, days_ahead, team_stats, epg_timezone, extended_processed_events, epg_start_date)
+                filler_entries = _generate_filler_entries(team, processed_events, days_ahead, team_stats, epg_timezone, extended_processed_events, epg_start_date, espn)
 
                 # Combine game events and filler entries, then sort by start time
                 combined_events = processed_events + filler_entries
@@ -1443,7 +1443,7 @@ def _find_last_game(current_date: date, game_schedule: dict, game_dates: set) ->
     return None
 
 
-def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: int, team_stats: dict = None, epg_timezone: str = 'America/New_York', extended_events: List[dict] = None, epg_start_date: date = None) -> List[dict]:
+def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: int, team_stats: dict = None, epg_timezone: str = 'America/New_York', extended_events: List[dict] = None, epg_start_date: date = None, espn_client = None) -> List[dict]:
     """
     Generate pregame, postgame, and idle EPG entries to fill gaps
 
@@ -1455,6 +1455,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
         epg_timezone: Timezone for EPG generation
         extended_events: Extended list of game events (beyond EPG window) for next/last game context
         epg_start_date: Start date for EPG generation (defaults to today if not specified)
+        espn_client: ESPN API client for fetching opponent stats
 
     Returns:
         List of filler event dictionaries
@@ -1539,7 +1540,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
 
                     pregame_entries = _create_filler_chunks(
                         day_start, first_game_start, max_hours,
-                        team, 'pregame', games_today[0]['event'], team_stats, last_game, epg_timezone
+                        team, 'pregame', games_today[0]['event'], team_stats, last_game, epg_timezone, espn_client
                     )
                     filler_entries.extend(pregame_entries)
 
@@ -1559,7 +1560,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                         # For postgame, the game we just finished IS the last game
                         postgame_entries = _create_filler_chunks(
                             last_game_end, next_day_end, max_hours,
-                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone
+                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client
                         )
                         filler_entries.extend(postgame_entries)
                     elif midnight_mode == 'idle':
@@ -1571,7 +1572,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                             next_game = _find_next_game(next_date, extended_game_schedule or game_schedule, extended_game_dates or game_dates)
                             idle_entries = _create_filler_chunks(
                                 last_game_end, next_day_end, max_hours,
-                                team, 'idle', next_game, team_stats, games_today[-1]['event'], epg_timezone
+                                team, 'idle', next_game, team_stats, games_today[-1]['event'], epg_timezone, espn_client
                             )
                             filler_entries.extend(idle_entries)
                 else:
@@ -1580,7 +1581,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                         # For postgame, the game we just finished IS the last game
                         postgame_entries = _create_filler_chunks(
                             last_game_end, day_end, max_hours,
-                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone
+                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client
                         )
                         filler_entries.extend(postgame_entries)
 
@@ -1610,7 +1611,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                 # Fill entire day with idle content
                 idle_entries = _create_filler_chunks(
                     day_start, day_end, max_hours,
-                    team, 'idle', next_game, team_stats, last_game, epg_timezone
+                    team, 'idle', next_game, team_stats, last_game, epg_timezone, espn_client
                 )
                 filler_entries.extend(idle_entries)
 
@@ -1622,7 +1623,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
 def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
                           team: dict, filler_type: str, game_event: dict = None,
                           team_stats: dict = None, last_game_event: dict = None,
-                          epg_timezone: str = 'America/New_York') -> List[dict]:
+                          epg_timezone: str = 'America/New_York', espn_client = None) -> List[dict]:
     """
     Create filler EPG entries, splitting into chunks based on max_hours
 
@@ -1695,6 +1696,24 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
             else:
                 opponent = home_team
 
+            # Fetch opponent stats if ESPN client is available
+            next_opponent_record = ''
+            if espn_client and opponent.get('id'):
+                try:
+                    opponent_id = str(opponent.get('id', ''))
+                    opponent_stats_data = espn_client.get_team_stats(team.get('sport'), team.get('league'), opponent_id)
+                    if opponent_stats_data and 'record' in opponent_stats_data:
+                        opp_rec = opponent_stats_data['record']
+                        opp_wins = opp_rec.get('wins', 0)
+                        opp_losses = opp_rec.get('losses', 0)
+                        opp_ties = opp_rec.get('ties', 0)
+                        if opp_ties > 0:
+                            next_opponent_record = f"{opp_wins}-{opp_losses}-{opp_ties}"
+                        else:
+                            next_opponent_record = f"{opp_wins}-{opp_losses}"
+                except Exception as e:
+                    print(f"  ⚠️ Could not fetch next opponent stats: {e}")
+
             # Parse game date and convert to team timezone
             game_date_str = raw_game.get('date', '')
             if game_date_str:
@@ -1728,6 +1747,7 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
 
             context['next_game'] = {
                 'opponent': opponent.get('name', ''),
+                'opponent_record': next_opponent_record,
                 'date': date_formatted,
                 'time': time_formatted,
                 'datetime': datetime_str,
@@ -1745,6 +1765,24 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
         is_home = str(home_team.get('id', '')) == our_team_id
         opponent = away_team if is_home else home_team
         our_team_obj = home_team if is_home else away_team
+
+        # Fetch opponent stats if ESPN client is available
+        last_opponent_record = ''
+        if espn_client and opponent.get('id'):
+            try:
+                opponent_id = str(opponent.get('id', ''))
+                opponent_stats_data = espn_client.get_team_stats(team.get('sport'), team.get('league'), opponent_id)
+                if opponent_stats_data and 'record' in opponent_stats_data:
+                    opp_rec = opponent_stats_data['record']
+                    opp_wins = opp_rec.get('wins', 0)
+                    opp_losses = opp_rec.get('losses', 0)
+                    opp_ties = opp_rec.get('ties', 0)
+                    if opp_ties > 0:
+                        last_opponent_record = f"{opp_wins}-{opp_losses}-{opp_ties}"
+                    else:
+                        last_opponent_record = f"{opp_wins}-{opp_losses}"
+            except Exception as e:
+                print(f"  ⚠️ Could not fetch last opponent stats: {e}")
 
         # Get scores (handle None values and dict format from scoreboards)
         team_score = our_team_obj.get('score')
@@ -1813,6 +1851,7 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
 
         context['last_game'] = {
             'opponent': opponent.get('name', ''),
+            'opponent_record': last_opponent_record,
             'date': date_formatted,
             'matchup': matchup,
             'result': result,

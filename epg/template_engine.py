@@ -673,6 +673,7 @@ class TemplateEngine:
 
         last_game = context.get('last_game', {})
         variables['last_opponent'] = last_game.get('opponent', '')
+        variables['last_opponent_record'] = last_game.get('opponent_record', '')
         variables['last_date'] = last_game.get('date', '')
         variables['last_matchup'] = last_game.get('matchup', '')
         variables['last_result'] = last_game.get('result', '')  # "Win", "Loss", or "Tie"
@@ -692,6 +693,7 @@ class TemplateEngine:
 
         next_game = context.get('next_game', {})
         variables['next_opponent'] = next_game.get('opponent', '')
+        variables['next_opponent_record'] = next_game.get('opponent_record', '')
         variables['next_date'] = next_game.get('date', '')
         variables['next_time'] = next_game.get('time', '')
         variables['next_datetime'] = next_game.get('datetime', '')
