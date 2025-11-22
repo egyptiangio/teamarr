@@ -1,4 +1,4 @@
-"""Teamarr - Sports Team EPG Generator Flask Application"""
+"""Teamarr - Dynamic Sports Team EPG Generator Flask Application"""
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 import os
 from database import get_connection, init_database
@@ -24,6 +24,7 @@ template_engine = TemplateEngine()
 # Scheduler thread
 scheduler_thread = None
 scheduler_running = False
+last_run_time = None
 
 # Ensure database exists
 if not os.path.exists('teamarr.db'):
@@ -44,7 +45,7 @@ def run_scheduled_generation():
 
             # Get active teams
             teams = conn.execute("""
-                SELECT t.*, lc.league_name, lc.sport, lc.api_path, lc.default_category as league_category
+                SELECT t.*, lc.league_name, lc.api_path, lc.default_category as league_category
                 FROM teams t
                 LEFT JOIN league_config lc ON t.league = lc.league_code
                 WHERE t.active = 1
@@ -69,7 +70,19 @@ def run_scheduled_generation():
             conn = get_connection()
 
             try:
-                teams_list = [dict(t) for t in teams]
+                # Convert teams to dict and parse JSON fields
+                teams_list = []
+                for t in teams:
+                    team_dict = dict(t)
+                    # Parse JSON fields
+                    if team_dict.get('flags') and isinstance(team_dict['flags'], str):
+                        team_dict['flags'] = json.loads(team_dict['flags'])
+                    if team_dict.get('categories') and isinstance(team_dict['categories'], str):
+                        team_dict['categories'] = json.loads(team_dict['categories'])
+                    if team_dict.get('description_options') and isinstance(team_dict['description_options'], str):
+                        team_dict['description_options'] = json.loads(team_dict['description_options'])
+                    teams_list.append(team_dict)
+
                 all_events = {}
                 api_calls = 0
                 days_ahead = settings.get('epg_days_ahead', 14)
@@ -147,12 +160,17 @@ def run_scheduled_generation():
                 print(f"✅ Scheduled EPG generation completed: {total_programmes} programs from {len(teams_list)} teams in {generation_time:.2f}s")
 
             except Exception as e:
+                import traceback
                 print(f"❌ Scheduled EPG generation failed: {e}")
-                conn.execute("""
-                    INSERT INTO error_log (error_type, error_message, context)
-                    VALUES (?, ?, ?)
-                """, ('scheduled_generation_error', str(e), 'Auto-generation scheduler'))
-                conn.commit()
+                traceback.print_exc()
+                try:
+                    conn.execute("""
+                        INSERT INTO error_log (level, category, message, details)
+                        VALUES (?, ?, ?, ?)
+                    """, ('ERROR', 'GENERATION', str(e), json.dumps({'context': 'Auto-generation scheduler'})))
+                    conn.commit()
+                except Exception as log_error:
+                    print(f"❌ Failed to log error: {log_error}")
 
             finally:
                 conn.close()
@@ -162,7 +180,7 @@ def run_scheduled_generation():
 
 def scheduler_loop():
     """Background thread that runs the scheduler"""
-    global scheduler_running
+    global scheduler_running, last_run_time
 
     print("🚀 EPG Auto-Generation Scheduler started")
 
@@ -187,29 +205,50 @@ def scheduler_loop():
             except:
                 hour, minute = 0, 0
 
-            # Check if it's time to run
+            # Check if it's time to run based on frequency and last run time
             should_run = False
 
             if frequency == 'hourly':
-                # Run at the start of every hour
-                if now.minute == 0:
+                # Run once per hour (at any point in the hour we haven't run yet)
+                if last_run_time is None:
+                    # Never run before, run now
                     should_run = True
-                    time.sleep(60)  # Sleep for a minute to avoid duplicate runs
+                else:
+                    # Check if we're in a different hour than last run
+                    last_hour = last_run_time.replace(minute=0, second=0, microsecond=0)
+                    current_hour = now.replace(minute=0, second=0, microsecond=0)
+                    if current_hour > last_hour:
+                        should_run = True
 
             elif frequency == 'daily':
                 # Run once per day at specified time
-                if now.hour == hour and now.minute == minute:
-                    should_run = True
-                    time.sleep(60)  # Sleep for a minute to avoid duplicate runs
+                if last_run_time is None:
+                    # Never run before, check if we're past the scheduled time today
+                    if now.hour > hour or (now.hour == hour and now.minute >= minute):
+                        should_run = True
+                else:
+                    # Check if we're in a different day and past the scheduled time
+                    if now.date() > last_run_time.date():
+                        if now.hour > hour or (now.hour == hour and now.minute >= minute):
+                            should_run = True
 
             elif frequency == 'weekly':
                 # Run once per week on Monday at specified time
-                if now.weekday() == 0 and now.hour == hour and now.minute == minute:
-                    should_run = True
-                    time.sleep(60)  # Sleep for a minute to avoid duplicate runs
+                if last_run_time is None:
+                    # Never run before, check if today is Monday and past scheduled time
+                    if now.weekday() == 0 and (now.hour > hour or (now.hour == hour and now.minute >= minute)):
+                        should_run = True
+                else:
+                    # Check if it's Monday, we're past scheduled time, and we haven't run this week
+                    if now.weekday() == 0 and (now.hour > hour or (now.hour == hour and now.minute >= minute)):
+                        # Check if last run was in a previous week
+                        days_since_last_run = (now.date() - last_run_time.date()).days
+                        if days_since_last_run >= 7:
+                            should_run = True
 
             if should_run:
                 run_scheduled_generation()
+                last_run_time = now
 
             time.sleep(30)  # Check every 30 seconds
 
@@ -396,9 +435,18 @@ def add_team():
         # Get form data
         data = request.form.to_dict()
 
-        # Parse categories from comma-separated string
-        categories_str = data.get('categories', 'Sports, Sports event, Basketball')
-        categories_list = [cat.strip() for cat in categories_str.split(',') if cat.strip()]
+        # Build categories list from checkboxes + custom field
+        categories_list = []
+        if request.form.get('category_sports'):
+            categories_list.append('Sports')
+        if request.form.get('category_sport_variable'):
+            categories_list.append('{sport}')
+
+        # Add custom categories
+        categories_custom = data.get('categories_custom', '')
+        if categories_custom:
+            custom_cats = [cat.strip() for cat in categories_custom.split(',') if cat.strip()]
+            categories_list.extend(custom_cats)
 
         # Parse description options
         description_options = parse_description_options(request.form)
@@ -408,10 +456,10 @@ def add_team():
             INSERT INTO teams (
                 espn_team_id, league, sport, team_name, team_abbrev,
                 team_logo_url, team_color, channel_id, title_format,
-                description_template, subtitle_template, game_duration,
-                timezone, flags, categories, video_quality, audio_quality,
+                description_template, subtitle_template, game_duration_mode, game_duration_override,
+                timezone, flags, categories,
                 description_options
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data['espn_team_id'],
             data['league'],
@@ -424,12 +472,11 @@ def add_team():
             data.get('title_format', '{team_name} Basketball'),
             data.get('description_template', ''),
             data.get('subtitle_template', '{venue_full}'),
-            float(data.get('game_duration', 3.0)),
+            data.get('game_duration_mode', 'default'),
+            float(data['game_duration_override']) if data.get('game_duration_override') else None,
             data.get('timezone', 'America/New_York'),
             json.dumps({'new': True, 'live': True}),
             json.dumps(categories_list),
-            data.get('video_quality', 'HDTV'),
-            data.get('audio_quality', 'stereo'),
             json.dumps(description_options)
         ))
 
@@ -457,9 +504,18 @@ def edit_team(team_id):
         print(f"\n=== FORM SAVE DEBUG ===")
         print(f"All form keys: {list(request.form.keys())}")
 
-        # Parse categories from comma-separated string
-        categories_str = data.get('categories', '')
-        categories_list = [cat.strip() for cat in categories_str.split(',') if cat.strip()]
+        # Build categories list from checkboxes + custom field
+        categories_list = []
+        if request.form.get('category_sports'):
+            categories_list.append('Sports')
+        if request.form.get('category_sport_variable'):
+            categories_list.append('{sport}')
+
+        # Add custom categories
+        categories_custom = data.get('categories_custom', '')
+        if categories_custom:
+            custom_cats = [cat.strip() for cat in categories_custom.split(',') if cat.strip()]
+            categories_list.extend(custom_cats)
         print(f"Parsed categories list: {categories_list}")
 
         # Parse description options from form arrays (new format!)
@@ -502,14 +558,14 @@ def edit_team(team_id):
                 espn_team_id = ?, league = ?, sport = ?, team_name = ?,
                 team_abbrev = ?, team_logo_url = ?, team_color = ?,
                 channel_id = ?, title_format = ?, description_template = ?,
-                subtitle_template = ?, game_duration = ?, timezone = ?,
-                categories = ?, categories_apply_to = ?, video_quality = ?, audio_quality = ?, active = ?,
+                subtitle_template = ?, game_duration_mode = ?, game_duration_override = ?, timezone = ?,
+                categories = ?, categories_apply_to = ?, active = ?,
                 description_options = ?,
                 flags = ?,
                 no_game_enabled = ?, no_game_title = ?, no_game_description = ?, no_game_duration = ?,
                 pregame_enabled = ?, pregame_periods = ?, pregame_title = ?, pregame_description = ?,
                 postgame_enabled = ?, postgame_periods = ?, postgame_title = ?, postgame_description = ?,
-                between_games_enabled = ?, between_games_title = ?, between_games_description = ?,
+                idle_enabled = ?, idle_title = ?, idle_description = ?,
                 enable_records = ?, enable_streaks = ?, enable_head_to_head = ?,
                 enable_standings = ?, enable_statistics = ?, enable_players = ?,
                 midnight_crossover_mode = ?, max_program_hours = ?
@@ -518,10 +574,11 @@ def edit_team(team_id):
             data['espn_team_id'], data['league'], data['sport'], data['team_name'],
             data.get('team_abbrev', ''), data.get('team_logo_url', ''), data.get('team_color', ''),
             data['channel_id'], data.get('title_format'), data.get('description_template'),
-            data.get('subtitle_template'), float(data.get('game_duration', 3.0)),
+            data.get('subtitle_template'),
+            data.get('game_duration_mode', 'default'),
+            float(data['game_duration_override']) if data.get('game_duration_override') else None,
             data.get('timezone'), json.dumps(categories_list),
             data.get('categories_apply_to', 'events'),
-            data.get('video_quality'), data.get('audio_quality'),
             1 if data.get('active') == 'on' else 0,
             json.dumps(description_options),
             json.dumps(flags),
@@ -537,9 +594,9 @@ def edit_team(team_id):
             data.get('postgame_periods', '[{"start_hours_after": 0, "end_hours_after": 3, "title": "Game Recap", "description": "{team_name} {result_text} {final_score}. Final record: {final_record}"}, {"start_hours_after": 3, "end_hours_after": 12, "title": "Extended Highlights", "description": "Highlights: {team_name} {result_text} {final_score} vs {opponent}"}, {"start_hours_after": 12, "end_hours_after": 24, "title": "Full Game Replay", "description": "Replay: {team_name} vs {opponent} - Final Score: {final_score}"}]'),
             data.get('postgame_title', 'Postgame Recap'),
             data.get('postgame_description', '{team_name} {result_text} {opponent} - Final: {final_score}'),
-            1 if data.get('between_games_enabled') == 'on' else 0,
-            data.get('between_games_title', '{team_name} Programming'),
-            data.get('between_games_description', 'Next game: {next_game_date} at {next_game_time} vs {next_opponent}'),
+            1 if data.get('idle_enabled') == 'on' else 0,
+            data.get('idle_title', '{team_name} Programming'),
+            data.get('idle_description', 'Next game: {next_date} at {next_time} vs {next_opponent}'),
             1 if data.get('enable_records') == 'on' else 0,
             1 if data.get('enable_streaks') == 'on' else 0,
             1 if data.get('enable_head_to_head') == 'on' else 0,
@@ -640,6 +697,8 @@ def get_team_templates(team_id):
         team_dict['description_options'] = json.loads(team_dict['description_options'])
     if team_dict.get('flags') and isinstance(team_dict['flags'], str):
         team_dict['flags'] = json.loads(team_dict['flags'])
+    if team_dict.get('categories') and isinstance(team_dict['categories'], str):
+        team_dict['categories'] = json.loads(team_dict['categories'])
 
     # Return only template-related fields
     template_data = {
@@ -648,14 +707,17 @@ def get_team_templates(team_id):
         'description_template': team_dict.get('description_template', ''),
         'description_options': team_dict.get('description_options', []),
         'flags': team_dict.get('flags', {'new': True, 'live': False, 'date': False, 'premiere': False}),
+        'categories': team_dict.get('categories', []),
+        'game_duration_mode': team_dict.get('game_duration_mode', 'default'),
+        'game_duration_override': team_dict.get('game_duration_override'),
         'pregame_enabled': team_dict.get('pregame_enabled', True),
         'pregame_title': team_dict.get('pregame_title', ''),
         'pregame_description': team_dict.get('pregame_description', ''),
         'postgame_enabled': team_dict.get('postgame_enabled', True),
         'postgame_title': team_dict.get('postgame_title', ''),
         'postgame_description': team_dict.get('postgame_description', ''),
-        'between_games_title': team_dict.get('between_games_title', ''),
-        'between_games_description': team_dict.get('between_games_description', ''),
+        'idle_title': team_dict.get('idle_title', ''),
+        'idle_description': team_dict.get('idle_description', ''),
     }
 
     return jsonify(template_data)
@@ -738,6 +800,51 @@ def delete_condition_preset(preset_id):
     conn.close()
     return jsonify({'success': True})
 
+@app.route('/api/variables')
+def get_variables():
+    """Serve variable schema for UI and validation"""
+    from pathlib import Path
+    variables_file = Path(__file__).parent / 'config' / 'variables.json'
+
+    try:
+        with open(variables_file, 'r', encoding='utf-8') as f:
+            return jsonify(json.load(f))
+    except FileNotFoundError:
+        return jsonify({'error': 'Variables file not found'}), 404
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'Invalid JSON: {str(e)}'}), 500
+
+def get_game_duration(team, settings):
+    """
+    Get game duration for a team based on mode
+
+    Args:
+        team: Team dict with sport, game_duration_mode, and game_duration_override fields
+        settings: Settings dict with game_duration_default field
+
+    Returns:
+        float: Game duration in hours
+    """
+    mode = team.get('game_duration_mode', 'default')
+
+    if mode == 'custom':
+        # Use custom override
+        return float(team.get('game_duration_override', 4.0))
+    elif mode == 'sport':
+        # Use sport-specific recommendation
+        sport = team.get('sport', 'basketball').lower()
+        sport_defaults = {
+            'basketball': 3.0,
+            'football': 3.5,
+            'soccer': 2.0,
+            'baseball': 3.0,
+            'hockey': 3.0
+        }
+        return float(sport_defaults.get(sport, 3.0))
+    else:  # mode == 'default'
+        # Use global default from settings
+        return float(settings.get('game_duration_default', 4.0))
+
 @app.route('/generate', methods=['POST'])
 def generate_epg():
     """Generate EPG file"""
@@ -751,7 +858,7 @@ def generate_epg():
     try:
         # Get active teams
         teams = conn.execute("""
-            SELECT t.*, lc.league_name, lc.sport, lc.api_path, lc.default_category as league_category
+            SELECT t.*, lc.league_name, lc.api_path, lc.default_category as league_category
             FROM teams t
             LEFT JOIN league_config lc ON t.league = lc.league_code
             WHERE t.active = 1
@@ -925,7 +1032,7 @@ def generate_epg():
 
                     opponent_stats = opponent_stats_cache.get(opp_id, {})
 
-                    processed = _process_event(event, team, team_stats, opponent_stats, epg_timezone, schedule_data)
+                    processed = _process_event(event, team, team_stats, opponent_stats, epg_timezone, schedule_data, settings)
                     if processed:
                         processed_events.append(processed)
 
@@ -933,13 +1040,13 @@ def generate_epg():
                 extended_processed_events = []
                 for event in extended_events:
                     # For extended events, we don't need full opponent stats - just basic game data
-                    processed = _process_event(event, team, team_stats, {}, epg_timezone, schedule_data)
+                    processed = _process_event(event, team, team_stats, {}, epg_timezone, schedule_data, settings)
                     if processed:
                         extended_processed_events.append(processed)
 
                 # Generate filler entries (pregame/postgame/idle)
                 # Pass extended events for next/last game context
-                filler_entries = _generate_filler_entries(team, processed_events, days_ahead, team_stats, epg_timezone, extended_processed_events, epg_start_date)
+                filler_entries = _generate_filler_entries(team, processed_events, days_ahead, team_stats, epg_timezone, extended_processed_events, epg_start_date, espn, team.get('api_path', ''))
 
                 # Combine game events and filler entries, then sort by start time
                 combined_events = processed_events + filler_entries
@@ -1056,7 +1163,9 @@ def settings():
                 cache_duration_hours = ?,
                 default_timezone = ?,
                 auto_generate_enabled = ?,
-                auto_generate_frequency = ?
+                auto_generate_frequency = ?,
+                xmltv_generator_name = ?,
+                xmltv_generator_url = ?
             WHERE id = 1
         """, (
             int(data.get('epg_days_ahead', 14)),
@@ -1066,7 +1175,9 @@ def settings():
             int(data.get('cache_duration_hours', 24)),
             data.get('default_timezone', 'America/New_York'),
             1 if data.get('auto_generate_enabled') == 'on' else 0,
-            data.get('auto_generate_frequency', 'daily')
+            data.get('auto_generate_frequency', 'daily'),
+            data.get('xmltv_generator_name', ''),
+            data.get('xmltv_generator_url', '')
         ))
 
         conn.commit()
@@ -1443,7 +1554,7 @@ def _find_last_game(current_date: date, game_schedule: dict, game_dates: set) ->
     return None
 
 
-def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: int, team_stats: dict = None, epg_timezone: str = 'America/New_York', extended_events: List[dict] = None, epg_start_date: date = None) -> List[dict]:
+def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: int, team_stats: dict = None, epg_timezone: str = 'America/New_York', extended_events: List[dict] = None, epg_start_date: date = None, espn_client = None, api_path: str = '') -> List[dict]:
     """
     Generate pregame, postgame, and idle EPG entries to fill gaps
 
@@ -1455,6 +1566,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
         epg_timezone: Timezone for EPG generation
         extended_events: Extended list of game events (beyond EPG window) for next/last game context
         epg_start_date: Start date for EPG generation (defaults to today if not specified)
+        espn_client: ESPN API client for fetching opponent stats
 
     Returns:
         List of filler event dictionaries
@@ -1539,7 +1651,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
 
                     pregame_entries = _create_filler_chunks(
                         day_start, first_game_start, max_hours,
-                        team, 'pregame', games_today[0]['event'], team_stats, last_game, epg_timezone
+                        team, 'pregame', games_today[0]['event'], team_stats, last_game, epg_timezone, espn_client, api_path
                     )
                     filler_entries.extend(pregame_entries)
 
@@ -1559,17 +1671,28 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                         # For postgame, the game we just finished IS the last game
                         postgame_entries = _create_filler_chunks(
                             last_game_end, next_day_end, max_hours,
-                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone
+                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
                         )
                         filler_entries.extend(postgame_entries)
-                    # else: next day will be treated as idle (handled in else block below)
+                    elif midnight_mode == 'idle':
+                        # Use idle content after game ends (if idle is enabled)
+                        if team.get('idle_enabled', True):
+                            # Fill from game end to next midnight with idle content
+                            next_day_end = day_end + timedelta(days=1)
+                            # Find next game for idle context
+                            next_game = _find_next_game(next_date, extended_game_schedule or game_schedule, extended_game_dates or game_dates)
+                            idle_entries = _create_filler_chunks(
+                                last_game_end, next_day_end, max_hours,
+                                team, 'idle', next_game, team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
+                            )
+                            filler_entries.extend(idle_entries)
                 else:
                     # Game ends before midnight - fill to midnight
                     if last_game_end < day_end:
                         # For postgame, the game we just finished IS the last game
                         postgame_entries = _create_filler_chunks(
                             last_game_end, day_end, max_hours,
-                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone
+                            team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
                         )
                         filler_entries.extend(postgame_entries)
 
@@ -1583,11 +1706,13 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                 prev_games = game_schedule[prev_date]
                 if prev_games:
                     last_prev_game = sorted(prev_games, key=lambda x: x['end'])[-1]
-                    if last_prev_game['end'] > day_start and midnight_mode == 'postgame':
-                        # Previous game crosses into today and mode is postgame
+                    if last_prev_game['end'] > day_start:
+                        # Previous game crosses into today
+                        # Skip idle content regardless of mode - we already filled it
+                        # (either with postgame or idle content from yesterday)
                         skip_idle = True
 
-            if not skip_idle and team.get('between_games_enabled', True):
+            if not skip_idle and team.get('idle_enabled', True):
                 # Find next game after current_date (use extended schedule for 30 days ahead)
                 next_game = _find_next_game(current_date, extended_game_schedule or game_schedule, extended_game_dates or game_dates)
 
@@ -1597,7 +1722,7 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                 # Fill entire day with idle content
                 idle_entries = _create_filler_chunks(
                     day_start, day_end, max_hours,
-                    team, 'idle', next_game, team_stats, last_game, epg_timezone
+                    team, 'idle', next_game, team_stats, last_game, epg_timezone, espn_client, api_path
                 )
                 filler_entries.extend(idle_entries)
 
@@ -1609,7 +1734,8 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
 def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
                           team: dict, filler_type: str, game_event: dict = None,
                           team_stats: dict = None, last_game_event: dict = None,
-                          epg_timezone: str = 'America/New_York') -> List[dict]:
+                          epg_timezone: str = 'America/New_York', espn_client = None,
+                          api_path: str = '') -> List[dict]:
     """
     Create filler EPG entries, splitting into chunks based on max_hours
 
@@ -1635,10 +1761,9 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
     chunk_duration = timedelta(hours=total_duration / num_chunks)
 
     # Get templates for this filler type
-    # Map 'idle' to 'between_games' for database column names
-    db_filler_type = 'between_games' if filler_type == 'idle' else filler_type
-    title_template = team.get(f'{db_filler_type}_title', f'{filler_type.capitalize()} Coverage')
-    desc_template = team.get(f'{db_filler_type}_description', '')
+    # Database column names match filler type: 'idle', 'pregame', 'postgame'
+    title_template = team.get(f'{filler_type}_title', f'{filler_type.capitalize()} Coverage')
+    desc_template = team.get(f'{filler_type}_description', '')
 
     # Build context for template resolution
     context = {
@@ -1683,6 +1808,24 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
             else:
                 opponent = home_team
 
+            # Fetch opponent stats if ESPN client is available
+            next_opponent_record = ''
+            if espn_client and opponent.get('id'):
+                try:
+                    opponent_id = str(opponent.get('id', ''))
+                    opponent_stats_data = espn_client.get_team_stats(team.get('sport'), team.get('league'), opponent_id)
+                    if opponent_stats_data and 'record' in opponent_stats_data:
+                        opp_rec = opponent_stats_data['record']
+                        opp_wins = opp_rec.get('wins', 0)
+                        opp_losses = opp_rec.get('losses', 0)
+                        opp_ties = opp_rec.get('ties', 0)
+                        if opp_ties > 0:
+                            next_opponent_record = f"{opp_wins}-{opp_losses}-{opp_ties}"
+                        else:
+                            next_opponent_record = f"{opp_wins}-{opp_losses}"
+                except Exception as e:
+                    print(f"  ⚠️ Could not fetch next opponent stats: {e}")
+
             # Parse game date and convert to team timezone
             game_date_str = raw_game.get('date', '')
             if game_date_str:
@@ -1716,6 +1859,7 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
 
             context['next_game'] = {
                 'opponent': opponent.get('name', ''),
+                'opponent_record': next_opponent_record,
                 'date': date_formatted,
                 'time': time_formatted,
                 'datetime': datetime_str,
@@ -1733,6 +1877,24 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
         is_home = str(home_team.get('id', '')) == our_team_id
         opponent = away_team if is_home else home_team
         our_team_obj = home_team if is_home else away_team
+
+        # Fetch opponent stats if ESPN client is available
+        last_opponent_record = ''
+        if espn_client and opponent.get('id'):
+            try:
+                opponent_id = str(opponent.get('id', ''))
+                opponent_stats_data = espn_client.get_team_stats(team.get('sport'), team.get('league'), opponent_id)
+                if opponent_stats_data and 'record' in opponent_stats_data:
+                    opp_rec = opponent_stats_data['record']
+                    opp_wins = opp_rec.get('wins', 0)
+                    opp_losses = opp_rec.get('losses', 0)
+                    opp_ties = opp_rec.get('ties', 0)
+                    if opp_ties > 0:
+                        last_opponent_record = f"{opp_wins}-{opp_losses}-{opp_ties}"
+                    else:
+                        last_opponent_record = f"{opp_wins}-{opp_losses}"
+            except Exception as e:
+                print(f"  ⚠️ Could not fetch last opponent stats: {e}")
 
         # Get scores (handle None values and dict format from scoreboards)
         team_score = our_team_obj.get('score')
@@ -1799,13 +1961,24 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
             else:
                 score_abbrev = f"{our_abbrev} @ {opp_abbrev}"
 
+        # Extract player leaders from last game (game-specific stats)
+        last_game_leaders = {}
+        if 'competitions' in last_game_event and last_game_event['competitions']:
+            last_game_leaders = _extract_player_leaders(
+                last_game_event['competitions'][0],
+                our_team_id,
+                api_path
+            )
+
         context['last_game'] = {
             'opponent': opponent.get('name', ''),
+            'opponent_record': last_opponent_record,
             'date': date_formatted,
             'matchup': matchup,
             'result': result,
             'score': f"{team_score}-{opp_score}",
-            'score_abbrev': score_abbrev
+            'score_abbrev': score_abbrev,
+            **last_game_leaders  # Merge in player leader stats
         }
         # Store raw event for today_game logic
         context['_last_game_event'] = last_game_event
@@ -1860,6 +2033,510 @@ def _create_filler_chunks(start_dt: datetime, end_dt: datetime, max_hours: int,
         current_start = current_end
 
     return chunks
+
+
+def _calculate_home_away_streaks(our_team_id: str, schedule_data: dict) -> dict:
+    """
+    Calculate current home and away win/loss streaks, plus last 5/10 records from schedule data.
+
+    Args:
+        our_team_id: Our team's ESPN ID
+        schedule_data: Schedule data from ESPN API
+
+    Returns:
+        Dict with home_streak, away_streak, last_5_record, last_10_record, and recent_form strings
+    """
+    if not schedule_data or 'events' not in schedule_data:
+        return {
+            'home_streak': '',
+            'away_streak': '',
+            'last_5_record': '',
+            'last_10_record': '',
+            'recent_form': ''
+        }
+
+    # Collect completed games by location and overall
+    home_games = []
+    away_games = []
+    all_games = []
+
+    for event in schedule_data['events']:
+        try:
+            comp = event.get('competitions', [{}])[0]
+            status = comp.get('status', {}).get('type', {})
+
+            # Only completed games
+            if not status.get('completed', False):
+                continue
+
+            # Find our team in competitors
+            competitors = comp.get('competitors', [])
+            our_team = None
+            for c in competitors:
+                if str(c.get('team', {}).get('id')) == str(our_team_id):
+                    our_team = c
+                    break
+
+            if not our_team:
+                continue
+
+            # Categorize by home/away
+            home_away = our_team.get('homeAway', '').lower()
+            won = our_team.get('winner', False)
+            game_date = event.get('date', '')
+
+            game_data = {'date': game_date, 'won': won}
+
+            # Add to overall games
+            all_games.append(game_data)
+
+            # Add to home/away specific lists
+            if home_away == 'home':
+                home_games.append(game_data)
+            elif home_away == 'away':
+                away_games.append(game_data)
+
+        except (KeyError, IndexError, TypeError):
+            continue
+
+    # Helper to calculate streak from game list
+    def calc_streak(games, location_text):
+        if not games:
+            return ""
+
+        # Sort by date (most recent first)
+        games.sort(key=lambda x: x['date'], reverse=True)
+
+        # Calculate current streak
+        is_winning = games[0]['won']
+        count = 0
+
+        for game in games:
+            if game['won'] == is_winning:
+                count += 1
+            else:
+                break
+
+        # Only show significant streaks (3+ games)
+        if count < 3:
+            return ""
+
+        if is_winning:
+            return f"{count}-0 {location_text}"
+        else:
+            return f"Lost last {count} {location_text}"
+
+    # Calculate last 5 and last 10 records
+    # Sort all games by date (most recent first)
+    all_games.sort(key=lambda x: x['date'], reverse=True)
+
+    # Last 5 record
+    last_5 = all_games[:5]
+    if len(last_5) >= 5:
+        wins_5 = sum(1 for g in last_5 if g['won'])
+        losses_5 = 5 - wins_5
+        last_5_record = f"{wins_5}-{losses_5}"
+    else:
+        last_5_record = ''
+
+    # Last 10 record
+    last_10 = all_games[:10]
+    if len(last_10) >= 10:
+        wins_10 = sum(1 for g in last_10 if g['won'])
+        losses_10 = 10 - wins_10
+        last_10_record = f"{wins_10}-{losses_10}"
+    else:
+        last_10_record = ''
+
+    # Recent form (last 5 as W/L string)
+    if len(last_5) >= 5:
+        recent_form = ''.join('W' if g['won'] else 'L' for g in reversed(last_5))
+    else:
+        recent_form = ''
+
+    return {
+        'home_streak': calc_streak(home_games, "at home"),
+        'away_streak': calc_streak(away_games, "on road"),
+        'last_5_record': last_5_record,
+        'last_10_record': last_10_record,
+        'recent_form': recent_form
+    }
+
+
+def _get_head_coach(team_id: str, league: str) -> str:
+    """
+    Fetch head coach name from roster API.
+
+    Args:
+        team_id: Team's ESPN ID
+        league: League API path (e.g., 'basketball/nba')
+
+    Returns:
+        Coach's full name or empty string if not found
+    """
+    try:
+        url = f"{espn.base_url}/{league}/teams/{team_id}/roster"
+        roster_data = espn._make_request(url)
+
+        if roster_data and 'coach' in roster_data and roster_data['coach']:
+            coach = roster_data['coach'][0]
+            first = coach.get('firstName', '')
+            last = coach.get('lastName', '')
+            return f"{first} {last}".strip()
+    except Exception as e:
+        print(f"Error fetching coach for team {team_id}: {e}")
+
+    return ''
+
+
+def _get_games_played(competitor: dict) -> int:
+    """
+    Get number of games played from competitor's record.
+
+    Args:
+        competitor: Competitor object from ESPN API
+
+    Returns:
+        Number of games played
+    """
+    if 'records' not in competitor:
+        return 0
+
+    for record in competitor['records']:
+        if record.get('name') == 'overall':
+            summary = record.get('summary', '0-0')
+            try:
+                parts = summary.replace('-', ' ').split()
+                return sum(int(p) for p in parts if p.isdigit())
+            except (ValueError, AttributeError):
+                return 0
+
+    return 0
+
+
+def _is_season_stats(leader_category: dict, game_status: str) -> bool:
+    """
+    Determine if leader data represents season stats or single-game stats.
+
+    Args:
+        leader_category: Leader category dict from ESPN API
+        game_status: Game status (STATUS_SCHEDULED, STATUS_FINAL, etc.)
+
+    Returns:
+        True = Season statistics (use for upcoming games)
+        False = Game statistics (use for completed games only)
+    """
+    category_name = leader_category.get('name', '')
+
+    # NBA: Category name changes
+    if 'PerGame' in category_name:
+        return True  # pointsPerGame = season average
+
+    # NFL: Leaders only present for scheduled games
+    if 'Leader' in category_name:
+        return True  # passingLeader = season totals
+
+    # If game is completed, assume game stats
+    if game_status in ['STATUS_FINAL', 'STATUS_FULL_TIME']:
+        # These are game-specific stats (who led in THIS game)
+        return False
+
+    # Default: scheduled/in-progress games have season stats
+    return True
+
+
+def _map_basketball_season_leaders(leaders_data: list, games_played: int) -> dict:
+    """
+    Map NBA/NCAAB season stats (API provides per-game, calculate totals).
+
+    Args:
+        leaders_data: List of leader categories from API
+        games_played: Number of games played this season
+
+    Returns:
+        Dict with basketball_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        per_game = player['value']
+        total = per_game * games_played if games_played > 0 else 0
+        position = athlete.get('position', {}).get('abbreviation', '')
+
+        if category['name'] == 'pointsPerGame':
+            result['basketball_top_scorer_name'] = athlete['displayName']
+            result['basketball_top_scorer_position'] = position
+            result['basketball_top_scorer_ppg'] = f"{per_game:.1f}"
+            result['basketball_top_scorer_total'] = f"{total:.0f}"
+
+        elif category['name'] == 'reboundsPerGame':
+            result['basketball_top_rebounder_name'] = athlete['displayName']
+            result['basketball_top_rebounder_rpg'] = f"{per_game:.1f}"
+            result['basketball_top_rebounder_total'] = f"{total:.0f}"
+
+        elif category['name'] == 'assistsPerGame':
+            result['basketball_top_assist_name'] = athlete['displayName']
+            result['basketball_top_assist_apg'] = f"{per_game:.1f}"
+            result['basketball_top_assist_total'] = f"{total:.0f}"
+
+    return result
+
+
+def _map_basketball_game_leaders(leaders_data: list) -> dict:
+    """
+    Map NBA/NCAAB game stats (actual performance in that game).
+
+    Args:
+        leaders_data: List of leader categories from API
+
+    Returns:
+        Dict with last_game_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        game_stat = player['value']
+
+        if category['name'] == 'points':
+            result['last_game_top_scorer_name'] = athlete['displayName']
+            result['last_game_top_scorer_points'] = f"{game_stat:.0f}"
+
+        elif category['name'] == 'rebounds':
+            result['last_game_top_rebounder_name'] = athlete['displayName']
+            result['last_game_top_rebounder_rebounds'] = f"{game_stat:.0f}"
+
+        elif category['name'] == 'assists':
+            result['last_game_top_assist_name'] = athlete['displayName']
+            result['last_game_top_assist_assists'] = f"{game_stat:.0f}"
+
+    return result
+
+
+def _map_football_season_leaders(leaders_data: list, games_played: int) -> dict:
+    """
+    Map NFL/NCAAF season stats (API provides totals, calculate per-game).
+
+    Args:
+        leaders_data: List of leader categories from API
+        games_played: Number of games played this season
+
+    Returns:
+        Dict with football_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        total_value = player['value']
+        per_game_value = total_value / games_played if games_played > 0 else 0
+        position = athlete.get('position', {}).get('abbreviation', '')
+
+        if category['name'] == 'passingLeader':
+            result['football_quarterback_name'] = athlete['displayName']
+            result['football_quarterback_position'] = position
+            result['football_quarterback_passing_yards'] = f"{total_value:.0f}"
+            result['football_quarterback_passing_ypg'] = f"{per_game_value:.1f}"
+
+        elif category['name'] == 'rushingLeader':
+            result['football_top_rusher_name'] = athlete['displayName']
+            result['football_top_rusher_position'] = position
+            result['football_top_rusher_yards'] = f"{total_value:.0f}"
+            result['football_top_rusher_ypg'] = f"{per_game_value:.1f}"
+
+        elif category['name'] == 'receivingLeader':
+            result['football_top_receiver_name'] = athlete['displayName']
+            result['football_top_receiver_position'] = position
+            result['football_top_receiver_yards'] = f"{total_value:.0f}"
+            result['football_top_receiver_ypg'] = f"{per_game_value:.1f}"
+
+    return result
+
+
+def _map_football_game_leaders(leaders_data: list) -> dict:
+    """
+    Map NFL/NCAAF game stats (actual performance in that game).
+
+    Args:
+        leaders_data: List of leader categories from API
+
+    Returns:
+        Dict with last_game_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        stat_value = player['value']
+
+        if category['name'] in ['passingLeader', 'passingYards']:
+            result['last_game_passing_leader_name'] = athlete['displayName']
+            result['last_game_passing_leader_yards'] = f"{stat_value:.0f}"
+
+        elif category['name'] in ['rushingLeader', 'rushingYards']:
+            result['last_game_rushing_leader_name'] = athlete['displayName']
+            result['last_game_rushing_leader_yards'] = f"{stat_value:.0f}"
+
+        elif category['name'] in ['receivingLeader', 'receivingYards']:
+            result['last_game_receiving_leader_name'] = athlete['displayName']
+            result['last_game_receiving_leader_yards'] = f"{stat_value:.0f}"
+
+    return result
+
+
+def _map_hockey_season_leaders(leaders_data: list, games_played: int) -> dict:
+    """
+    Map NHL season stats (API provides totals, calculate per-game).
+
+    Args:
+        leaders_data: List of leader categories from API
+        games_played: Number of games played this season
+
+    Returns:
+        Dict with hockey_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        total_value = player['value']
+        per_game_value = total_value / games_played if games_played > 0 else 0
+        position = athlete.get('position', {}).get('abbreviation', '')
+
+        if category['name'] in ['goals', 'goalsStat']:
+            result['hockey_top_scorer_name'] = athlete['displayName']
+            result['hockey_top_scorer_position'] = position
+            result['hockey_top_scorer_goals'] = f"{total_value:.0f}"
+            result['hockey_top_scorer_gpg'] = f"{per_game_value:.1f}"
+
+        elif category['name'] in ['assists', 'assistsStat']:
+            result['hockey_top_playmaker_name'] = athlete['displayName']
+            result['hockey_top_playmaker_position'] = position
+            result['hockey_top_playmaker_assists'] = f"{total_value:.0f}"
+            result['hockey_top_playmaker_apg'] = f"{per_game_value:.1f}"
+
+    return result
+
+
+def _map_baseball_leaders(leaders_data: list, games_played: int) -> dict:
+    """
+    Map MLB season stats (various stat types).
+
+    Args:
+        leaders_data: List of leader categories from API
+        games_played: Number of games played this season
+
+    Returns:
+        Dict with baseball_* prefixed variables
+    """
+    result = {}
+
+    for category in leaders_data:
+        if not category.get('leaders'):
+            continue
+
+        player = category['leaders'][0]
+        athlete = player['athlete']
+        position = athlete.get('position', {}).get('abbreviation', '')
+
+        if category['name'] == 'battingAverage':
+            result['baseball_top_hitter_name'] = athlete['displayName']
+            result['baseball_top_hitter_position'] = position
+            result['baseball_top_hitter_avg'] = player['displayValue']
+            result['baseball_top_hitter_hits'] = ''  # May not be in leader data
+
+        elif category['name'] == 'homeRuns':
+            total_hrs = player['value']
+            hr_rate = total_hrs / games_played if games_played > 0 else 0
+            result['baseball_power_hitter_name'] = athlete['displayName']
+            result['baseball_power_hitter_position'] = position
+            result['baseball_power_hitter_hrs'] = f"{total_hrs:.0f}"
+            result['baseball_power_hitter_hr_rate'] = f"{hr_rate:.2f}"
+
+    return result
+
+
+def _extract_player_leaders(competition: dict, team_id: str, league: str) -> dict:
+    """
+    Extract player leaders from competition data and calculate totals/averages.
+    Automatically detects if data is season stats or game stats.
+
+    Args:
+        competition: Competition object from ESPN scoreboard API
+        team_id: Our team's ESPN ID
+        league: League API path (e.g., 'basketball/nba')
+
+    Returns:
+        Dict with sport-specific leader variables (prefixed by sport)
+    """
+    # Find our team's competitor
+    competitor = None
+    for comp in competition.get('competitors', []):
+        if str(comp['team']['id']) == str(team_id):
+            competitor = comp
+            break
+
+    if not competitor or 'leaders' not in competitor:
+        return {}
+
+    leaders_data = competitor['leaders']
+    if not leaders_data or not isinstance(leaders_data, list) or len(leaders_data) == 0:
+        return {}
+
+    # Determine game status
+    game_status = competition.get('status', {}).get('type', {}).get('name', '')
+
+    # Determine if this is season or game stats
+    is_season = _is_season_stats(leaders_data[0], game_status)
+
+    # Get games played for calculations
+    games_played = _get_games_played(competitor)
+
+    # Map based on sport and data type
+    if 'basketball' in league:
+        if is_season:
+            return _map_basketball_season_leaders(leaders_data, games_played)
+        else:
+            return _map_basketball_game_leaders(leaders_data)
+
+    elif 'football' in league:
+        if is_season:
+            return _map_football_season_leaders(leaders_data, games_played)
+        else:
+            return _map_football_game_leaders(leaders_data)
+
+    elif 'hockey' in league:
+        if is_season:
+            return _map_hockey_season_leaders(leaders_data, games_played)
+        else:
+            # Could add game leaders for hockey if needed
+            return {}
+
+    elif 'baseball' in league:
+        return _map_baseball_leaders(leaders_data, games_played)
+
+    return {}
 
 
 def _calculate_h2h(our_team_id: str, opponent_id: str, schedule_data: dict) -> dict:
@@ -2019,14 +2696,17 @@ def _calculate_h2h(our_team_id: str, opponent_id: str, schedule_data: dict) -> d
     }
 
 
-def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_stats: dict = None, epg_timezone: str = 'America/New_York', schedule_data: dict = None) -> dict:
+def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_stats: dict = None, epg_timezone: str = 'America/New_York', schedule_data: dict = None, settings: dict = None) -> dict:
     """Process a single event - add templates, calculate times"""
     # Parse game datetime
     game_datetime = datetime.fromisoformat(event['date'].replace('Z', '+00:00'))
 
-    # Calculate end time
-    game_duration_hours = team.get('game_duration', 3.0)
+    # Calculate end time using game duration helper
+    game_duration_hours = get_game_duration(team, settings or {})
     end_datetime = game_datetime + timedelta(hours=game_duration_hours)
+
+    # Get our team ID (needed for various lookups)
+    our_team_id = str(team.get('espn_team_id', ''))
 
     # Calculate h2h data
     h2h = {}
@@ -2034,7 +2714,6 @@ def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_st
         # Identify opponent from event
         home_team = event.get('home_team', {})
         away_team = event.get('away_team', {})
-        our_team_id = str(team.get('espn_team_id', ''))
 
         is_home = str(home_team.get('id', '')) == our_team_id
         opponent = away_team if is_home else home_team
@@ -2043,6 +2722,24 @@ def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_st
         if opponent_id:
             h2h = _calculate_h2h(our_team_id, opponent_id, schedule_data)
 
+        # Calculate home/away streaks
+        streaks = _calculate_home_away_streaks(our_team_id, schedule_data)
+    else:
+        streaks = {'home_streak': '', 'away_streak': ''}
+
+    # Get head coach
+    api_path = team.get('api_path', '')
+    head_coach = _get_head_coach(our_team_id, api_path) if our_team_id and api_path else ''
+
+    # Extract player leaders (season stats for upcoming games)
+    player_leaders = {}
+    if 'competitions' in event and event['competitions']:
+        player_leaders = _extract_player_leaders(
+            event['competitions'][0],
+            our_team_id,
+            api_path
+        )
+
     # Build context for template resolution
     context = {
         'game': event,
@@ -2050,6 +2747,9 @@ def _process_event(event: dict, team: dict, team_stats: dict = None, opponent_st
         'team_stats': team_stats or {},
         'opponent_stats': opponent_stats or {},
         'h2h': h2h,
+        'streaks': streaks,
+        'head_coach': head_coach,
+        'player_leaders': player_leaders,
         'epg_timezone': epg_timezone
     }
 
@@ -2113,7 +2813,7 @@ if __name__ == '__main__':
     print(f"""
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
-║   Teamarr - Sports Team EPG Generator                      ║
+║   Teamarr - Dynamic Sports Team EPG Generator              ║
 ║                                                            ║
 ║   Web Interface: http://localhost:{port}                    ║
 ║   EPG File: http://localhost:{port}/teamarr.xml            ║

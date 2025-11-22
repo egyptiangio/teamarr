@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS teams (
     subtitle_template TEXT DEFAULT '{venue_full}',    -- Programme subtitle template
 
     -- Game Timing
-    game_duration REAL DEFAULT 3.0,       -- Game duration in hours
+    game_duration_mode TEXT DEFAULT 'default', -- 'default', 'sport', or 'custom'
+    game_duration_override REAL,          -- Custom override value (only used if mode='custom')
     timezone TEXT DEFAULT 'America/New_York', -- User's preferred timezone
 
     -- XMLTV Flags
@@ -42,10 +43,6 @@ CREATE TABLE IF NOT EXISTS teams (
     -- XMLTV Categories
     categories JSON DEFAULT '["Sports"]',
     -- Array of category strings, e.g., ["Sports", "Basketball", "HD", "Live"]
-
-    -- Video/Audio Quality
-    video_quality TEXT DEFAULT 'HDTV',    -- "HDTV", "4K", "SD"
-    audio_quality TEXT DEFAULT 'stereo',   -- "stereo", "surround", "mono"
 
     -- Schedule Filler: No Game Day
     no_game_enabled BOOLEAN DEFAULT 1,
@@ -99,10 +96,10 @@ CREATE TABLE IF NOT EXISTS teams (
         }
     ]',
 
-    -- Schedule Filler: Between Games
-    between_games_enabled BOOLEAN DEFAULT 1,
-    between_games_title TEXT DEFAULT '{team_name} Programming',
-    between_games_description TEXT DEFAULT 'Next game: {next_game_date} at {next_game_time} vs {next_opponent}',
+    -- Schedule Filler: Idle Days (Between Games / No Game Days)
+    idle_enabled BOOLEAN DEFAULT 1,
+    idle_title TEXT DEFAULT '{team_name} Programming',
+    idle_description TEXT DEFAULT 'Next game: {next_date} at {next_time} vs {next_opponent}',
 
     -- Simplified Pregame/Postgame Templates (alternative to complex JSON periods)
     pregame_title TEXT DEFAULT 'Pregame Coverage',
@@ -161,11 +158,14 @@ CREATE TABLE IF NOT EXISTS settings (
     cache_duration_hours INTEGER DEFAULT 24,
 
     -- XMLTV Settings
-    xmltv_generator_name TEXT DEFAULT 'Teamarr Sports EPG Generator',
+    xmltv_generator_name TEXT DEFAULT 'Teamarr - Dynamic Sports Team EPG Generator',
     xmltv_generator_url TEXT DEFAULT 'http://localhost:9195',
 
     -- Timezone
     default_timezone TEXT DEFAULT 'America/New_York',
+
+    -- Game Duration (global default in hours)
+    game_duration_default REAL DEFAULT 4.0,
 
     -- Web App Settings
     web_port INTEGER DEFAULT 9195,

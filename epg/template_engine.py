@@ -76,13 +76,11 @@ class TemplateEngine:
         # Team rank variables (clean fallback - empty if unranked)
         is_team_ranked = our_team_rank <= 25
         variables['team_rank'] = f"#{our_team_rank}" if is_team_ranked else ''
-        variables['team_rank_formatted'] = f"#{our_team_rank}" if is_team_ranked else 'Unranked'
         variables['is_ranked'] = 'true' if is_team_ranked else 'false'
 
         # Opponent rank variables (clean fallback - empty if unranked)
         is_opponent_ranked = opponent_rank <= 25
         variables['opponent_rank'] = f"#{opponent_rank}" if is_opponent_ranked else ''
-        variables['opponent_rank_formatted'] = f"#{opponent_rank}" if is_opponent_ranked else 'Unranked'
         variables['opponent_is_ranked'] = 'true' if is_opponent_ranked else 'false'
 
         # Ranked matchup (legacy - both teams ranked)
@@ -148,13 +146,6 @@ class TemplateEngine:
                 variables['minutes_until'] = str(max(0, minutes_until))
                 variables['days_until'] = str(max(0, days_until))
 
-                if hours_until > 0:
-                    variables['time_until_text'] = f"in {hours_until} hours"
-                elif minutes_until > 0:
-                    variables['time_until_text'] = f"in {minutes_until} minutes"
-                else:
-                    variables['time_until_text'] = "starting soon"
-
             except Exception:
                 pass
 
@@ -173,8 +164,6 @@ class TemplateEngine:
 
         variables['is_home'] = 'true' if is_home else 'false'
         variables['is_away'] = 'false' if is_home else 'true'
-        variables['is_home_game'] = 'true' if is_home else 'false'
-        variables['is_away_game'] = 'false' if is_home else 'true'
         variables['home_away_text'] = 'at home' if is_home else 'on the road'
         variables['vs_at'] = 'vs' if is_home else '@'
         variables['home_team'] = home_team.get('name', '')
@@ -252,26 +241,25 @@ class TemplateEngine:
         if streak_count_raw >= 2:
             variables['has_win_streak'] = 'true'
             variables['win_streak'] = str(streak_count)
-            variables['win_streak_text'] = f"{streak_count} game winning streak"
             variables['has_loss_streak'] = 'false'
             variables['loss_streak'] = '0'
-            variables['loss_streak_text'] = ''
         # Loss streaks (only show if 2+ games)
         elif streak_count_raw <= -2:
             variables['has_loss_streak'] = 'true'
             variables['loss_streak'] = str(streak_count)
-            variables['loss_streak_text'] = f"{streak_count} game losing streak"
             variables['has_win_streak'] = 'false'
             variables['win_streak'] = '0'
-            variables['win_streak_text'] = ''
         # No significant streak
         else:
             variables['has_win_streak'] = 'false'
             variables['has_loss_streak'] = 'false'
             variables['win_streak'] = '0'
             variables['loss_streak'] = '0'
-            variables['win_streak_text'] = ''
-            variables['loss_streak_text'] = ''
+
+        # Home/Away Streaks (calculated in app.py, passed via context)
+        streaks = context.get('streaks', {})
+        variables['home_streak'] = streaks.get('home_streak', '')
+        variables['away_streak'] = streaks.get('away_streak', '')
 
         # =====================================================================
         # HEAD-TO-HEAD (if enabled)
@@ -312,7 +300,7 @@ class TemplateEngine:
         is_playoff = series_data.get('type') == 'playoff' or game.get('season', {}).get('type') == 3
 
         variables['is_playoff'] = 'true' if is_playoff else 'false'
-        variables['is_regular_season'] = 'false' if is_playoff else 'true'
+        variables['is_regular_season'] = 'true' if not is_playoff else 'false'
 
         if is_playoff and series_data:
             # Playoff series information
@@ -342,17 +330,14 @@ class TemplateEngine:
                 variables['series_leader'] = variables['team_name']
                 variables['series_leader_abbrev'] = variables['team_abbrev']
                 variables['series_lead'] = str(team_series_wins - opp_series_wins)
-                variables['series_status'] = f"{variables['team_name']} leads {team_series_wins}-{opp_series_wins}"
             elif opp_series_wins > team_series_wins:
                 variables['series_leader'] = variables['opponent']
                 variables['series_leader_abbrev'] = variables['opponent_abbrev']
                 variables['series_lead'] = str(opp_series_wins - team_series_wins)
-                variables['series_status'] = f"{variables['opponent']} leads {opp_series_wins}-{team_series_wins}"
             else:
                 variables['series_leader'] = 'tied'
                 variables['series_leader_abbrev'] = ''
                 variables['series_lead'] = '0'
-                variables['series_status'] = f"Series tied {team_series_wins}-{team_series_wins}"
 
             # Elimination scenarios
             variables['is_elimination_game'] = 'true' if (team_series_wins == games_to_win - 1 or opp_series_wins == games_to_win - 1) else 'false'
@@ -360,20 +345,15 @@ class TemplateEngine:
             variables['is_must_win'] = 'true' if (opp_series_wins == games_to_win - 1) else 'false'
             variables['is_series_clinched'] = 'true' if (team_series_wins >= games_to_win or opp_series_wins >= games_to_win) else 'false'
 
-            # Can team advance with a win?
+            # Series clinch/elimination text
             if team_series_wins == games_to_win - 1:
-                variables['can_advance'] = 'true'
                 variables['series_clinch_text'] = f"Win advances to next round"
             else:
-                variables['can_advance'] = 'false'
                 variables['series_clinch_text'] = ''
 
-            # Will team be eliminated with a loss?
             if opp_series_wins == games_to_win - 1:
-                variables['can_be_eliminated'] = 'true'
                 variables['elimination_text'] = f"Loss eliminates {variables['team_name']}"
             else:
-                variables['can_be_eliminated'] = 'false'
                 variables['elimination_text'] = ''
 
             # Series game number
@@ -394,13 +374,10 @@ class TemplateEngine:
             variables['series_leader'] = ''
             variables['series_leader_abbrev'] = ''
             variables['series_lead'] = '0'
-            variables['series_status'] = ''
             variables['is_elimination_game'] = 'false'
             variables['is_clinch_game'] = 'false'
             variables['is_must_win'] = 'false'
             variables['is_series_clinched'] = 'false'
-            variables['can_advance'] = 'false'
-            variables['can_be_eliminated'] = 'false'
             variables['series_clinch_text'] = ''
             variables['elimination_text'] = ''
             variables['series_game_number'] = '0'
@@ -415,15 +392,6 @@ class TemplateEngine:
 
         variables['playoff_seed'] = self._format_rank(playoff_seed)
         variables['games_back'] = f"{games_back:.1f}" if games_back > 0 else "0.0"
-
-        # Determine playoff position
-        # NBA/NHL: top 8 seeds make playoffs
-        # NFL: top 7 seeds make playoffs
-        # Simplified: if seed exists and <= 8, in playoffs
-        if playoff_seed > 0 and playoff_seed <= 8:
-            variables['playoff_position'] = 'in playoff position'
-        else:
-            variables['playoff_position'] = 'outside playoffs'
 
 
         # =====================================================================
@@ -472,12 +440,10 @@ class TemplateEngine:
             # Opponent is home team - use opponent's overall record for home_team_record
             variables['home_team_record'] = variables.get('opponent_record', '0-0')
 
-        # Conference record already available from schedule API competitor.records
-        # Last 5/10 would need historical calculation - future implementation
-        variables['last_5_record'] = ''
-        variables['last_10_record'] = ''
-        variables['recent_form'] = ''
-        variables['conference_record'] = ''
+        # Last 5/10 and recent form calculated in app.py, passed via context
+        variables['last_5_record'] = streaks.get('last_5_record', '')
+        variables['last_10_record'] = streaks.get('last_10_record', '')
+        variables['recent_form'] = streaks.get('recent_form', '')
 
         # =====================================================================
         # STATISTICS (if enabled)
@@ -491,36 +457,49 @@ class TemplateEngine:
         variables['opponent_ppg'] = f"{opponent_stats.get('ppg', 0):.1f}"
         variables['opponent_papg'] = f"{opponent_stats.get('papg', 0):.1f}"
 
-        # Rankings not available from API - set empty
-        variables['team_ppg_rank'] = ''
-        variables['opponent_ppg_rank'] = ''
-        variables['team_papg_rank'] = ''
-        variables['opponent_papg_rank'] = ''
-
         # =====================================================================
-        # PLAYERS (if enabled)
+        # ROSTERS AND PLAYER STATS
         # =====================================================================
 
-        players = team_stats.get('players', {})
+        # Head Coach (all sports)
+        variables['head_coach'] = context.get('head_coach', '')
 
-        top_scorer = players.get('top_scorer', {})
-        variables['top_scorer_name'] = top_scorer.get('name', '')
-        variables['top_scorer_ppg'] = f"{top_scorer.get('ppg', 0):.1f}"
-        variables['top_scorer_position'] = top_scorer.get('position', '')
+        # Player Leaders (sport-specific, from context)
+        player_leaders = context.get('player_leaders', {})
 
-        top_rebounder = players.get('top_rebounder', {})
-        variables['top_rebounder_name'] = top_rebounder.get('name', '')
-        variables['top_rebounder_rpg'] = f"{top_rebounder.get('rpg', 0):.1f}"
+        # Set all possible player leader variables to empty by default
+        # Basketball variables
+        for var in ['basketball_top_scorer_name', 'basketball_top_scorer_position',
+                    'basketball_top_scorer_ppg', 'basketball_top_scorer_total',
+                    'basketball_top_rebounder_name', 'basketball_top_rebounder_rpg',
+                    'basketball_top_rebounder_total',
+                    'basketball_top_assist_name', 'basketball_top_assist_apg',
+                    'basketball_top_assist_total']:
+            variables[var] = player_leaders.get(var, '')
 
-        top_assist = players.get('top_assist', {})
-        variables['top_assist_name'] = top_assist.get('name', '')
-        variables['top_assist_apg'] = f"{top_assist.get('apg', 0):.1f}"
+        # Football variables
+        for var in ['football_quarterback_name', 'football_quarterback_position',
+                    'football_quarterback_passing_yards', 'football_quarterback_passing_ypg',
+                    'football_top_rusher_name', 'football_top_rusher_position',
+                    'football_top_rusher_yards', 'football_top_rusher_ypg',
+                    'football_top_receiver_name', 'football_top_receiver_position',
+                    'football_top_receiver_yards', 'football_top_receiver_ypg']:
+            variables[var] = player_leaders.get(var, '')
 
-        injuries = players.get('injuries', [])
-        variables['has_injuries'] = 'true' if injuries else 'false'
-        variables['injury_count'] = str(len(injuries))
-        variables['injury_list'] = ', '.join(injuries)
-        variables['injury_status'] = 'dealing with injuries' if injuries else 'healthy'
+        # Hockey variables
+        for var in ['hockey_top_scorer_name', 'hockey_top_scorer_position',
+                    'hockey_top_scorer_goals', 'hockey_top_scorer_gpg',
+                    'hockey_top_playmaker_name', 'hockey_top_playmaker_position',
+                    'hockey_top_playmaker_assists', 'hockey_top_playmaker_apg']:
+            variables[var] = player_leaders.get(var, '')
+
+        # Baseball variables
+        for var in ['baseball_top_hitter_name', 'baseball_top_hitter_position',
+                    'baseball_top_hitter_avg', 'baseball_top_hitter_hits',
+                    'baseball_power_hitter_name', 'baseball_power_hitter_position',
+                    'baseball_power_hitter_hrs', 'baseball_power_hitter_hr_rate']:
+            variables[var] = player_leaders.get(var, '')
+
 
         # =====================================================================
         # GAME STATUS (for live games)
@@ -574,9 +553,6 @@ class TemplateEngine:
         variables['is_final'] = 'true' if is_final else 'false'
 
         if is_final and our_score > 0 and opp_score > 0:
-            # Final scores
-            variables['final_score'] = f"{our_score}-{opp_score}"
-
             # Score differential
             abs_diff = abs(score_diff)
             variables['score_differential'] = str(abs_diff)
@@ -587,12 +563,10 @@ class TemplateEngine:
                 variables['result'] = 'win'
                 variables['result_text'] = 'defeated'
                 variables['result_verb'] = 'beat'
-                variables['outcome'] = f"{variables['team_name']} won"
             else:
                 variables['result'] = 'loss'
                 variables['result_text'] = 'lost to'
                 variables['result_verb'] = 'fell to'
-                variables['outcome'] = f"{variables['team_name']} lost"
 
             # Game summary (blowout, close, overtime)
             if abs_diff >= 20:
@@ -628,24 +602,17 @@ class TemplateEngine:
                 variables['is_overtime'] = 'false'
                 variables['overtime_text'] = ''
 
-            # Scoring run (if available in game data)
-            # This would need to be extracted from play-by-play data if available
-            variables['scoring_run'] = game.get('scoring_run', '')
-
         else:
             # Game not final - set empty defaults
-            variables['final_score'] = ''
             variables['score_differential'] = '0'
             variables['score_differential_text'] = ''
             variables['result'] = ''
             variables['result_text'] = ''
             variables['result_verb'] = ''
-            variables['outcome'] = ''
             variables['game_summary'] = ''
             variables['game_summary_text'] = ''
             variables['is_overtime'] = 'false'
             variables['overtime_text'] = ''
-            variables['scoring_run'] = ''
 
         # =====================================================================
         # SEASON CONTEXT
@@ -657,7 +624,6 @@ class TemplateEngine:
         variables['season_type'] = season.get('type', 'regular')
         variables['season_year'] = str(season.get('year', ''))
         variables['is_preseason'] = 'true' if season_type_id == 1 else 'false'
-        variables['is_playoffs'] = 'true' if season_type_id == 3 else 'false'
 
         # =====================================================================
         # SPECIAL GAME FLAGS
@@ -673,11 +639,29 @@ class TemplateEngine:
 
         last_game = context.get('last_game', {})
         variables['last_opponent'] = last_game.get('opponent', '')
+        variables['last_opponent_record'] = last_game.get('opponent_record', '')
         variables['last_date'] = last_game.get('date', '')
         variables['last_matchup'] = last_game.get('matchup', '')
         variables['last_result'] = last_game.get('result', '')  # "Win", "Loss", or "Tie"
         variables['last_score'] = last_game.get('score', '')
         variables['last_score_abbrev'] = last_game.get('score_abbrev', '')
+
+        # Last game player leaders (game-specific performance)
+        # Basketball
+        variables['last_game_top_scorer_name'] = last_game.get('last_game_top_scorer_name', '')
+        variables['last_game_top_scorer_points'] = last_game.get('last_game_top_scorer_points', '')
+        variables['last_game_top_rebounder_name'] = last_game.get('last_game_top_rebounder_name', '')
+        variables['last_game_top_rebounder_rebounds'] = last_game.get('last_game_top_rebounder_rebounds', '')
+        variables['last_game_top_assist_name'] = last_game.get('last_game_top_assist_name', '')
+        variables['last_game_top_assist_assists'] = last_game.get('last_game_top_assist_assists', '')
+
+        # Football
+        variables['last_game_passing_leader_name'] = last_game.get('last_game_passing_leader_name', '')
+        variables['last_game_passing_leader_yards'] = last_game.get('last_game_passing_leader_yards', '')
+        variables['last_game_rushing_leader_name'] = last_game.get('last_game_rushing_leader_name', '')
+        variables['last_game_rushing_leader_yards'] = last_game.get('last_game_rushing_leader_yards', '')
+        variables['last_game_receiving_leader_name'] = last_game.get('last_game_receiving_leader_name', '')
+        variables['last_game_receiving_leader_yards'] = last_game.get('last_game_receiving_leader_yards', '')
 
         # =====================================================================
         # TODAY'S GAME (completed game from today only - for postgame)
@@ -692,11 +676,16 @@ class TemplateEngine:
 
         next_game = context.get('next_game', {})
         variables['next_opponent'] = next_game.get('opponent', '')
+        variables['next_opponent_record'] = next_game.get('opponent_record', '')
         variables['next_date'] = next_game.get('date', '')
         variables['next_time'] = next_game.get('time', '')
         variables['next_datetime'] = next_game.get('datetime', '')
         variables['next_matchup'] = next_game.get('matchup', '')
         variables['next_venue'] = next_game.get('venue', '')
+
+        # Legacy/alias variables for backwards compatibility
+        variables['next_game_date'] = next_game.get('date', '')
+        variables['next_game_time'] = next_game.get('time', '')
 
 
         # =====================================================================
@@ -743,8 +732,6 @@ class TemplateEngine:
             # Favorite/Underdog status
             variables['is_favorite'] = 'true' if our_odds.get('favorite', False) else 'false'
             variables['is_underdog'] = 'true' if our_odds.get('underdog', False) else 'false'
-            variables['opponent_is_favorite'] = 'true' if opp_odds.get('favorite', False) else 'false'
-            variables['opponent_is_underdog'] = 'true' if opp_odds.get('underdog', False) else 'false'
 
             # Money line
             our_moneyline = our_odds.get('moneyLine', 0)
@@ -797,7 +784,221 @@ class TemplateEngine:
             variables['spread_category'] = ''
             variables['spread_category_text'] = ''
 
+        # =====================================================================
+        # BROADCAST INFORMATION
+        # =====================================================================
+
+        broadcasts = competition.get('broadcasts', [])
+
+        # Determine if team is home or away
+        home_team_obj = home_team if game else {}
+        our_team_id_str = str(team_config.get('espn_team_id', ''))
+        is_home_game = str(home_team_obj.get('id', '')) == our_team_id_str
+
+        # Get broadcast variables
+        variables['broadcast_simple'] = self._get_broadcast_simple(broadcasts, is_home_game)
+        variables['broadcast_network'] = self._get_broadcast_network(broadcasts, is_home_game)
+        variables['broadcast_national_network'] = self._get_broadcast_national_network(broadcasts)
+        variables['is_national_broadcast'] = self._is_national_broadcast(broadcasts)
+
         return variables
+
+    def _get_broadcast_simple(self, broadcasts: List[Dict], team_is_home: bool) -> str:
+        """
+        Get all broadcast networks in priority order.
+        Returns comma-separated list of networks.
+        Filters out radio and subscription packages (League Pass, etc.)
+        """
+        if not broadcasts:
+            return ""
+
+        # Packages to skip (noise)
+        SKIP_PACKAGES = [
+            'NBA League Pass',
+            'NHL.TV',
+            'MLB.TV',
+            'MLS Season Pass'
+        ]
+
+        # Filter out radio broadcasts and subscription packages
+        usable = [b for b in broadcasts
+                  if b.get('type', {}).get('shortName', '').upper() != 'RADIO' and
+                     b.get('media', {}).get('shortName', '') not in SKIP_PACKAGES]
+
+        if not usable:
+            return ""
+
+        # Separate by type and market
+        national_tv = []
+        national_streaming = []
+        team_tv = []
+        team_streaming = []
+        other_tv = []
+        other_streaming = []
+
+        team_market = "Home" if team_is_home else "Away"
+
+        for b in usable:
+            network = b.get('media', {}).get('shortName', '')
+            if not network:
+                continue
+
+            market = b.get('market', {}).get('type')
+            btype = b.get('type', {}).get('shortName', '').upper()
+
+            # Categorize by market and type
+            if market == 'National':
+                if btype == 'TV':
+                    national_tv.append(network)
+                else:
+                    national_streaming.append(network)
+            elif market == team_market:
+                if btype == 'TV':
+                    team_tv.append(network)
+                else:
+                    team_streaming.append(network)
+            else:
+                # null market or other (EPL, international)
+                if btype == 'TV':
+                    other_tv.append(network)
+                else:
+                    other_streaming.append(network)
+
+        # Collect all networks in priority order
+        all_networks = []
+
+        # Priority 1: National TV
+        all_networks.extend(national_tv)
+        # Priority 2: Team TV
+        all_networks.extend(team_tv)
+        # Priority 3: National streaming
+        all_networks.extend(national_streaming)
+        # Priority 4: Team streaming
+        all_networks.extend(team_streaming)
+        # Priority 5: Other TV (EPL, MLS, etc)
+        all_networks.extend(other_tv)
+        # Priority 6: Other streaming
+        all_networks.extend(other_streaming)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_networks = []
+        for network in all_networks:
+            if network not in seen:
+                seen.add(network)
+                unique_networks.append(network)
+
+        return ", ".join(unique_networks) if unique_networks else ""
+
+    def _get_broadcast_network(self, broadcasts: List[Dict], team_is_home: bool) -> str:
+        """
+        Get team's primary broadcast network (single network only).
+        Returns the most relevant network based on priority.
+        """
+        if not broadcasts:
+            return ""
+
+        SKIP_PACKAGES = [
+            'NBA League Pass',
+            'NHL.TV',
+            'MLB.TV',
+            'MLS Season Pass'
+        ]
+
+        # Filter out radio and subscription packages
+        usable = [b for b in broadcasts
+                  if b.get('type', {}).get('shortName', '').upper() != 'RADIO' and
+                     b.get('media', {}).get('shortName', '') not in SKIP_PACKAGES]
+
+        if not usable:
+            return ""
+
+        team_market = "Home" if team_is_home else "Away"
+
+        # Priority 1: National TV
+        for b in usable:
+            if b.get('market', {}).get('type') == 'National' and \
+               b.get('type', {}).get('shortName', '').upper() == 'TV':
+                return b.get('media', {}).get('shortName', '')
+
+        # Priority 2: Team regional TV
+        for b in usable:
+            if b.get('market', {}).get('type') == team_market and \
+               b.get('type', {}).get('shortName', '').upper() == 'TV':
+                return b.get('media', {}).get('shortName', '')
+
+        # Priority 3: National streaming
+        for b in usable:
+            if b.get('market', {}).get('type') == 'National' and \
+               b.get('type', {}).get('shortName', '').upper() in ['STREAMING', 'SUBSCRIPTION PACKAGE']:
+                return b.get('media', {}).get('shortName', '')
+
+        # Priority 4: Team streaming
+        for b in usable:
+            if b.get('market', {}).get('type') == team_market and \
+               b.get('type', {}).get('shortName', '').upper() in ['STREAMING', 'SUBSCRIPTION PACKAGE']:
+                return b.get('media', {}).get('shortName', '')
+
+        # Priority 5: Any TV (null market - EPL, MLS)
+        for b in usable:
+            if b.get('type', {}).get('shortName', '').upper() == 'TV':
+                return b.get('media', {}).get('shortName', '')
+
+        # Priority 6: Any streaming
+        for b in usable:
+            if b.get('type', {}).get('shortName', '').upper() in ['STREAMING', 'SUBSCRIPTION PACKAGE']:
+                return b.get('media', {}).get('shortName', '')
+
+        return ""
+
+    def _get_broadcast_national_network(self, broadcasts: List[Dict]) -> str:
+        """
+        Get national broadcast network(s) only.
+        Returns comma-separated list of networks with market type = "National".
+        """
+        if not broadcasts:
+            return ""
+
+        SKIP_PACKAGES = [
+            'NBA League Pass',
+            'NHL.TV',
+            'MLB.TV',
+            'MLS Season Pass'
+        ]
+
+        # Filter to National market + TV/Streaming only (no radio, no packages)
+        national = [b for b in broadcasts
+                    if b.get('market', {}).get('type') == 'National' and
+                       b.get('type', {}).get('shortName', '').upper() != 'RADIO' and
+                       b.get('media', {}).get('shortName', '') not in SKIP_PACKAGES]
+
+        if not national:
+            return ""
+
+        networks = [b.get('media', {}).get('shortName', '') for b in national if b.get('media', {}).get('shortName')]
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique = []
+        for n in networks:
+            if n not in seen:
+                seen.add(n)
+                unique.append(n)
+
+        return ", ".join(unique) if unique else ""
+
+    def _is_national_broadcast(self, broadcasts: List[Dict]) -> str:
+        """
+        Check if game has a national broadcast.
+        Returns "true" or "false" as string.
+        """
+        if not broadcasts:
+            return "false"
+
+        # Check if any broadcast has market type = "National"
+        has_national = any(b.get('market', {}).get('type') == 'National' for b in broadcasts)
+
+        return "true" if has_national else "false"
 
     def select_description(self, default_description: str, description_options: Any, context: Dict[str, Any]) -> str:
         """

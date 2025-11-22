@@ -1,8 +1,8 @@
-# Teamarr
+# Teamarr - Dynamic Sports Team EPG Generator
 
 **Transform ESPN's sports schedules into professional XMLTV EPG files for your IPTV system.**
 
-Self-hosted sports EPG generator with support for 15 major leagues (NBA, NFL, MLB, NHL, MLS, NWSL, EPL, EFL Championship, La Liga, Bundesliga, Serie A, Ligue 1, NCAA Football, NCAA Men's/Women's Basketball) and 188+ template variables.
+Self-hosted dynamic sports EPG generator with support for 15 major leagues (NBA, NFL, MLB, NHL, MLS, NWSL, EPL, EFL Championship, La Liga, Bundesliga, Serie A, Ligue 1, NCAA Football, NCAA Men's/Women's Basketball) and 188+ template variables.
 
 ---
 

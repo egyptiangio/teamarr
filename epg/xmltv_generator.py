@@ -8,7 +8,7 @@ import hashlib
 class XMLTVGenerator:
     """Generate XMLTV format EPG files"""
 
-    def __init__(self, generator_name: str = "Teamarr Sports EPG Generator",
+    def __init__(self, generator_name: str = "Teamarr - Dynamic Sports Team EPG Generator",
                  generator_url: str = "http://localhost:9195"):
         self.generator_name = generator_name
         self.generator_url = generator_url
@@ -28,8 +28,16 @@ class XMLTVGenerator:
         """
         # Create root element
         tv = ET.Element('tv')
-        tv.set('generator-info-name', self.generator_name)
-        tv.set('generator-info-url', self.generator_url)
+
+        # Get generator info from settings (can be overridden/excluded)
+        generator_name = settings.get('xmltv_generator_name', self.generator_name)
+        generator_url = settings.get('xmltv_generator_url', self.generator_url)
+
+        # Only add attributes if not empty
+        if generator_name:
+            tv.set('generator-info-name', generator_name)
+        if generator_url:
+            tv.set('generator-info-url', generator_url)
 
         # Add channels (one per team)
         for team in teams:
@@ -39,7 +47,7 @@ class XMLTVGenerator:
         for team in teams:
             team_events = events.get(str(team['id']), [])
             for event in team_events:
-                self._add_programme(tv, team, event)
+                self._add_programme(tv, team, event, settings)
 
         # Convert to pretty XML string
         xml_str = self._prettify(tv)
@@ -63,7 +71,7 @@ class XMLTVGenerator:
             icon = ET.SubElement(channel, 'icon')
             icon.set('src', team['team_logo_url'])
 
-    def _add_programme(self, parent: ET.Element, team: Dict, event: Dict):
+    def _add_programme(self, parent: ET.Element, team: Dict, event: Dict, settings: Dict):
         """
         Add programme element for a game/event
 
@@ -120,8 +128,12 @@ class XMLTVGenerator:
         flags = team.get('flags', {})
         if flags.get('date', False):
             date_elem = ET.SubElement(programme, 'date')
-            # Use the start date of the event
-            date_elem.text = event['start_datetime'].strftime('%Y%m%d')
+            # Use the start date of the event in user's timezone
+            # Convert from UTC to user's timezone for correct date
+            from zoneinfo import ZoneInfo
+            user_tz = settings.get('default_timezone', 'America/New_York')
+            local_dt = event['start_datetime'].astimezone(ZoneInfo(user_tz))
+            date_elem.text = local_dt.strftime('%Y%m%d')
 
         # Icon (team logo)
         if team.get('team_logo_url'):
@@ -183,11 +195,17 @@ class XMLTVGenerator:
         return '\n'.join(lines)
 
     def _add_doctype(self, xml_str: str) -> str:
-        """Add XML declaration and DOCTYPE"""
+        """Add XML declaration, watermark comment, and DOCTYPE"""
         declaration = '<?xml version="1.0" encoding="UTF-8"?>'
+        watermark = (
+            '<!--\n'
+            '  Generated with Teamarr - Dynamic Sports Team EPG Generator\n'
+            '  https://github.com/egyptiangio/teamarr\n'
+            '-->'
+        )
         doctype = '<!DOCTYPE tv SYSTEM "xmltv.dtd">'
 
-        return f"{declaration}\n{doctype}\n{xml_str}"
+        return f"{declaration}\n{watermark}\n{doctype}\n{xml_str}"
 
     def calculate_file_hash(self, xml_content: str) -> str:
         """Calculate SHA256 hash of XML content for change detection"""

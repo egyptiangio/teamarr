@@ -76,6 +76,22 @@
             </div>
         </fieldset>
 
+        <fieldset>
+            <legend><h3>XMLTV Generator Info</h3></legend>
+
+            <div class="form-group">
+                <label for="xmltv_generator_name">Generator Name</label>
+                <input type="text" name="xmltv_generator_name" id="xmltv_generator_name" value="{{ settings.xmltv_generator_name }}">
+                <small class="help-text">Name shown in XMLTV generator-info-name attribute (leave empty to exclude from EPG)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="xmltv_generator_url">Generator URL</label>
+                <input type="text" name="xmltv_generator_url" id="xmltv_generator_url" value="{{ settings.xmltv_generator_url }}">
+                <small class="help-text">URL shown in XMLTV generator-info-url attribute (leave empty to exclude from EPG)</small>
+            </div>
+        </fieldset>
+
         <div class="form-actions">
             <button type="submit" class="btn btn-success">💾 Save Settings</button>
             <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>

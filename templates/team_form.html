@@ -516,15 +516,55 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="game_duration">Game Duration (hours) *</label>
-                            <input type="number" name="game_duration" id="game_duration" step="0.5" min="1" max="6" value="{{ team.game_duration if team else 6.0 }}" required>
-                            <small class="help-text">NBA: 3.0, NFL: 3.5, Soccer: 2.0</small>
+                            <label>Game Duration (hours)</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="radio" name="game_duration_mode" value="default"
+                                           {% if not team or team.game_duration_mode == 'default' %}checked{% endif %}
+                                           onchange="updateGameDurationMode()">
+                                    <span>Use global default (4.0 hours)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="radio" name="game_duration_mode" value="sport"
+                                           {% if team and team.game_duration_mode == 'sport' %}checked{% endif %}
+                                           onchange="updateGameDurationMode()">
+                                    <span>Use recommended for sport (Basketball: 3.0, Football: 3.5, Soccer: 2.0, Baseball: 3.0, Hockey: 3.0)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="radio" name="game_duration_mode" value="custom"
+                                           {% if team and team.game_duration_mode == 'custom' %}checked{% endif %}
+                                           onchange="updateGameDurationMode()">
+                                    <span>Custom:</span>
+                                    <input type="number" name="game_duration_override" id="game_duration_override"
+                                           step="0.5" min="1" max="8"
+                                           value="{{ team.game_duration_override if team and team.game_duration_override else '' }}"
+                                           placeholder="e.g., 3.5"
+                                           {% if not team or team.game_duration_mode != 'custom' %}disabled{% endif %}
+                                           style="width: 100px;">
+                                    <span>hours</span>
+                                </label>
+                            </div>
+                            <small class="help-text">Choose how to set game duration for EPG programs</small>
                         </div>
 
                         <div class="form-group">
-                            <label for="categories">EPG Categories (comma-separated)</label>
-                            <input type="text" name="categories" id="categories" value="{{ (team.categories | join(', ')) if team and team.categories is not none else '' }}">
-                            <small class="help-text">Categories shown in EPG guide</small>
+                            <label>EPG Categories</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="checkbox" name="category_sports" id="category_sports"
+                                           {% if team and team.categories and 'Sports' in team.categories %}checked{% endif %}>
+                                    <span>Sports</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="checkbox" name="category_sport_variable" id="category_sport_variable"
+                                           {% if team and team.categories and '{sport}' in team.categories %}checked{% endif %}>
+                                    <span><code>{sport}</code> - Auto-populates with team's sport (Basketball, Football, etc.)</span>
+                                </label>
+                            </div>
+                            <label for="categories_custom" style="font-weight: normal; margin-top: 0.5rem;">Custom Categories (comma-separated)</label>
+                            <input type="text" name="categories_custom" id="categories_custom"
+                                   value="{{ (team.categories | reject('in', ['Sports', '{sport}']) | join(', ')) if team and team.categories is not none else '' }}">
+                            <small class="help-text">Categories shown in EPG guide. Check common ones above or add custom categories.</small>
                         </div>
 
                         <div class="form-group">
@@ -606,6 +646,9 @@
                             </ul>
                         </div>
 
+                        <!-- Variable Helper (Collapsible) -->
+                        <div id="template-vars-conditionals"></div>
+
                         <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
                             <button type="button" class="btn btn-primary" onclick="conditionsAddNew()" type="button">+ Add Condition</button>
                             <button type="button" class="btn btn-secondary" onclick="showPresetLibrary()" type="button">📚 Preset Library</button>
@@ -673,17 +716,17 @@
                         <h4 style="margin: 1.5rem 0 0.5rem 0;">Idle Day Content</h4>
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" name="no_game_enabled" id="no_game_enabled" {% if not team or team.no_game_enabled %}checked{% endif %}>
+                                <input type="checkbox" name="idle_enabled" id="idle_enabled" {% if not team or team.idle_enabled %}checked{% endif %}>
                                 Enable Idle Day EPG Entries
                             </label>
                         </div>
                         <div class="form-group">
-                            <label for="no_game_title">Idle Day Title</label>
-                            <input type="text" name="no_game_title" id="no_game_title" value="{{ team.no_game_title if team else 'No Game Today' }}" class="template-field">
+                            <label for="idle_title">Idle Day Title</label>
+                            <input type="text" name="idle_title" id="idle_title" value="{{ team.idle_title if team else '{team_name} Programming' }}" class="template-field">
                         </div>
                         <div class="form-group">
-                            <label for="no_game_description">Idle Day Description</label>
-                            <input type="text" name="no_game_description" id="no_game_description" value="{{ team.no_game_description if team else '{team_name} does not play today. Next game: {next_game_opponent} on {next_game_date}' }}" class="template-field">
+                            <label for="idle_description">Idle Day Description</label>
+                            <input type="text" name="idle_description" id="idle_description" value="{{ team.idle_description if team else 'Next game: {next_date} at {next_time} vs {next_opponent}' }}" class="template-field">
                         </div>
                     </fieldset>
                 </div>
@@ -704,25 +747,25 @@
                 </div>
                 <div class="preview-item">
                     <strong>Subtitle</strong>
-                    <span id="sidebar-preview-subtitle">State Farm Arena, Atlanta</span>
+                    <span id="sidebar-preview-subtitle">Kia Center, Orlando</span>
                 </div>
                 <div class="preview-item">
                     <strong>Description</strong>
-                    <span id="sidebar-preview-description">Team (12-2) takes on Opponent (8-6) at Venue</span>
+                    <span id="sidebar-preview-description">Pistons (13-2) take on Magic (9-7) at Kia Center</span>
                 </div>
 
                 <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">Filler Programs</h4>
                 <div class="preview-item">
                     <strong>Pregame</strong>
-                    <span id="sidebar-preview-pregame">Pregame Coverage - Pistons play Hawks today at 7:30 PM</span>
+                    <span id="sidebar-preview-pregame">Pregame Coverage - Pistons play Magic today at 7:00 PM EST</span>
                 </div>
                 <div class="preview-item">
                     <strong>Postgame</strong>
-                    <span id="sidebar-preview-postgame">Postgame Recap - Pistons defeated Hawks - Final: 115-108</span>
+                    <span id="sidebar-preview-postgame">Postgame Recap - Pistons defeated Heat - Final: 125-124</span>
                 </div>
                 <div class="preview-item">
                     <strong>Idle Day</strong>
-                    <span id="sidebar-preview-idle">No Game Today - Pistons don't play. Next: Celtics on Nov 22</span>
+                    <span id="sidebar-preview-idle">Pistons Programming - Next game: LA Clippers on November 25</span>
                 </div>
 
                 <small style="display: block; margin-top: 1rem; color: var(--text-muted); font-size: 0.8rem;">
@@ -768,10 +811,22 @@
                     <input type="checkbox" value="description_options" checked> Conditions
                 </label>
                 <label class="field-checkbox-label">
+                    <input type="checkbox" value="categories" checked> Categories
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="game_duration_override" checked> Game Duration
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="pregame_enabled" checked> Pregame Enabled
+                </label>
+                <label class="field-checkbox-label">
                     <input type="checkbox" value="pregame_title" checked> Pregame Title
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="pregame_description" checked> Pregame Description
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="postgame_enabled" checked> Postgame Enabled
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="postgame_title" checked> Postgame Title
@@ -780,10 +835,10 @@
                     <input type="checkbox" value="postgame_description" checked> Postgame Description
                 </label>
                 <label class="field-checkbox-label">
-                    <input type="checkbox" value="between_games_title" checked> Between Games Title
+                    <input type="checkbox" value="idle_title" checked> Idle Day Title
                 </label>
                 <label class="field-checkbox-label">
-                    <input type="checkbox" value="between_games_description" checked> Between Games Description
+                    <input type="checkbox" value="idle_description" checked> Idle Day Description
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="include_new_tag" checked> New Tag
@@ -840,40 +895,150 @@ let teamsCache = [];
 let conditions = {{ description_options_json | default('[]') | safe }};
 let conditionCounter = 0;
 
-// Sample data for preview (league-aware in production)
-const sampleData = {
+// ============================================================================
+// GAME DURATION MODE TOGGLE
+// ============================================================================
+function updateGameDurationMode() {
+    const customRadio = document.querySelector('input[name="game_duration_mode"][value="custom"]');
+    const input = document.getElementById('game_duration_override');
+
+    if (customRadio && customRadio.checked) {
+        input.disabled = false;
+        input.focus();
+    } else {
+        input.disabled = true;
+    }
+}
+
+// Sample data for preview - will be populated from API
+let sampleData = {
+    // Fallback: preserve team_name from template if available
     team_name: '{{ team.team_name if team else "Detroit Pistons" }}',
-    opponent: 'Atlanta Hawks',
-    sport: 'Basketball',
-    venue: 'State Farm Arena',
-    venue_full: 'State Farm Arena, Atlanta',
-    game_time: '7:30 PM EST',
-    team_record: '12-2',
-    opponent_record: '8-6',
-    matchup: 'DET @ ATL',
     team_abbrev: 'DET',
-    opponent_abbrev: 'ATL',
-    win_streak: '5',
-    team_rank_formatted: '#8',
-    next_opponent: 'Boston Celtics',
-    next_date: 'November 22',
-    last_opponent: 'Chicago Bulls',
+    team_record: '13-2',
+    sport: 'Basketball',
+    league: 'NBA',
+
+    // Current Game (vs Orlando Magic)
+    opponent: 'Orlando Magic',
+    opponent_abbrev: 'ORL',
+    opponent_record: '9-7',
+    matchup: 'DET @ ORL',
+    venue: 'Kia Center',
+    venue_full: 'Kia Center, Orlando',
+    game_time: '7:00 PM EST',
+    game_date: 'November 23, 2025',
+
+    // Team Stats
+    win_streak: '11',
+    loss_streak: '0',
+    home_streak: '7-0 at home',
+    away_streak: '5-0 on road',
+    last_5_record: '5-0',
+    last_10_record: '9-1',
+    recent_form: 'WWWWW',
+    playoff_seed: '1',
+    games_back: '0.0',
+    team_rank_formatted: '#1',
+    team_ppg: '118.9',
+    team_papg: '112.1',
+    wins: '13',
+    losses: '2',
+    win_pct: '86.7',
+
+    // Rosters and Player Stats
+    head_coach: 'J.B. Bickerstaff',
+    basketball_top_scorer_name: 'Cade Cunningham',
+    basketball_top_scorer_ppg: '24.3',
+    basketball_top_scorer_total: '365',
+    basketball_top_scorer_position: 'G',
+    basketball_top_rebounder_name: 'Jalen Duren',
+    basketball_top_rebounder_rpg: '11.5',
+    basketball_top_rebounder_total: '173',
+    basketball_top_assist_name: 'Cade Cunningham',
+    basketball_top_assist_apg: '9.2',
+    basketball_top_assist_total: '138',
+    football_quarterback_name: 'Jared Goff',
+    football_quarterback_position: 'QB',
+    football_quarterback_passing_yards: '2934',
+    football_quarterback_passing_ypg: '244.5',
+    football_top_rusher_name: 'Jahmyr Gibbs',
+    football_top_rusher_position: 'RB',
+    football_top_rusher_yards: '906',
+    football_top_rusher_ypg: '75.5',
+    football_top_receiver_name: 'Amon-Ra St. Brown',
+    football_top_receiver_position: 'WR',
+    football_top_receiver_yards: '889',
+    football_top_receiver_ypg: '74.1',
+    hockey_top_scorer_name: 'Dylan Larkin',
+    hockey_top_scorer_position: 'C',
+    hockey_top_scorer_goals: '12',
+    hockey_top_scorer_gpg: '0.6',
+    hockey_top_playmaker_name: 'Dylan Larkin',
+    hockey_top_playmaker_position: 'C',
+    hockey_top_playmaker_assists: '14',
+    hockey_top_playmaker_apg: '0.7',
+    baseball_top_hitter_name: 'Riley Greene',
+    baseball_top_hitter_position: 'OF',
+    baseball_top_hitter_avg: '.285',
+    baseball_top_hitter_hits: '146',
+    baseball_power_hitter_name: 'Spencer Torkelson',
+    baseball_power_hitter_position: '1B',
+    baseball_power_hitter_hrs: '26',
+    baseball_power_hitter_hr_rate: '0.16',
+    last_game_top_scorer_name: 'Cade Cunningham',
+    last_game_top_scorer_points: '28',
+    last_game_top_rebounder_name: 'Jalen Duren',
+    last_game_top_rebounder_rebounds: '14',
+    last_game_top_assist_name: 'Cade Cunningham',
+    last_game_top_assist_assists: '11',
+    last_game_passing_leader_name: 'Jared Goff',
+    last_game_passing_leader_yards: '315',
+    last_game_rushing_leader_name: 'Jahmyr Gibbs',
+    last_game_rushing_leader_yards: '127',
+    last_game_receiving_leader_name: 'Amon-Ra St. Brown',
+    last_game_receiving_leader_yards: '156',
+
+    // Next Game
+    next_opponent: 'LA Clippers',
+    next_opponent_record: '4-11',
+    next_date: 'November 25, 2025',
+    next_time: '8:00 PM EST',
+    next_venue: 'Little Caesars Arena',
+    next_matchup: 'LAC @ DET',
+
+    // Last Game (vs Miami Heat)
+    last_opponent: 'Miami Heat',
+    last_opponent_record: '7-8',
+    last_date: 'November 21, 2025',
+    last_result: 'Win',
+    last_score: '125-124',
+    last_matchup: 'MIA @ DET',
     result_text: 'defeated',
-    final_score: '115-108',
+    final_score: '125-124',
+    final_record: '13-2',
+
     // Odds & Betting
     odds_provider: 'ESPN BET',
-    over_under: '233.5',
-    spread: '1.5',
-    odds_details: 'DET -1.5',
-    moneyline: '-125',
-    opponent_moneyline: '+105',
-    spread_odds: '-105',
-    opponent_spread_odds: '-115',
-    spread_category: 'close',
-    spread_category_text: 'close game',
-    // Game Summary (based on score differential from template_engine.py)
-    game_summary: 'close game',
-    game_summary_text: 'in a close game'
+    over_under: '221.5',
+    spread: '-3.5',
+    odds_details: 'DET -3.5',
+    moneyline: '-165',
+    opponent_moneyline: '+140',
+    spread_odds: '-110',
+    opponent_spread_odds: '-110',
+    spread_category: 'slight favorite',
+    spread_category_text: 'as slight favorites',
+
+    // Broadcast Information
+    broadcast_simple: 'FanDuel SN DET',
+    broadcast_network: 'FanDuel SN DET',
+    broadcast_national_network: '',
+    is_national_broadcast: 'false',
+
+    // Game Summary
+    game_summary: 'thriller',
+    game_summary_text: 'in a thriller'
 };
 
 // ============================================================================
@@ -905,11 +1070,19 @@ function initTabs() {
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Load variables from API first
+    const loaded = await loadVariablesFromAPI();
+
+    if (loaded) {
+        // Merge API sample data with any existing sampleData
+        sampleData = { ...sampleDataFromAPI, ...sampleData };
+        console.log('✓ Sample data updated from API');
+    }
+
     initTabs();
     initTemplatePreview();
     renderConditions();  // Render conditions that were already initialized from template
-    updateHiddenInput();  // Sync hidden field with conditions array
     loadTeamsList();
 
     // Update previews on input
@@ -933,8 +1106,8 @@ function updatePreviews() {
     const pregameDesc = document.getElementById('pregame_description')?.value || '';
     const postgameTitle = document.getElementById('postgame_title')?.value || '';
     const postgameDesc = document.getElementById('postgame_description')?.value || '';
-    const idleTitle = document.getElementById('no_game_title')?.value || '';
-    const idleDesc = document.getElementById('no_game_description')?.value || '';
+    const idleTitle = document.getElementById('idle_title')?.value || '';
+    const idleDesc = document.getElementById('idle_description')?.value || '';
 
     // Update main previews
     document.getElementById('sidebar-preview-title').textContent = replaceVariables(title) || 'Title';
@@ -1140,12 +1313,64 @@ async function applyCopyTemplates() {
                         : templates.description_options;
                     renderConditions();
                 }
+            } else if (field === 'categories') {
+                // Handle categories checkboxes and custom field
+                if (templates.categories) {
+                    const categoriesArray = typeof templates.categories === 'string'
+                        ? JSON.parse(templates.categories)
+                        : templates.categories;
+
+                    // Set checkboxes
+                    const sportsCheckbox = document.getElementById('category_sports');
+                    const sportVarCheckbox = document.getElementById('category_sport_variable');
+                    if (sportsCheckbox) {
+                        sportsCheckbox.checked = categoriesArray.includes('Sports');
+                    }
+                    if (sportVarCheckbox) {
+                        sportVarCheckbox.checked = categoriesArray.includes('{sport}');
+                    }
+
+                    // Set custom categories (exclude 'Sports' and '{sport}')
+                    const customCategories = categoriesArray.filter(cat => cat !== 'Sports' && cat !== '{sport}');
+                    const customField = document.getElementById('categories_custom');
+                    if (customField) {
+                        customField.value = customCategories.join(', ');
+                    }
+                }
             } else if (field === 'include_new_tag' || field === 'include_live_tag' || field === 'include_date_tag') {
                 // Handle tag checkboxes from flags object
                 const element = document.querySelector(`input[name="${field}"]`);
                 if (element && templates.flags) {
                     const flagKey = field.replace('include_', '').replace('_tag', '');
                     element.checked = templates.flags[flagKey] || false;
+                }
+            } else if (field === 'pregame_enabled' || field === 'postgame_enabled') {
+                // Handle pregame/postgame enabled checkboxes
+                const element = document.getElementById(field);
+                if (element && templates[field] !== undefined) {
+                    element.checked = templates[field];
+                }
+            } else if (field === 'game_duration_mode') {
+                // Handle game duration mode
+                const mode = templates['game_duration_mode'] || 'default';
+                const modeRadio = document.querySelector(`input[name="game_duration_mode"][value="${mode}"]`);
+                const overrideInput = document.getElementById('game_duration_override');
+
+                if (modeRadio) {
+                    modeRadio.checked = true;
+                }
+
+                // Set override value if mode is custom
+                if (mode === 'custom' && templates['game_duration_override']) {
+                    if (overrideInput) {
+                        overrideInput.disabled = false;
+                        overrideInput.value = templates['game_duration_override'];
+                    }
+                } else {
+                    if (overrideInput) {
+                        overrideInput.disabled = (mode !== 'custom');
+                        overrideInput.value = templates['game_duration_override'] || '';
+                    }
                 }
             } else {
                 const element = document.getElementById(field);
@@ -1340,7 +1565,6 @@ function addPresetToConditions(preset) {
         preset_id: preset.id
     });
     renderConditions();
-    updateHiddenInput();
     closePresetModal();
 }
 
@@ -1417,64 +1641,59 @@ async function parseESPNUrl() {
 }
 
 // ============================================================================
-// TEMPLATE VARIABLES GENERATION
+// TEMPLATE VARIABLES GENERATION (Dynamically loaded from /api/variables)
 // ============================================================================
 
-// Define all template variables organized by category
-const TEMPLATE_VARIABLES = {
-    'Game Basics': {
-        icon: '⚽',
-        variables: ['team_name', 'team_abbrev', 'opponent', 'opponent_abbrev', 'matchup', 'sport', 'home_away_text', 'vs_at', 'home_team', 'away_team']
-    },
-    'Date & Time': {
-        icon: '📅',
-        variables: ['game_date', 'game_date_short', 'game_day', 'game_day_short', 'game_time', 'game_time_12h', 'game_time_24h', 'days_until']
-    },
-    'Venue': {
-        icon: '📍',
-        variables: ['venue', 'venue_full', 'venue_city', 'venue_state', 'attendance']
-    },
-    'League & Conference': {
-        icon: '🏆',
-        variables: ['league', 'league_name', 'college_conference', 'pro_conference', 'pro_conference_abbrev', 'pro_division']
-    },
-    'Records & Rankings': {
-        icon: '📊',
-        variables: ['team_record', 'opponent_record', 'home_team_record', 'away_team_record', 'team_wins', 'team_losses', 'team_ties', 'team_win_pct', 'opponent_wins', 'opponent_losses', 'opponent_win_pct', 'home_record', 'away_record', 'home_win_pct', 'away_win_pct', 'conference_record', 'division_record', 'team_rank', 'team_rank_formatted', 'opponent_rank', 'opponent_rank_formatted']
-    },
-    'Streaks': {
-        icon: '🔥',
-        variables: ['streak_type', 'streak_count', 'win_streak', 'loss_streak', 'win_streak_text', 'loss_streak_text', 'last_5_record', 'last_10_record']
-    },
-    'Head-to-Head': {
-        icon: '🤝',
-        variables: ['rematch_date', 'rematch_result', 'rematch_score', 'rematch_score_abbrev', 'rematch_winner', 'rematch_loser', 'rematch_location', 'rematch_days_since', 'rematch_season_series']
-    },
-    'Game Status & Scores': {
-        icon: '🎮',
-        variables: ['game_status', 'team_score', 'opponent_score', 'score', 'score_diff', 'final_score', 'score_differential', 'score_differential_text', 'result', 'result_text', 'result_verb', 'outcome', 'overtime_text', 'game_summary', 'game_summary_text']
-    },
-    'Team Stats & Players': {
-        icon: '📈',
-        variables: ['team_ppg', 'team_papg', 'opponent_ppg', 'opponent_papg', 'top_scorer_name', 'top_scorer_ppg', 'top_scorer_position', 'top_rebounder_name', 'top_rebounder_rpg', 'top_assist_name', 'top_assist_apg', 'injury_count', 'injury_list', 'injury_status']
-    },
-    'Betting Odds': {
-        icon: '💰',
-        variables: ['odds_provider', 'over_under', 'spread', 'odds_details', 'moneyline', 'opponent_moneyline', 'spread_odds', 'opponent_spread_odds', 'spread_category', 'spread_category_text']
-    },
-    'Previous & Next Games': {
-        icon: '⏮️',
-        variables: ['last_opponent', 'last_date', 'last_matchup', 'last_result', 'last_score', 'last_score_abbrev', 'next_opponent', 'next_date', 'next_time', 'next_datetime', 'next_matchup', 'next_venue', 'today_score_abbrev']
-    },
-    'Series & Playoffs': {
-        icon: '🏆',
-        variables: ['series_type', 'series_round', 'series_summary', 'series_status', 'series_record', 'series_team_wins', 'series_opponent_wins', 'series_leader', 'series_leader_abbrev', 'series_lead', 'series_game_number', 'series_games_played', 'series_length', 'games_to_win_series', 'series_games_remaining', 'playoff_seed', 'playoff_position', 'games_back', 'can_advance', 'can_be_eliminated', 'series_clinch_text', 'elimination_text']
-    },
-    'Season': {
-        icon: '🎯',
-        variables: ['season_year', 'season_type']
+// Variables loaded from JSON API - will be populated on page load
+let TEMPLATE_VARIABLES = {};
+let sampleDataFromAPI = {};
+
+// Load variables from API
+async function loadVariablesFromAPI() {
+    console.log('[loadVariablesFromAPI] Starting...');
+    try {
+        console.log('[loadVariablesFromAPI] Fetching /api/variables...');
+        const response = await fetch('/api/variables');
+        console.log('[loadVariablesFromAPI] Response status:', response.status);
+
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[loadVariablesFromAPI] Received data:', data.total_variables, 'variables');
+
+        // Group variables by category
+        const categoryMap = {};
+        const sampleMap = {};
+
+        data.variables.forEach(variable => {
+            // Build category structure
+            if (!categoryMap[variable.category]) {
+                categoryMap[variable.category] = {
+                    icon: variable.icon,
+                    variables: []
+                };
+            }
+            categoryMap[variable.category].variables.push(variable.name);
+
+            // Build sample data map
+            sampleMap[variable.name] = variable.example;
+        });
+
+        // Update global variables
+        TEMPLATE_VARIABLES = categoryMap;
+        sampleDataFromAPI = sampleMap;
+
+        console.log(`✓ Loaded ${data.total_variables} variables into ${Object.keys(categoryMap).length} categories`);
+        console.log('[loadVariablesFromAPI] TEMPLATE_VARIABLES:', Object.keys(TEMPLATE_VARIABLES).slice(0, 3));
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to load variables from API:', error);
+        // Fallback: keep empty objects, UI will fail gracefully
+        return false;
     }
-};
+}
 
 // Generate template variables HTML
 function generateTemplateVariablesHTML(containerId) {
@@ -1493,6 +1712,13 @@ function generateTemplateVariablesHTML(containerId) {
     `;
 
     // Generate category details
+    const categoryCount = Object.keys(TEMPLATE_VARIABLES).length;
+    console.log(`[generateTemplateVariablesHTML] TEMPLATE_VARIABLES has ${categoryCount} categories`);
+
+    if (categoryCount === 0) {
+        html += `<p style="color: orange; margin: 1rem 0;">⚠️ Loading variables from API...</p>`;
+    }
+
     for (const [categoryName, categoryData] of Object.entries(TEMPLATE_VARIABLES)) {
         html += `
             <details style="margin-top: ${categoryName === 'Game Basics' ? '1rem' : '0.5rem'};" class="variable-category">
@@ -1607,8 +1833,13 @@ updateRecentlyUsedDisplay = function() {
 };
 
 // Initialize template variables and conditions on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('[DOMCONTENTLOADED] Event fired!');
+
+    // Load variables from API first
+    await loadVariablesFromAPI();
+
+    // Then initialize template variables UI
     initializeTemplateVariables();
 
     // Initialize conditions from server data and render them

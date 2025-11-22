@@ -51,3 +51,14 @@ data/cache/*
 # Logs
 *.log
 logs/
+
+# Claude Code context
+claude.md
+.claude/
+
+# Internal documentation
+docs/variable_reference.md
+docs/variable_analysis.md
+docs/broadcast_analysis.md
+docs/broadcast_implementation_final.md
+docs/enhanced_streaks_analysis.md
