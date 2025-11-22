@@ -119,10 +119,21 @@ class XMLTVGenerator:
 
         if should_add_categories:
             added_categories = set()
+            # Get template variables from event context for variable resolution
+            template_vars = event.get('context', {})
+
             for category in team.get('categories', []):
-                if category not in added_categories:
-                    self._add_category(programme, category)
-                    added_categories.add(category)
+                # Resolve template variables in category (e.g., {sport} -> Basketball)
+                resolved_category = category
+                if '{' in category:
+                    # Simple template variable replacement
+                    import re
+                    for var_name, var_value in template_vars.items():
+                        resolved_category = resolved_category.replace(f'{{{var_name}}}', str(var_value))
+
+                if resolved_category not in added_categories:
+                    self._add_category(programme, resolved_category)
+                    added_categories.add(resolved_category)
 
         # Date (program air date in YYYYMMDD format)
         flags = team.get('flags', {})

@@ -668,9 +668,29 @@
                         <!-- Variable Helper (Collapsible) - Same as Templates tab -->
                         <div id="template-vars-fillers"></div>
                         <div class="form-group">
-                            <label for="max_program_hours">Maximum Program Length (hours)</label>
-                            <input type="number" name="max_program_hours" id="max_program_hours" min="1" max="24" value="{{ team.max_program_hours if team else 6 }}">
-                            <small class="help-text">Long periods will be split into multiple entries</small>
+                            <label>Maximum Program Length</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="radio" name="max_program_hours_mode" value="default"
+                                           {% if not team or team.max_program_hours_mode == 'default' %}checked{% endif %}
+                                           onchange="updateMaxProgramHoursMode()">
+                                    <span>Use global default (6.0 hours)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <input type="radio" name="max_program_hours_mode" value="custom"
+                                           {% if team and team.max_program_hours_mode == 'custom' %}checked{% endif %}
+                                           onchange="updateMaxProgramHoursMode()">
+                                    <span>Custom:</span>
+                                    <input type="number" name="max_program_hours" id="max_program_hours"
+                                           step="0.5" min="1" max="24"
+                                           value="{{ team.max_program_hours if team and team.max_program_hours else '' }}"
+                                           placeholder="e.g., 6.0"
+                                           {% if not team or team.max_program_hours_mode != 'custom' %}disabled{% endif %}
+                                           style="width: 100px;">
+                                    <span>hours</span>
+                                </label>
+                            </div>
+                            <small class="help-text">Maximum length for any single program. Long periods will be split into multiple entries</small>
                         </div>
 
                         <div class="form-group">
@@ -780,16 +800,45 @@
 <div id="copyModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h3>📋 Copy Templates from Team</h3>
+            <h3 id="copy-modal-title">📋 Copy Templates</h3>
             <button type="button" class="modal-close" onclick="closeCopyModal()">&times;</button>
         </div>
         <div class="modal-body">
-            <div class="form-group">
-                <label for="team-select-dropdown">Select Team to Copy From</label>
-                <select id="team-select-dropdown" style="width: 100%; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text);">
-                    <option value="">-- Select a team --</option>
-                    <!-- Teams will be loaded here -->
-                </select>
+            <!-- Copy Direction Tabs -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 2px solid var(--border);">
+                <button type="button" class="tab-btn" id="copy-from-tab" onclick="switchCopyDirection('from')" style="flex: 1; padding: 0.75rem; background: var(--primary); color: white; border: none; border-bottom: 3px solid var(--primary); cursor: pointer; font-weight: bold;">
+                    📥 Copy From Team
+                </button>
+                <button type="button" class="tab-btn" id="copy-to-tab" onclick="switchCopyDirection('to')" style="flex: 1; padding: 0.75rem; background: var(--bg-secondary); color: var(--text); border: none; border-bottom: 3px solid transparent; cursor: pointer;">
+                    📤 Copy To Teams
+                </button>
+            </div>
+
+            <!-- Copy From Section -->
+            <div id="copy-from-section">
+                <div class="form-group">
+                    <label for="team-select-dropdown">Select Team to Copy From</label>
+                    <select id="team-select-dropdown" style="width: 100%; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text);">
+                        <option value="">-- Select a team --</option>
+                        <!-- Teams will be loaded here -->
+                    </select>
+                </div>
+            </div>
+
+            <!-- Copy To Section -->
+            <div id="copy-to-section" style="display: none;">
+                <div class="form-group">
+                    <label>Select Teams to Copy To</label>
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; background: var(--bg-secondary);">
+                        <div style="margin-bottom: 0.5rem;">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="selectAllTeams(true)" style="margin-right: 0.5rem;">Select All</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="selectAllTeams(false)">Deselect All</button>
+                        </div>
+                        <div id="team-multiselect-list">
+                            <!-- Team checkboxes will be loaded here -->
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <h4>Select Fields to Copy</h4>
@@ -811,10 +860,13 @@
                     <input type="checkbox" value="description_options" checked> Conditions
                 </label>
                 <label class="field-checkbox-label">
-                    <input type="checkbox" value="categories" checked> Categories
+                    <input type="checkbox" value="categories,categories_apply_to" checked> Categories
                 </label>
                 <label class="field-checkbox-label">
-                    <input type="checkbox" value="game_duration_override" checked> Game Duration
+                    <input type="checkbox" value="game_duration_mode,game_duration_override" checked> Game Duration
+                </label>
+                <label class="field-checkbox-label">
+                    <input type="checkbox" value="max_program_hours_mode,max_program_hours" checked> Max Program Length
                 </label>
                 <label class="field-checkbox-label">
                     <input type="checkbox" value="pregame_enabled" checked> Pregame Enabled
@@ -901,6 +953,18 @@ let conditionCounter = 0;
 function updateGameDurationMode() {
     const customRadio = document.querySelector('input[name="game_duration_mode"][value="custom"]');
     const input = document.getElementById('game_duration_override');
+
+    if (customRadio && customRadio.checked) {
+        input.disabled = false;
+        input.focus();
+    } else {
+        input.disabled = true;
+    }
+}
+
+function updateMaxProgramHoursMode() {
+    const customRadio = document.querySelector('input[name="max_program_hours_mode"][value="custom"]');
+    const input = document.getElementById('max_program_hours');
 
     if (customRadio && customRadio.checked) {
         input.disabled = false;
@@ -1234,9 +1298,46 @@ async function loadTeamsList() {
     }
 }
 
+let copyDirection = 'from'; // 'from' or 'to'
+
+function switchCopyDirection(direction) {
+    copyDirection = direction;
+    const fromTab = document.getElementById('copy-from-tab');
+    const toTab = document.getElementById('copy-to-tab');
+    const fromSection = document.getElementById('copy-from-section');
+    const toSection = document.getElementById('copy-to-section');
+
+    if (direction === 'from') {
+        fromTab.style.background = 'var(--primary)';
+        fromTab.style.color = 'white';
+        fromTab.style.borderBottom = '3px solid var(--primary)';
+        toTab.style.background = 'var(--bg-secondary)';
+        toTab.style.color = 'var(--text)';
+        toTab.style.borderBottom = '3px solid transparent';
+        fromSection.style.display = 'block';
+        toSection.style.display = 'none';
+    } else {
+        toTab.style.background = 'var(--primary)';
+        toTab.style.color = 'white';
+        toTab.style.borderBottom = '3px solid var(--primary)';
+        fromTab.style.background = 'var(--bg-secondary)';
+        fromTab.style.color = 'var(--text)';
+        fromTab.style.borderBottom = '3px solid transparent';
+        toSection.style.display = 'block';
+        fromSection.style.display = 'none';
+    }
+}
+
+function selectAllTeams(checked) {
+    document.querySelectorAll('#team-multiselect-list input[type="checkbox"]').forEach(cb => {
+        cb.checked = checked;
+    });
+}
+
 async function showCopyModal() {
     const modal = document.getElementById('copyModal');
     const dropdown = document.getElementById('team-select-dropdown');
+    const multiSelectList = document.getElementById('team-multiselect-list');
 
     // Load teams if not already loaded or reload for fresh data
     if (!teamsCache || teamsCache.length === 0) {
@@ -1246,12 +1347,31 @@ async function showCopyModal() {
     // Clear and populate dropdown (keep the first "Select a team" option)
     dropdown.innerHTML = '<option value="">-- Select a team --</option>';
 
+    // Clear and populate multiselect list
+    multiSelectList.innerHTML = '';
+
+    // Get current team ID to exclude from copy-to list
+    const currentTeamId = parseInt(document.querySelector('form[action*="/teams"]')?.action.match(/\/teams\/(\d+)/)?.[1] || '0');
+
     if (teamsCache && teamsCache.length > 0) {
         teamsCache.forEach(team => {
+            // Add to dropdown for copy-from
             const option = document.createElement('option');
             option.value = team.id;
             option.textContent = `${team.team_name} (${team.league_name || team.league})`;
             dropdown.appendChild(option);
+
+            // Add to multiselect for copy-to (exclude current team)
+            if (team.id !== currentTeamId) {
+                const label = document.createElement('label');
+                label.style.display = 'block';
+                label.style.padding = '0.25rem';
+                label.innerHTML = `
+                    <input type="checkbox" value="${team.id}" style="margin-right: 0.5rem;">
+                    ${team.team_name} (${team.league_name || team.league})
+                `;
+                multiSelectList.appendChild(label);
+            }
         });
     } else {
         // Show message if no teams available
@@ -1259,7 +1379,12 @@ async function showCopyModal() {
         option.value = '';
         option.textContent = 'No teams available';
         dropdown.appendChild(option);
+
+        multiSelectList.innerHTML = '<p style="color: var(--text-muted); padding: 0.5rem;">No teams available</p>';
     }
+
+    // Reset to copy-from tab
+    switchCopyDirection('from');
 
     modal.classList.add('show');
 }
@@ -1275,16 +1400,9 @@ function selectAllFields(checked) {
 }
 
 async function applyCopyTemplates() {
-    const dropdown = document.getElementById('team-select-dropdown');
-    const selectedTeamId = dropdown.value;
-
-    if (!selectedTeamId) {
-        showNotification('Please select a team to copy from', 'error');
-        return;
-    }
-
+    // Flatten comma-separated field values
     const selectedFields = Array.from(document.querySelectorAll('#field-checkboxes input[type="checkbox"]:checked'))
-        .map(cb => cb.value);
+        .flatMap(cb => cb.value.split(',').map(v => v.trim()));
 
     if (selectedFields.length === 0) {
         showNotification('Please select at least one field to copy', 'error');
@@ -1292,99 +1410,187 @@ async function applyCopyTemplates() {
     }
 
     try {
-        const response = await fetch(`/api/teams/${selectedTeamId}/templates`);
+        if (copyDirection === 'from') {
+            // Copy FROM another team TO current team
+            const dropdown = document.getElementById('team-select-dropdown');
+            const selectedTeamId = dropdown.value;
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+            if (!selectedTeamId) {
+                showNotification('Please select a team to copy from', 'error');
+                return;
+            }
 
-        const templates = await response.json();
+            // Fetch templates from source team
+            const response = await fetch(`/api/teams/${selectedTeamId}/templates`);
 
-        if (templates.error) {
-            throw new Error(templates.error);
-        }
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
 
-        selectedFields.forEach(field => {
-            if (field === 'description_options') {
-                // Handle conditions separately
-                if (templates.description_options) {
-                    conditions = typeof templates.description_options === 'string'
-                        ? JSON.parse(templates.description_options)
-                        : templates.description_options;
-                    renderConditions();
-                }
-            } else if (field === 'categories') {
-                // Handle categories checkboxes and custom field
-                if (templates.categories) {
-                    const categoriesArray = typeof templates.categories === 'string'
-                        ? JSON.parse(templates.categories)
-                        : templates.categories;
+            const templates = await response.json();
 
-                    // Set checkboxes
-                    const sportsCheckbox = document.getElementById('category_sports');
-                    const sportVarCheckbox = document.getElementById('category_sport_variable');
-                    if (sportsCheckbox) {
-                        sportsCheckbox.checked = categoriesArray.includes('Sports');
+            if (templates.error) {
+                throw new Error(templates.error);
+            }
+
+            // Apply templates to current form
+            selectedFields.forEach(field => {
+                if (field === 'description_options') {
+                    // Handle conditions separately
+                    if (templates.description_options) {
+                        conditions = typeof templates.description_options === 'string'
+                            ? JSON.parse(templates.description_options)
+                            : templates.description_options;
+                        renderConditions();
                     }
-                    if (sportVarCheckbox) {
-                        sportVarCheckbox.checked = categoriesArray.includes('{sport}');
+                } else if (field === 'categories') {
+                    // Handle categories checkboxes and custom field
+                    if (templates.categories) {
+                        const categoriesArray = typeof templates.categories === 'string'
+                            ? JSON.parse(templates.categories)
+                            : templates.categories;
+
+                        // Set checkboxes
+                        const sportsCheckbox = document.getElementById('category_sports');
+                        const sportVarCheckbox = document.getElementById('category_sport_variable');
+                        if (sportsCheckbox) {
+                            sportsCheckbox.checked = categoriesArray.includes('Sports');
+                        }
+                        if (sportVarCheckbox) {
+                            sportVarCheckbox.checked = categoriesArray.includes('{sport}');
+                        }
+
+                        // Set custom categories (exclude 'Sports' and '{sport}')
+                        const customCategories = categoriesArray.filter(cat => cat !== 'Sports' && cat !== '{sport}');
+                        const customField = document.getElementById('categories_custom');
+                        if (customField) {
+                            customField.value = customCategories.join(', ');
+                        }
+                    }
+                } else if (field === 'categories_apply_to') {
+                    // Handle categories_apply_to dropdown
+                    const element = document.getElementById('categories_apply_to');
+                    if (element && templates.categories_apply_to !== undefined) {
+                        element.value = templates.categories_apply_to;
+                    }
+                } else if (field === 'include_new_tag' || field === 'include_live_tag' || field === 'include_date_tag') {
+                    // Handle tag checkboxes from flags object
+                    const element = document.querySelector(`input[name="${field}"]`);
+                    if (element && templates.flags) {
+                        const flagKey = field.replace('include_', '').replace('_tag', '');
+                        element.checked = templates.flags[flagKey] || false;
+                    }
+                } else if (field === 'pregame_enabled' || field === 'postgame_enabled' || field === 'idle_enabled') {
+                    // Handle pregame/postgame/idle enabled checkboxes
+                    const element = document.getElementById(field);
+                    if (element && templates[field] !== undefined) {
+                        element.checked = templates[field];
+                    }
+                } else if (field === 'game_duration_mode' || field === 'game_duration_override') {
+                    // Handle game duration mode and override together
+                    const mode = templates['game_duration_mode'] || 'default';
+                    const modeRadio = document.querySelector(`input[name="game_duration_mode"][value="${mode}"]`);
+                    const overrideInput = document.getElementById('game_duration_override');
+
+                    if (modeRadio) {
+                        modeRadio.checked = true;
                     }
 
-                    // Set custom categories (exclude 'Sports' and '{sport}')
-                    const customCategories = categoriesArray.filter(cat => cat !== 'Sports' && cat !== '{sport}');
-                    const customField = document.getElementById('categories_custom');
-                    if (customField) {
-                        customField.value = customCategories.join(', ');
+                    // Set override value if mode is custom
+                    if (mode === 'custom' && templates['game_duration_override']) {
+                        if (overrideInput) {
+                            overrideInput.disabled = false;
+                            overrideInput.value = templates['game_duration_override'];
+                        }
+                    } else {
+                        if (overrideInput) {
+                            overrideInput.disabled = (mode !== 'custom');
+                            overrideInput.value = templates['game_duration_override'] || '';
+                        }
                     }
-                }
-            } else if (field === 'include_new_tag' || field === 'include_live_tag' || field === 'include_date_tag') {
-                // Handle tag checkboxes from flags object
-                const element = document.querySelector(`input[name="${field}"]`);
-                if (element && templates.flags) {
-                    const flagKey = field.replace('include_', '').replace('_tag', '');
-                    element.checked = templates.flags[flagKey] || false;
-                }
-            } else if (field === 'pregame_enabled' || field === 'postgame_enabled') {
-                // Handle pregame/postgame enabled checkboxes
-                const element = document.getElementById(field);
-                if (element && templates[field] !== undefined) {
-                    element.checked = templates[field];
-                }
-            } else if (field === 'game_duration_mode') {
-                // Handle game duration mode
-                const mode = templates['game_duration_mode'] || 'default';
-                const modeRadio = document.querySelector(`input[name="game_duration_mode"][value="${mode}"]`);
-                const overrideInput = document.getElementById('game_duration_override');
+                } else if (field === 'max_program_hours_mode' || field === 'max_program_hours') {
+                    // Handle max program hours mode and override together
+                    const mode = templates['max_program_hours_mode'] || 'default';
+                    const modeRadio = document.querySelector(`input[name="max_program_hours_mode"][value="${mode}"]`);
+                    const overrideInput = document.getElementById('max_program_hours');
 
-                if (modeRadio) {
-                    modeRadio.checked = true;
-                }
+                    if (modeRadio) {
+                        modeRadio.checked = true;
+                    }
 
-                // Set override value if mode is custom
-                if (mode === 'custom' && templates['game_duration_override']) {
-                    if (overrideInput) {
-                        overrideInput.disabled = false;
-                        overrideInput.value = templates['game_duration_override'];
+                    // Set override value if mode is custom
+                    if (mode === 'custom' && templates['max_program_hours']) {
+                        if (overrideInput) {
+                            overrideInput.disabled = false;
+                            overrideInput.value = templates['max_program_hours'];
+                        }
+                    } else {
+                        if (overrideInput) {
+                            overrideInput.disabled = (mode !== 'custom');
+                            overrideInput.value = templates['max_program_hours'] || '';
+                        }
                     }
                 } else {
-                    if (overrideInput) {
-                        overrideInput.disabled = (mode !== 'custom');
-                        overrideInput.value = templates['game_duration_override'] || '';
+                    const element = document.getElementById(field);
+                    if (element && templates[field] !== undefined) {
+                        element.value = templates[field];
                     }
                 }
-            } else {
-                const element = document.getElementById(field);
-                if (element && templates[field] !== undefined) {
-                    element.value = templates[field];
-                }
+            });
+
+            updatePreviews();
+            closeCopyModal();
+
+            // Show success feedback
+            showNotification('Templates copied! Click "Save Team" to apply changes.', 'success', 5000);
+        } else {
+            // Copy FROM current team TO other teams
+            const selectedTeams = Array.from(document.querySelectorAll('#team-multiselect-list input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+
+            if (selectedTeams.length === 0) {
+                showNotification('Please select at least one team to copy to', 'error');
+                return;
             }
-        });
 
-        updatePreviews();
-        closeCopyModal();
+            // Get current team ID from the URL (e.g., /teams/2/edit)
+            const urlMatch = window.location.pathname.match(/\/teams\/(\d+)/);
+            const currentTeamId = urlMatch ? urlMatch[1] : null;
 
-        // Show success feedback
-        showNotification('Templates copied! Click "Save Team" to apply changes.', 'success', 5000);
+            if (!currentTeamId) {
+                showNotification('Cannot determine current team ID', 'error');
+                return;
+            }
+
+            // Call batch copy API
+            const response = await fetch('/api/teams/batch-copy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    source_team_id: currentTeamId,
+                    target_team_ids: selectedTeams,
+                    fields: selectedFields
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            closeCopyModal();
+
+            // Show success feedback
+            const teamCount = selectedTeams.length;
+            showNotification(`Successfully copied templates to ${teamCount} team${teamCount > 1 ? 's' : ''}!`, 'success', 5000);
+        }
     } catch (error) {
         console.error('Failed to copy templates:', error);
         showNotification(`Failed to copy templates: ${error.message}`, 'error');
@@ -1722,7 +1928,7 @@ function generateTemplateVariablesHTML(containerId) {
     for (const [categoryName, categoryData] of Object.entries(TEMPLATE_VARIABLES)) {
         html += `
             <details style="margin-top: ${categoryName === 'Game Basics' ? '1rem' : '0.5rem'};" class="variable-category">
-                <summary style="cursor: pointer; font-weight: bold;">${categoryData.icon} ${categoryName}</summary>
+                <summary style="cursor: pointer; font-weight: bold;">${categoryName}</summary>
                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
         `;
 

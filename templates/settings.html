@@ -76,6 +76,26 @@
             </div>
         </fieldset>
 
+        <hr style="margin: 2rem 0;">
+
+        <fieldset>
+            <legend><h3>Default Program Settings</h3></legend>
+
+            <div class="form-group">
+                <label for="game_duration_default">Default Game Duration (hours)</label>
+                <input type="number" name="game_duration_default" id="game_duration_default" min="0.5" max="24" step="0.25" value="{{ settings.game_duration_default }}" required>
+                <small class="help-text">Default duration for game programs (teams can override this setting)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="max_program_hours_default">Default Max Program Length (hours)</label>
+                <input type="number" name="max_program_hours_default" id="max_program_hours_default" min="1" max="24" step="0.5" value="{{ settings.max_program_hours_default }}" required>
+                <small class="help-text">Default maximum length for any single program in the EPG (teams can override this setting)</small>
+            </div>
+        </fieldset>
+
+        <hr style="margin: 2rem 0;">
+
         <fieldset>
             <legend><h3>XMLTV Generator Info</h3></legend>
 

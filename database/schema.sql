@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS teams (
 
     -- Program Display Settings
     midnight_crossover_mode TEXT DEFAULT 'postgame',  -- How to handle games crossing midnight
-    max_program_hours REAL DEFAULT 6.0,       -- Maximum duration for a single program
+    max_program_hours_mode TEXT DEFAULT 'default',    -- 'default' or 'custom'
+    max_program_hours REAL DEFAULT 6.0,       -- Maximum duration for a single program (used when mode='custom')
     categories_apply_to TEXT DEFAULT 'events', -- 'all' or 'events' - control category application
 
     -- Active Status
@@ -166,6 +167,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
     -- Game Duration (global default in hours)
     game_duration_default REAL DEFAULT 4.0,
+
+    -- Max Program Hours (global default for filler program splitting)
+    max_program_hours_default REAL DEFAULT 6.0,
 
     -- Web App Settings
     web_port INTEGER DEFAULT 9195,
@@ -500,6 +504,8 @@ INSERT OR IGNORE INTO condition_presets (id, name, description, condition_type, 
 -- ALTER TABLE teams ADD COLUMN midnight_crossover_mode TEXT DEFAULT 'postgame';
 -- ALTER TABLE teams ADD COLUMN max_program_hours REAL DEFAULT 6.0;
 -- ALTER TABLE teams ADD COLUMN categories_apply_to TEXT DEFAULT 'all';
+-- ALTER TABLE settings ADD COLUMN max_program_hours_default REAL DEFAULT 6.0;
+-- ALTER TABLE teams ADD COLUMN max_program_hours_mode TEXT DEFAULT 'default';
 
 -- =============================================================================
 -- END OF SCHEMA

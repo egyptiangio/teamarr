@@ -38,6 +38,7 @@ def init_database():
     migrate_timezone_from_env()
     migrate_generator_url_from_host_port()
     migrate_game_duration_refactor()
+    migrate_max_program_hours_refactor()
 
 def migrate_team_ids_to_numeric():
     """
@@ -328,6 +329,51 @@ def migrate_game_duration_refactor():
 
     except Exception as e:
         print(f"⚠️  Game duration migration warning: {e}")
+        # Don't fail startup if migration has issues
+    finally:
+        conn.close()
+
+def migrate_max_program_hours_refactor():
+    """
+    Add max_program_hours_mode to teams and max_program_hours_default to settings.
+    Teams can now use global default or custom max program hours.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if migration already ran
+        cursor.execute("PRAGMA table_info(teams)")
+        teams_columns = [col[1] for col in cursor.fetchall()]
+
+        if 'max_program_hours_mode' in teams_columns:
+            # Migration already ran
+            return
+
+        # Add max_program_hours_mode column to teams
+        cursor.execute("ALTER TABLE teams ADD COLUMN max_program_hours_mode TEXT DEFAULT 'default'")
+
+        # Migrate existing max_program_hours values
+        # If max_program_hours exists and is not the default (6.0), treat as custom override
+        if 'max_program_hours' in teams_columns:
+            cursor.execute("""
+                UPDATE teams
+                SET max_program_hours_mode = 'custom'
+                WHERE max_program_hours IS NOT NULL AND max_program_hours != 6.0
+            """)
+
+        # Add max_program_hours_default to settings
+        cursor.execute("PRAGMA table_info(settings)")
+        settings_columns = [col[1] for col in cursor.fetchall()]
+
+        if 'max_program_hours_default' not in settings_columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN max_program_hours_default REAL DEFAULT 6.0")
+
+        conn.commit()
+        print("✅ Max program hours migration completed")
+
+    except Exception as e:
+        print(f"⚠️  Max program hours migration warning: {e}")
         # Don't fail startup if migration has issues
     finally:
         conn.close()

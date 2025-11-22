@@ -97,7 +97,8 @@ class TemplateEngine:
         }
         sport_code = team_config.get('sport', '')
         variables['sport'] = sport_display_names.get(sport_code, sport_code.capitalize())
-        variables['league'] = team_config.get('league', '')
+        # Use league_name (e.g., "NBA") instead of league code (e.g., "nba")
+        variables['league'] = team_config.get('league_name', '') or team_config.get('league', '').upper()
         variables['league_name'] = team_config.get('league_name', '')
 
         # Conference/Division variables
@@ -428,8 +429,19 @@ class TemplateEngine:
         variables['away_win_pct'] = calc_win_pct(away_record)
 
         # Home team record and away team record (based on matchup position)
+        # For filler programs with no game context, use next_game or last_game is_home
+        filler_is_home = is_home
+        if not game:
+            # Check next_game first, then last_game for is_home info
+            next_game = context.get('next_game', {})
+            last_game = context.get('last_game', {})
+            if next_game.get('is_home') is not None:
+                filler_is_home = next_game['is_home']
+            elif last_game.get('is_home') is not None:
+                filler_is_home = last_game['is_home']
+
         # Check if our team is home or away, then assign records accordingly
-        if is_home:
+        if filler_is_home:
             # We are home team - use our overall record for home_team_record
             variables['home_team_record'] = variables.get('team_record', '0-0')
             # Opponent is away team - use opponent's overall record for away_team_record
@@ -439,6 +451,38 @@ class TemplateEngine:
             variables['away_team_record'] = variables.get('team_record', '0-0')
             # Opponent is home team - use opponent's overall record for home_team_record
             variables['home_team_record'] = variables.get('opponent_record', '0-0')
+
+        # Add explicit next_game and last_game home/away team records
+        next_game = context.get('next_game', {})
+        last_game = context.get('last_game', {})
+
+        # Next game home/away team records
+        if next_game.get('is_home') is not None:
+            if next_game['is_home']:
+                # Next game is home - we are home team
+                variables['next_game_home_team_record'] = variables.get('team_record', '0-0')
+                variables['next_game_away_team_record'] = next_game.get('opponent_record', '0-0')
+            else:
+                # Next game is away - we are away team
+                variables['next_game_away_team_record'] = variables.get('team_record', '0-0')
+                variables['next_game_home_team_record'] = next_game.get('opponent_record', '0-0')
+        else:
+            variables['next_game_home_team_record'] = ''
+            variables['next_game_away_team_record'] = ''
+
+        # Last game home/away team records
+        if last_game.get('is_home') is not None:
+            if last_game['is_home']:
+                # Last game was home - we were home team
+                variables['last_game_home_team_record'] = variables.get('team_record', '0-0')
+                variables['last_game_away_team_record'] = last_game.get('opponent_record', '0-0')
+            else:
+                # Last game was away - we were away team
+                variables['last_game_away_team_record'] = variables.get('team_record', '0-0')
+                variables['last_game_home_team_record'] = last_game.get('opponent_record', '0-0')
+        else:
+            variables['last_game_home_team_record'] = ''
+            variables['last_game_away_team_record'] = ''
 
         # Last 5/10 and recent form calculated in app.py, passed via context
         variables['last_5_record'] = streaks.get('last_5_record', '')
@@ -905,9 +949,10 @@ class TemplateEngine:
             'MLS Season Pass'
         ]
 
-        # Filter out radio and subscription packages
+        # Filter out radio, subscription packages, and non-dict entries
         usable = [b for b in broadcasts
-                  if b.get('type', {}).get('shortName', '').upper() != 'RADIO' and
+                  if isinstance(b, dict) and
+                     b.get('type', {}).get('shortName', '').upper() != 'RADIO' and
                      b.get('media', {}).get('shortName', '') not in SKIP_PACKAGES]
 
         if not usable:

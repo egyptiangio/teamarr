@@ -351,14 +351,14 @@ class ESPNClient:
         url = f"{self.base_url}/{sport}/{league}/scoreboard?dates={date}"
         return self._make_request(url)
 
-    def parse_schedule_events(self, schedule_data: Dict, days_ahead: int = 14, days_behind: int = 0) -> List[Dict]:
+    def parse_schedule_events(self, schedule_data: Dict, days_ahead: int = 14, days_behind: int = 1) -> List[Dict]:
         """
         Parse schedule data and extract relevant event information
 
         Args:
             schedule_data: Raw schedule data from ESPN API
             days_ahead: Filter to events within this many days in the future
-            days_behind: Filter to events within this many days in the past (default: 0)
+            days_behind: Filter to events within this many days in the past (default: 1 to include today's games that may have started)
 
         Returns:
             List of parsed event dictionaries

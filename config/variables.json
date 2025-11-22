@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "generated": "2025-11-21",
-  "total_variables": 220,
+  "total_variables": 226,
   "variables": [
     {
       "name": "team_name",
@@ -1746,6 +1746,38 @@
       ]
     },
     {
+      "name": "next_game_date",
+      "description": "Next game date",
+      "source": "next_game context",
+      "example": "November 24, 2025",
+      "category": "⏭️ Next Game",
+      "icon": "⏭️",
+      "type": "string",
+      "availability": "pregame, idle",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "next_game_time",
+      "description": "Next game time",
+      "source": "next_game context",
+      "example": "7:00 PM",
+      "category": "⏭️ Next Game",
+      "icon": "⏭️",
+      "type": "string",
+      "availability": "pregame, idle",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
       "name": "last_opponent",
       "description": "Last opponent",
       "source": "`/schedule` → last event",
@@ -2570,6 +2602,70 @@
       "icon": "📊",
       "type": "string",
       "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "next_game_home_team_record",
+      "description": "Home team record for next game",
+      "source": "Calculated from next_game context",
+      "example": "8-0",
+      "category": "📊 Records & Standings",
+      "icon": "📊",
+      "type": "string",
+      "availability": "pregame, idle",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "next_game_away_team_record",
+      "description": "Away team record for next game",
+      "source": "Calculated from next_game context",
+      "example": "5-2",
+      "category": "📊 Records & Standings",
+      "icon": "📊",
+      "type": "string",
+      "availability": "pregame, idle",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "last_game_home_team_record",
+      "description": "Home team record for last game",
+      "source": "Calculated from last_game context",
+      "example": "8-0",
+      "category": "📊 Records & Standings",
+      "icon": "📊",
+      "type": "string",
+      "availability": "postgame, idle",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "last_game_away_team_record",
+      "description": "Away team record for last game",
+      "source": "Calculated from last_game context",
+      "example": "5-2",
+      "category": "📊 Records & Standings",
+      "icon": "📊",
+      "type": "string",
+      "availability": "postgame, idle",
       "sports": [
         "basketball",
         "football",
