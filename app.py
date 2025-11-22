@@ -1658,15 +1658,10 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                 if last_game_end > day_end:
                     # Game crosses midnight - check next day for games
                     next_date = current_date + timedelta(days=1)
-                    print(f"  🌙 Game crosses midnight! current_date={current_date}, next_date={next_date}")
-                    print(f"     game_end={last_game_end}, day_end={day_end}")
-                    print(f"     game_dates={sorted(game_dates)}")
-                    print(f"     next_date in game_dates? {next_date in game_dates}")
 
                     # Step 1: Check if next day has a game
                     if next_date in game_dates:
                         # Next day HAS a game - use PREGAME filler until that game starts (ignore midnight_crossover_mode)
-                        print(f"     ✅ Next day has game - filling with PREGAME")
                         next_day_games = sorted(game_schedule[next_date], key=lambda x: x['start'])
                         first_next_game_start = next_day_games[0]['start']
 
@@ -1677,12 +1672,9 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                                 team, 'pregame', next_day_games[0]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
                             )
                             filler_entries.extend(pregame_entries)
-                            print(f"     📝 Created {len(pregame_entries)} pregame entries")
                     else:
                         # Step 2: No game next day - apply midnight_crossover_mode setting
                         next_day_end = day_end + timedelta(days=1)
-                        print(f"     ⚠️  No game next day - applying midnight_crossover_mode={midnight_mode}")
-                        print(f"     Filling from {last_game_end} to {next_day_end}")
 
                         if midnight_mode == 'postgame':
                             # Use postgame filler from game end to next midnight
@@ -1691,7 +1683,6 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                                 team, 'postgame', games_today[-1]['event'], team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
                             )
                             filler_entries.extend(postgame_entries)
-                            print(f"     📝 Created {len(postgame_entries)} postgame entries")
                         elif midnight_mode == 'idle':
                             # Use idle filler from game end to next midnight (if idle is enabled)
                             if team.get('idle_enabled', True):
@@ -1702,7 +1693,6 @@ def _generate_filler_entries(team: dict, game_events: List[dict], days_ahead: in
                                     team, 'idle', next_game, team_stats, games_today[-1]['event'], epg_timezone, espn_client, api_path
                                 )
                                 filler_entries.extend(idle_entries)
-                                print(f"     📝 Created {len(idle_entries)} idle entries")
                 else:
                     # Game ends before midnight - fill to midnight with postgame
                     if last_game_end < day_end:
