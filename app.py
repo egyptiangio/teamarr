@@ -1230,21 +1230,11 @@ def api_variables():
             variables_data = json.load(f)
 
         # Ensure all variables have available_suffixes field (should be in JSON)
-        # If missing, provide fallback based on availability field
+        # If missing or blank, default to all three suffixes
         for var in variables_data.get('variables', []):
-            if 'available_suffixes' not in var:
-                # Fallback logic if field is missing
-                availability = var.get('availability', 'always')
-                category = var.get('category', '')
-
-                if availability in ('final_only', 'last_game_only'):
-                    var['available_suffixes'] = ['last']
-                elif availability == 'same_day_only':
-                    var['available_suffixes'] = ['base', 'next']
-                elif category in ('🏈 Teams', '📊 Team Stats'):
-                    var['available_suffixes'] = ['base']
-                else:
-                    var['available_suffixes'] = ['base', 'next', 'last']
+            if 'available_suffixes' not in var or not var['available_suffixes']:
+                # Fallback: allow all three contexts if field is missing or blank
+                var['available_suffixes'] = ['base', 'next', 'last']
 
         return jsonify(variables_data)
     except Exception as e:
