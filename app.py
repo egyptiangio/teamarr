@@ -26,9 +26,7 @@ from api.espn_client import ESPNClient
 from epg.orchestrator import EPGOrchestrator
 from epg.xmltv_generator import XMLTVGenerator
 from utils.logger import setup_logging, get_logger
-
-# Application version
-VERSION = "1.0.0"
+from config import VERSION
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
