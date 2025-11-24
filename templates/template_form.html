@@ -414,6 +414,63 @@
 }
 
 /* ============================================================================
+   SUFFIX SELECTOR POPUP
+   ============================================================================ */
+.suffix-selector-popup {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    overflow: hidden;
+}
+
+.suffix-selector-header {
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.suffix-selector-options {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+}
+
+.suffix-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.5rem 0.75rem;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    text-align: left;
+}
+
+.suffix-option:hover {
+    background: var(--bg-tertiary);
+}
+
+.suffix-label {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.suffix-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+
+/* ============================================================================
    HELP TEXT & INFO BOXES
    ============================================================================ */
 .info-box {
@@ -1066,6 +1123,7 @@ async function loadVariablesFromAPI() {
         // Group variables by category
         const categoryMap = {};
         const sampleMap = {};
+        const suffixMap = {}; // Store suffix availability for each variable
 
         data.variables.forEach(variable => {
             if (!categoryMap[variable.category]) {
@@ -1076,10 +1134,12 @@ async function loadVariablesFromAPI() {
             }
             categoryMap[variable.category].variables.push(variable.name);
             sampleMap[variable.name] = variable.example;
+            suffixMap[variable.name] = variable.available_suffixes || ['base', 'next', 'last'];
         });
 
         TEMPLATE_VARIABLES = categoryMap;
         sampleDataFromAPI = sampleMap;
+        window.variableSuffixMap = suffixMap; // Make globally available
 
         return true;
     } catch (error) {
@@ -1158,7 +1218,31 @@ function generateTemplateVariablesHTML(containerId) {
 
         categoryData.variables.forEach(varName => {
             const suffixClass = getSuffixClass(varName);
-            html += `<button type="button" class="chip ${suffixClass}" onclick="insertVariable('{${varName}}')">${varName}</button>`;
+            const suffixes = window.variableSuffixMap?.[varName] || ['base', 'next', 'last'];
+
+            // Determine display name and behavior
+            let displayName = varName;
+            let clickHandler = '';
+
+            if (suffixes.length === 1) {
+                // Single suffix: show it in the display and insert immediately
+                if (suffixes[0] === 'last') {
+                    displayName = `${varName}.last`;
+                    clickHandler = `onclick="insertVariable('{${varName}.last}')"`;
+                } else if (suffixes[0] === 'next') {
+                    displayName = `${varName}.next`;
+                    clickHandler = `onclick="insertVariable('{${varName}.next}')"`;
+                } else {
+                    // base only
+                    displayName = varName;
+                    clickHandler = `onclick="insertVariable('{${varName}')"`;
+                }
+            } else {
+                // Multiple suffixes: show popup selector
+                clickHandler = `onclick="showSuffixSelector(event, '${varName}', ${JSON.stringify(suffixes).replace(/"/g, '&quot;')})"`;
+            }
+
+            html += `<button type="button" class="chip ${suffixClass}" ${clickHandler}>${displayName}</button>`;
         });
 
         html += `
@@ -1243,6 +1327,77 @@ function insertVariable(variable) {
         addToRecentlyUsed(variable);
         updatePreviews();
     }
+}
+
+function showSuffixSelector(event, varName, suffixes) {
+    event.stopPropagation();
+
+    // Remove any existing popup
+    const existingPopup = document.querySelector('.suffix-selector-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+
+    // Create popup
+    const popup = document.createElement('div');
+    popup.className = 'suffix-selector-popup';
+
+    // Position near the clicked button
+    const rect = event.target.getBoundingClientRect();
+    popup.style.position = 'fixed';
+    popup.style.top = `${rect.bottom + 5}px`;
+    popup.style.left = `${rect.left}px`;
+    popup.style.zIndex = '10000';
+
+    // Build popup content
+    const suffixLabels = {
+        'base': { label: 'base', desc: 'current game' },
+        'next': { label: '.next', desc: 'next game' },
+        'last': { label: '.last', desc: 'last game' }
+    };
+
+    let html = `<div class="suffix-selector-header">${varName}</div>`;
+    html += '<div class="suffix-selector-options">';
+
+    suffixes.forEach(suffix => {
+        const info = suffixLabels[suffix];
+        const varText = suffix === 'base' ? varName : `${varName}.${suffix}`;
+        html += `
+            <button type="button" class="suffix-option" onclick="selectSuffix('${varName}', '${suffix}')">
+                <span class="suffix-label">{${varText}}</span>
+                <span class="suffix-desc">${info.desc}</span>
+            </button>
+        `;
+    });
+
+    html += '</div>';
+    popup.innerHTML = html;
+
+    document.body.appendChild(popup);
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', function closePopup(e) {
+            if (!popup.contains(e.target)) {
+                popup.remove();
+                document.removeEventListener('click', closePopup);
+            }
+        });
+    }, 10);
+}
+
+function selectSuffix(varName, suffix) {
+    // Remove popup
+    const popup = document.querySelector('.suffix-selector-popup');
+    if (popup) {
+        popup.remove();
+    }
+
+    // Build variable text
+    const varText = suffix === 'base' ? `{${varName}}` : `{${varName}.${suffix}}`;
+
+    // Insert variable
+    insertVariable(varText);
 }
 
 // ============================================================================

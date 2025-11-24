@@ -1222,12 +1222,47 @@ def api_templates_list():
 
 @app.route('/api/variables', methods=['GET'])
 def api_variables():
-    """Get all template variables from variables.json"""
+    """Get all template variables from variables.json with suffix availability"""
     import json
     variables_path = os.path.join(os.path.dirname(__file__), 'config', 'variables.json')
     try:
         with open(variables_path, 'r', encoding='utf-8') as f:
             variables_data = json.load(f)
+
+        # Build suffix mapping from audit_summary
+        audit_summary = variables_data.get('suffix_system', {}).get('audit_summary', {})
+
+        # Get example lists (full lists would be better, but we'll use what's available)
+        last_only_vars = set(audit_summary.get('last_only', {}).get('examples', []))
+        base_next_only_vars = set(audit_summary.get('base_next_only', {}).get('examples', []))
+        base_only_vars = set(audit_summary.get('base_only', {}).get('examples', []))
+        all_three_vars = set(audit_summary.get('all_three', {}).get('examples', []))
+
+        # Build complete sets by checking variable notes
+        for var in variables_data.get('variables', []):
+            var_name = var['name']
+            notes = var.get('notes', '')
+
+            # Determine available suffixes
+            available_suffixes = []
+
+            if 'BASE_ONLY' in notes or var_name in base_only_vars:
+                available_suffixes = ['base']
+            elif 'LAST_ONLY' in notes or var_name in last_only_vars:
+                available_suffixes = ['last']
+            elif 'BASE_NEXT_ONLY' in notes or var_name in base_next_only_vars:
+                available_suffixes = ['base', 'next']
+            elif var_name in all_three_vars:
+                available_suffixes = ['base', 'next', 'last']
+            else:
+                # Default: check if it's a game-specific variable (most are all_three)
+                if var.get('category') in ['🏈 Teams', '📊 Stats']:
+                    available_suffixes = ['base']  # Team stats are usually base only
+                else:
+                    available_suffixes = ['base', 'next', 'last']  # Game-specific vars
+
+            var['available_suffixes'] = available_suffixes
+
         return jsonify(variables_data)
     except Exception as e:
         app.logger.error(f"Failed to load variables.json: {e}")
