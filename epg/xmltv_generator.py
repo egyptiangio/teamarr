@@ -122,7 +122,8 @@ class XMLTVGenerator:
             # Get template variables from event context for variable resolution
             template_vars = event.get('context', {})
 
-            for category in team.get('categories', []):
+            categories = team.get('categories') or []
+            for category in categories:
                 # Resolve template variables in category (e.g., {sport} -> Basketball)
                 resolved_category = category
                 if '{' in category:
