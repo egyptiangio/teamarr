@@ -367,6 +367,7 @@ class EPGOrchestrator:
 
         # Generate filler entries (pregame/postgame/idle)
         # Pass extended events for next/last game context
+        filler_api_counter = {'count': self.api_calls}
         filler_entries = self._generate_filler_entries(
             team,
             processed_events,
@@ -377,8 +378,12 @@ class EPGOrchestrator:
             epg_start_date,
             team.get('api_path', ''),
             settings,
-            schedule_data
+            schedule_data,
+            api_sport,
+            api_league,
+            filler_api_counter
         )
+        self.api_calls = filler_api_counter['count']
 
         # Combine game events and filler entries, then sort by start time
         combined_events = processed_events + filler_entries
@@ -905,7 +910,10 @@ class EPGOrchestrator:
         epg_start_date: date = None,
         api_path: str = '',
         settings: dict = None,
-        schedule_data: dict = None
+        schedule_data: dict = None,
+        api_sport: str = None,
+        api_league: str = None,
+        api_calls_counter: dict = None
     ) -> List[dict]:
         """
         Generate pregame, postgame, and idle EPG entries to fill gaps
@@ -920,11 +928,19 @@ class EPGOrchestrator:
             epg_start_date: Start date for EPG generation (defaults to today if not specified)
             api_path: League API path
             settings: Global settings
+            schedule_data: Full schedule data for context
+            api_sport: Sport type for ESPN API calls (e.g., 'basketball', 'soccer')
+            api_league: League code for ESPN API calls (e.g., 'nba', 'eng.1')
+            api_calls_counter: Dict with 'count' key to track API calls made during filler generation
 
         Returns:
             List of filler event dictionaries
         """
         filler_entries = []
+
+        # Initialize API calls counter if not provided
+        if api_calls_counter is None:
+            api_calls_counter = {'count': 0}
 
         # Use EPG timezone for filler generation
         team_tz = ZoneInfo(epg_timezone)
@@ -1385,6 +1401,11 @@ class EPGOrchestrator:
         """
         if not last_game:
             return None
+
+        # Can't enrich without API sport/league info
+        if not api_sport or not api_league:
+            logger.debug("Missing api_sport or api_league, cannot enrich last game")
+            return last_game
 
         try:
             # Get the game date
