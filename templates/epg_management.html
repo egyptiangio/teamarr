@@ -770,10 +770,12 @@ function searchXML() {
         if (matches.length > 1) {
             searchNav.style.display = 'inline-flex';
             updateMatchPosition();
-            scrollToCurrentMatch();
         } else {
             searchNav.style.display = 'none';
         }
+
+        // Always scroll to first match
+        scrollToCurrentMatch();
     } else {
         resultsSpan.textContent = 'No matches found';
         resultsSpan.style.color = 'var(--text-muted)';
@@ -893,23 +895,13 @@ function highlightUnresolvedVariable(variable) {
     const searchInput = document.getElementById('search-input');
     searchInput.value = variable;
     searchXML();
-
-    // Scroll to the preview section
-    document.getElementById('epg-preview').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // Handle clicking on coverage gaps
 function highlightGap(afterProgram, beforeProgram) {
-    // Search for the first program (the one before the gap)
     const searchInput = document.getElementById('search-input');
     searchInput.value = afterProgram;
     searchXML();
-
-    // Scroll to the preview section
-    document.getElementById('epg-preview').scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // Show a notification explaining the gap
-    showNotification(`Highlighting "${afterProgram}" - the gap occurs between this and "${beforeProgram}"`, 'info');
 }
 </script>
 {% endblock %}
