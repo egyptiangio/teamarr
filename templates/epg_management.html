@@ -140,8 +140,9 @@
                     <h4>Coverage Gaps ({{ epg_analysis.coverage_gaps|length }})</h4>
                     <div class="gaps-list">
                         {% for gap in epg_analysis.coverage_gaps[:10] %}
-                        <div class="gap-item clickable-issue" onclick="highlightGap('{{ gap.after_program | escape }}', '{{ gap.before_program | escape }}')">
+                        <div class="gap-item clickable-issue" onclick="highlightGap('{{ gap.after_stop }}', '{{ gap.before_start }}', '{{ gap.after_program | escape }}', '{{ gap.before_program | escape }}')">
                             <strong>{{ gap.channel }}</strong>: {{ gap.gap_minutes }} minutes gap
+                            ({{ gap.after_stop[8:10] }}:{{ gap.after_stop[10:12] }} to {{ gap.before_start[8:10] }}:{{ gap.before_start[10:12] }})
                             between "{{ gap.after_program }}" and "{{ gap.before_program }}"
                         </div>
                         {% endfor %}
@@ -898,10 +899,91 @@ function highlightUnresolvedVariable(variable) {
 }
 
 // Handle clicking on coverage gaps
-function highlightGap(afterProgram, beforeProgram) {
+function highlightGap(afterStop, beforeStart, afterProgram, beforeProgram) {
+    const preview = document.getElementById('epg-preview');
+
+    // Store original content if not already stored
+    if (!originalContent) {
+        originalContent = preview.textContent;
+    }
+
+    // Clear search input
     const searchInput = document.getElementById('search-input');
-    searchInput.value = afterProgram;
-    searchXML();
+    searchInput.value = '';
+
+    // Split content into lines
+    const lines = originalContent.split('\n');
+    let processedLines = [];
+    let inGapProgramme = false;
+    let gapProgrammeLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Check if this line starts a programme block we care about
+        if (line.includes('<programme') &&
+            (line.includes(`stop="${afterStop}"`) || line.includes(`start="${beforeStart}"`))) {
+            inGapProgramme = true;
+            gapProgrammeLines = [i];
+        }
+
+        // Track all lines in the gap programme blocks
+        if (inGapProgramme) {
+            gapProgrammeLines.push(i);
+        }
+
+        // Check if we're closing a gap programme block
+        if (inGapProgramme && line.includes('</programme>')) {
+            inGapProgramme = false;
+
+            // Highlight this entire block
+            const blockLines = gapProgrammeLines.map(lineIdx => {
+                const text = lines[lineIdx];
+                return `<mark style="background: rgba(251, 191, 36, 0.3); display: block; margin: 0; padding: 0;">${escapeHtml(text)}</mark>`;
+            });
+
+            // Add the highlighted block
+            processedLines.push(...blockLines);
+            gapProgrammeLines = [];
+            continue;
+        }
+
+        // If not in a gap programme, just add the escaped line
+        if (!inGapProgramme) {
+            processedLines.push(escapeHtml(line));
+        }
+    }
+
+    // Update preview with highlighted content
+    preview.innerHTML = '';
+    processedLines.forEach(lineHtml => {
+        const lineDiv = document.createElement('div');
+        lineDiv.innerHTML = lineHtml;
+        preview.appendChild(lineDiv);
+    });
+
+    // Find and scroll to first highlighted mark
+    const firstMark = preview.querySelector('mark');
+    if (firstMark) {
+        const container = preview.closest('.epg-preview-container');
+        const markRect = firstMark.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const relativeTop = markRect.top - containerRect.top + container.scrollTop;
+        const containerHeight = container.clientHeight;
+        const scrollPosition = relativeTop - (containerHeight / 3);
+
+        container.scrollTo({
+            top: scrollPosition,
+            behavior: 'smooth'
+        });
+    }
+
+    // Update search results display
+    const resultsSpan = document.getElementById('search-results');
+    resultsSpan.textContent = `Gap highlighted: ${afterProgram} → ${beforeProgram}`;
+    resultsSpan.style.color = 'var(--warning)';
+
+    document.getElementById('search-nav').style.display = 'none';
 }
 </script>
 {% endblock %}

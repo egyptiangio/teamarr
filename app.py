@@ -1678,7 +1678,9 @@ def _analyze_epg_content(xml_content):
                                 'channel': channel,
                                 'gap_minutes': int(gap_minutes),
                                 'after_program': progs_sorted[i]['title'],
-                                'before_program': progs_sorted[i + 1]['title']
+                                'after_stop': progs_sorted[i]['stop'],
+                                'before_program': progs_sorted[i + 1]['title'],
+                                'before_start': progs_sorted[i + 1]['start']
                             })
                     except:
                         pass
