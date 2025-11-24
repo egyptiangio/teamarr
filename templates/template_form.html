@@ -1333,21 +1333,29 @@ function conditionsRender() {
                     <label>Condition Type</label>
                     <select name="cond_type[]" onchange="updateConditionValueField(${index})">
                         <option value="">Select...</option>
+                        <option value="away_loss_streak" ${condType === 'away_loss_streak' ? 'selected' : ''}>Away streak (loss) ≥ N</option>
+                        <option value="away_win_streak" ${condType === 'away_win_streak' ? 'selected' : ''}>Away streak (win) ≥ N</option>
                         <option value="has_odds" ${condType === 'has_odds' ? 'selected' : ''}>Has odds</option>
+                        <option value="home_loss_streak" ${condType === 'home_loss_streak' ? 'selected' : ''}>Home streak (loss) ≥ N</option>
+                        <option value="home_win_streak" ${condType === 'home_win_streak' ? 'selected' : ''}>Home streak (win) ≥ N</option>
                         <option value="is_away" ${condType === 'is_away' ? 'selected' : ''}>Is away</option>
                         <option value="is_conference_game" ${condType === 'is_conference_game' ? 'selected' : ''}>Is conference game (college only)</option>
                         <option value="is_home" ${condType === 'is_home' ? 'selected' : ''}>Is home</option>
+                        <option value="is_national_broadcast" ${condType === 'is_national_broadcast' ? 'selected' : ''}>Is national broadcast</option>
+                        <option value="is_playoff" ${condType === 'is_playoff' ? 'selected' : ''}>Is playoff</option>
+                        <option value="is_preseason" ${condType === 'is_preseason' ? 'selected' : ''}>Is preseason</option>
                         <option value="is_ranked_opponent" ${condType === 'is_ranked_opponent' ? 'selected' : ''}>Is ranked opponent (top 25)</option>
                         <option value="is_rematch" ${condType === 'is_rematch' ? 'selected' : ''}>Is rematch (same season)</option>
                         <option value="is_top_ten_matchup" ${condType === 'is_top_ten_matchup' ? 'selected' : ''}>Is top 10 matchup</option>
-                        <option value="loss_streak" ${condType === 'loss_streak' ? 'selected' : ''}>Loss streak ≥ N</option>
-                        <option value="win_streak" ${condType === 'win_streak' ? 'selected' : ''}>Win streak ≥ N</option>
+                        <option value="loss_streak" ${condType === 'loss_streak' ? 'selected' : ''}>Streak (loss) ≥ N</option>
+                        <option value="opponent_name_contains" ${condType === 'opponent_name_contains' ? 'selected' : ''}>Opponent name contains</option>
+                        <option value="win_streak" ${condType === 'win_streak' ? 'selected' : ''}>Streak (win) ≥ N</option>
                     </select>
                 </div>
                 <div class="form-group" id="cond-value-group-${index}">
                     <label>Value</label>
-                    <input type="number" name="cond_value[]" id="cond_value_${index}" value="${condition.condition_value || ''}" placeholder="e.g., 3">
-                    <small class="help-text">For numerical conditions (streak length, etc.)</small>
+                    <input type="${condType === 'opponent_name_contains' ? 'text' : 'number'}" name="cond_value[]" id="cond_value_${index}" value="${condition.condition_value || ''}" placeholder="${condType === 'opponent_name_contains' ? 'e.g., Lakers' : 'e.g., 3'}">
+                    <small class="help-text">${condType === 'opponent_name_contains' ? 'Text to match in opponent name (case-insensitive)' : 'For numerical conditions (streak length, etc.)'}</small>
                 </div>
                 <div class="form-group">
                     <label>Priority (1-100, lower = higher)</label>
@@ -1392,15 +1400,23 @@ function conditionsRender() {
 
 function getConditionSummaryText(condition) {
     const labels = {
+        'away_loss_streak': `Away streak (loss) ≥ ${condition.condition_value || 'N'}`,
+        'away_win_streak': `Away streak (win) ≥ ${condition.condition_value || 'N'}`,
         'has_odds': 'Has odds',
+        'home_loss_streak': `Home streak (loss) ≥ ${condition.condition_value || 'N'}`,
+        'home_win_streak': `Home streak (win) ≥ ${condition.condition_value || 'N'}`,
         'is_away': 'Is away',
         'is_conference_game': 'Is conference game (college only)',
         'is_home': 'Is home',
+        'is_national_broadcast': 'Is national broadcast',
+        'is_playoff': 'Is playoff',
+        'is_preseason': 'Is preseason',
         'is_ranked_opponent': 'Is ranked opponent (top 25)',
         'is_rematch': 'Is rematch (same season)',
         'is_top_ten_matchup': 'Is top 10 matchup',
-        'loss_streak': `Loss streak ≥ ${condition.condition_value || 'N'}`,
-        'win_streak': `Win streak ≥ ${condition.condition_value || 'N'}`
+        'loss_streak': `Streak (loss) ≥ ${condition.condition_value || 'N'}`,
+        'opponent_name_contains': `Opponent name contains "${condition.condition_value || ''}"`,
+        'win_streak': `Streak (win) ≥ ${condition.condition_value || 'N'}`
     };
     return labels[condition.condition] || 'No condition selected';
 }
@@ -1416,13 +1432,20 @@ function updateConditionValueField(index) {
     const condType = select.value;
 
     // Conditions that need a value
-    const needsValue = ['win_streak', 'loss_streak'];
+    const needsValue = ['win_streak', 'loss_streak', 'home_win_streak', 'home_loss_streak',
+                       'away_win_streak', 'away_loss_streak', 'opponent_name_contains'];
 
     if (needsValue.includes(condType)) {
         valueGroup.style.display = 'block';
-        valueInput.type = 'number';
-        valueInput.placeholder = 'e.g., 3';
-        helpText.textContent = 'For numerical conditions (streak length, etc.)';
+        if (condType === 'opponent_name_contains') {
+            valueInput.type = 'text';
+            valueInput.placeholder = 'e.g., Lakers';
+            helpText.textContent = 'Text to match in opponent name (case-insensitive)';
+        } else {
+            valueInput.type = 'number';
+            valueInput.placeholder = 'e.g., 3';
+            helpText.textContent = 'For numerical conditions (streak length, etc.)';
+        }
     } else {
         valueGroup.style.display = 'none';
     }

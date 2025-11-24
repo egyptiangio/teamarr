@@ -1134,6 +1134,66 @@ class TemplateEngine:
             odds_list = competition.get('odds', [])
             return bool(odds_list and len(odds_list) > 0)
 
+        # Home/Away Streak conditions
+        elif condition_type == 'home_win_streak':
+            home_streak = context.get('streaks', {}).get('home_streak', '')
+            if not home_streak or not home_streak.startswith('W'):
+                return False
+            streak_count = int(home_streak[1:])  # Extract number from "W3"
+            return streak_count >= int(condition_value) if condition_value else False
+
+        elif condition_type == 'home_loss_streak':
+            home_streak = context.get('streaks', {}).get('home_streak', '')
+            if not home_streak or not home_streak.startswith('L'):
+                return False
+            streak_count = int(home_streak[1:])  # Extract number from "L2"
+            return streak_count >= int(condition_value) if condition_value else False
+
+        elif condition_type == 'away_win_streak':
+            away_streak = context.get('streaks', {}).get('away_streak', '')
+            if not away_streak or not away_streak.startswith('W'):
+                return False
+            streak_count = int(away_streak[1:])  # Extract number from "W3"
+            return streak_count >= int(condition_value) if condition_value else False
+
+        elif condition_type == 'away_loss_streak':
+            away_streak = context.get('streaks', {}).get('away_streak', '')
+            if not away_streak or not away_streak.startswith('L'):
+                return False
+            streak_count = int(away_streak[1:])  # Extract number from "L2"
+            return streak_count >= int(condition_value) if condition_value else False
+
+        # Season type conditions
+        elif condition_type == 'is_playoff':
+            season = game.get('season', {})
+            season_type = season.get('type', 0)
+            return season_type == 3
+
+        elif condition_type == 'is_preseason':
+            season = game.get('season', {})
+            season_type = season.get('type', 0)
+            return season_type == 1
+
+        # Broadcast conditions
+        elif condition_type == 'is_national_broadcast':
+            competition = game.get('competitions', [{}])[0]
+            broadcasts = competition.get('broadcasts', [])
+            # Check if any broadcast has national market type
+            for broadcast in broadcasts:
+                market = broadcast.get('market', {})
+                if isinstance(market, dict):
+                    market_type = market.get('type', '').lower()
+                    if market_type == 'national':
+                        return True
+            return False
+
+        # Opponent name condition
+        elif condition_type == 'opponent_name_contains':
+            if not condition_value:
+                return False
+            opponent_name = opponent.get('displayName', '') or opponent.get('name', '')
+            return condition_value.lower() in opponent_name.lower()
+
         return False
 
     def _format_rank(self, rank: int) -> str:
