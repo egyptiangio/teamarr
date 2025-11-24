@@ -16,11 +16,9 @@
         <div class="action-card">
             <h3>📡 Generate EPG</h3>
             <p>Create a fresh EPG file with current team schedules</p>
-            <form method="POST" action="{{ url_for('generate_epg', return_to='epg') }}" onsubmit="return confirmGenerate()">
-                <button type="submit" class="btn btn-primary btn-large">
-                    🚀 Generate EPG Now
-                </button>
-            </form>
+            <button onclick="generateEPGWithProgress('generate-epg-now-btn')" id="generate-epg-now-btn" class="btn btn-primary btn-large">
+                🚀 Generate EPG Now
+            </button>
             <div class="action-info">
                 {% if latest_epg %}
                 Last generated: {{ latest_epg.generated_at[:16].replace('T', ' ') }}<br>
@@ -643,9 +641,7 @@ mark.current-match {
 </style>
 
 <script>
-function confirmGenerate() {
-    return confirm('Generate a fresh EPG file? This will update the XMLTV output with current data.');
-}
+// EPG generation now handled by generateEPGWithProgress() in app.js
 
 function copyEPGUrl() {
     const input = document.getElementById('epg-url');

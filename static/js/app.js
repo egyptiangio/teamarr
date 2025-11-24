@@ -123,3 +123,98 @@ function convertFlashMessages() {
     // Hide the flash messages container
     flashMessages.style.display = 'none';
 }
+
+// EPG Generation with Progress Tracking
+function generateEPGWithProgress(buttonId = 'generate-epg-btn', returnTo = null) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) {
+        console.error(`Button with ID '${buttonId}' not found`);
+        return;
+    }
+
+    // Disable button during generation
+    const originalText = btn.textContent || btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+
+    // Create persistent notification for progress
+    let progressNotification = showNotification('Initializing EPG generation...', 'info', 0, 'Generating EPG');
+
+    // Listen to Server-Sent Events stream
+    const eventSource = new EventSource('/generate/stream');
+
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+
+        if (data.status === 'starting') {
+            updateProgressNotification(progressNotification, data.message, 0, null);
+        }
+        else if (data.status === 'progress') {
+            const progressText = `Processing ${data.team_name} (${data.current}/${data.total})`;
+            updateProgressNotification(progressNotification, progressText, data.percent, data.team_name);
+        }
+        else if (data.status === 'finalizing') {
+            updateProgressNotification(progressNotification, data.message, 95, null);
+        }
+        else if (data.status === 'complete') {
+            // Close SSE connection
+            eventSource.close();
+
+            // Close progress notification
+            closeNotification(progressNotification.querySelector('.notification-close'));
+
+            // Show success notification
+            showNotification(data.message, 'success', 10000);
+
+            // Re-enable button
+            btn.disabled = false;
+            btn.textContent = originalText;
+
+            // Reload page to show updated stats
+            setTimeout(() => window.location.reload(), 2000);
+        }
+        else if (data.status === 'error') {
+            // Close SSE connection
+            eventSource.close();
+
+            // Close progress notification
+            closeNotification(progressNotification.querySelector('.notification-close'));
+
+            // Show error notification
+            showNotification('Error: ' + data.message, 'error', 10000);
+
+            // Re-enable button
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error('SSE Error:', error);
+        eventSource.close();
+
+        // Close progress notification
+        closeNotification(progressNotification.querySelector('.notification-close'));
+
+        // Show error
+        showNotification('Connection error during EPG generation', 'error', 10000);
+
+        // Re-enable button
+        btn.disabled = false;
+        btn.textContent = originalText;
+    };
+}
+
+function updateProgressNotification(notification, message, percent, teamName) {
+    const messageEl = notification.querySelector('.notification-message');
+    if (messageEl) {
+        let html = message;
+        if (percent !== null) {
+            html += `<br><div style="margin-top: 0.5rem; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; height: 8px;">
+                <div style="background: var(--primary); height: 100%; width: ${percent}%; transition: width 0.3s;"></div>
+            </div>
+            <div style="margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">${percent}%</div>`;
+        }
+        messageEl.innerHTML = html;
+    }
+}
