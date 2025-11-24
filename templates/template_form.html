@@ -891,14 +891,19 @@ let sampleData = {
 // INITIALIZATION
 // ============================================================================
 document.addEventListener('DOMContentLoaded', async function() {
-    // Load variables from API first
-    await loadVariablesFromAPI();
-
-    // Merge API sample data with fallback
-    sampleData = { ...sampleDataFromAPI, ...sampleData };
-
-    // Initialize UI components
+    // Initialize tabs immediately (don't wait for API)
     initTabs();
+
+    // Load variables from API first
+    try {
+        await loadVariablesFromAPI();
+        // Merge API sample data with fallback
+        sampleData = { ...sampleDataFromAPI, ...sampleData };
+    } catch (error) {
+        console.error('Failed to load variables:', error);
+    }
+
+    // Initialize remaining UI components
     initTemplateVariables();
     initTemplatePreview();
     initFallbackDescriptions();
