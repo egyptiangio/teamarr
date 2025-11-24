@@ -68,7 +68,7 @@
                 <div class="stat-card epg-stat">
                     <div class="stat-icon">📅</div>
                     <div class="stat-content">
-                        <div class="stat-value-small">{{ latest_epg.generated_at[:16].replace('T', ' ') }}</div>
+                        <div class="stat-value-small">{{ latest_epg.generated_at_formatted }}</div>
                         <div class="stat-label">Last Generated</div>
                     </div>
                 </div>
@@ -119,7 +119,7 @@
                     <tbody>
                         {% for entry in epg_history %}
                             <tr>
-                                <td>{{ entry.generated_at[:19].replace('T', ' ') }}</td>
+                                <td>{{ entry.generated_at_formatted }}</td>
                                 <td class="text-center">{{ entry.num_channels }}</td>
                                 <td class="text-center">{{ entry.num_events }}</td>
                                 <td class="text-center">{{ entry.num_programmes }}</td>

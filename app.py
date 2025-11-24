@@ -3,13 +3,14 @@ Teamarr - Dynamic EPG Generator for Sports Team Channels
 Flask web application for managing templates and teams
 """
 
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash, Response
 import os
 import json
 import sys
 import threading
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import traceback
 
 # Add project root to path
@@ -183,6 +184,10 @@ def index():
     active_team_count = cursor.execute("SELECT COUNT(*) FROM teams WHERE active = 1").fetchone()[0]
     assigned_team_count = cursor.execute("SELECT COUNT(*) FROM teams WHERE template_id IS NOT NULL").fetchone()[0]
 
+    # Get timezone from settings
+    settings_row = cursor.execute("SELECT default_timezone FROM settings WHERE id = 1").fetchone()
+    user_timezone = settings_row[0] if settings_row else 'America/New_York'
+
     # Get latest EPG generation stats
     latest_epg = cursor.execute("""
         SELECT generated_at, num_programmes, num_events, num_channels
@@ -202,13 +207,37 @@ def index():
 
     conn.close()
 
+    # Convert timestamps to user's timezone
+    def format_timestamp(utc_timestamp):
+        if not utc_timestamp:
+            return None
+        # Parse UTC timestamp
+        dt_utc = datetime.fromisoformat(utc_timestamp.replace('Z', '+00:00'))
+        # Convert to user's timezone
+        dt_local = dt_utc.astimezone(ZoneInfo(user_timezone))
+        # Format with timezone abbreviation
+        return dt_local.strftime('%Y-%m-%d %H:%M:%S %Z')
+
+    # Format timestamps for latest EPG
+    if latest_epg:
+        latest_epg_dict = dict(latest_epg)
+        latest_epg_dict['generated_at_formatted'] = format_timestamp(latest_epg_dict['generated_at'])
+        latest_epg = latest_epg_dict
+
+    # Format timestamps for history
+    epg_history_formatted = []
+    for entry in epg_history:
+        entry_dict = dict(entry)
+        entry_dict['generated_at_formatted'] = format_timestamp(entry_dict['generated_at'])
+        epg_history_formatted.append(entry_dict)
+
     return render_template('index.html',
         template_count=template_count,
         team_count=team_count,
         active_team_count=active_team_count,
         assigned_team_count=assigned_team_count,
-        latest_epg=dict(latest_epg) if latest_epg else None,
-        epg_history=[dict(e) for e in epg_history]
+        latest_epg=latest_epg,
+        epg_history=epg_history_formatted
     )
 
 # =============================================================================
