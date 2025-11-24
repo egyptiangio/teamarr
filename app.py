@@ -1129,6 +1129,28 @@ def download_epg():
         flash(f"Error downloading EPG: {str(e)}", 'error')
         return redirect(url_for('index'))
 
+@app.route('/teamarr.xml')
+def serve_epg():
+    """Serve EPG file for IPTV clients"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT epg_output_path FROM settings WHERE id = 1")
+        result = cursor.fetchone()
+        conn.close()
+
+        output_path = result[0] if result else '/app/data/teamarr.xml'
+
+        if not os.path.exists(output_path):
+            app.logger.warning(f'EPG file not found at {output_path}')
+            return "EPG file not found. Generate it first.", 404
+
+        app.logger.info(f'📡 Serving EPG file: {output_path}')
+        return send_file(output_path, mimetype='application/xml')
+    except Exception as e:
+        app.logger.error(f"❌ Error serving EPG: {str(e)}", exc_info=True)
+        return f"Error serving EPG: {str(e)}", 500
+
 # =============================================================================
 # API ENDPOINTS
 # =============================================================================
