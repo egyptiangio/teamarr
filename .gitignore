@@ -29,6 +29,9 @@ app.log
 .claude.md
 REFACTOR_PLAN.md
 
+# Documentation/Integration notes
+docs/
+
 # OS
 .DS_Store
 Thumbs.db
