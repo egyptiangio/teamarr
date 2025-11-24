@@ -1,12 +1,12 @@
 {
   "version": "3.0.2",
   "generated": "2025-11-23",
-  "total_variables": 260,
-  "base_variables": 121,
+  "total_variables": 261,
+  "base_variables": 122,
   "suffix_system": {
     "enabled": true,
     "description": "Optimized suffix system after comprehensive audit - only necessary suffixes are generated",
-    "total_with_suffixes": 260,
+    "total_with_suffixes": 261,
     "audit_summary": {
       "last_only": {
         "count": 11,
@@ -33,9 +33,9 @@
         ]
       },
       "base_only": {
-        "count": 37,
+        "count": 38,
         "description": "Team identity and season stats that don't vary by game context",
-        "total_instances": 37,
+        "total_instances": 38,
         "examples": [
           "team_name",
           "team_record",
@@ -66,7 +66,7 @@
           "game_events": "Populated with current game data",
           "filler_programs": "Empty (no current game)"
         },
-        "count": 110
+        "count": 111
       },
       ".next": {
         "syntax": "{variable.next}",
@@ -310,6 +310,23 @@
       "icon": "🏀",
       "type": "string",
       "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ]
+    },
+    {
+      "name": "team_name_pascal",
+      "description": "Team name in PascalCase for channel IDs",
+      "source": "Calculated from team_name",
+      "example": "DetroitPistons",
+      "category": "🏈 Teams",
+      "icon": "🏀",
+      "type": "string",
+      "availability": "always",
+      "notes": "BASE_ONLY: No spaces, each word capitalized. Use with {league_id} for channel IDs like 'DetroitPistons.nhl'",
       "sports": [
         "basketball",
         "football",

@@ -104,6 +104,11 @@ class TemplateEngine:
         # Use team_config as fallback when game data is not available
         variables['team_name'] = our_team.get('name', '') or team_config.get('team_name', '')
         variables['team_abbrev'] = our_team.get('abbrev', '') or team_config.get('team_abbrev', '')
+
+        # Team name in PascalCase for channel IDs (e.g., "Anaheim Ducks" -> "AnaheimDucks")
+        team_name = variables['team_name']
+        variables['team_name_pascal'] = ''.join(word.capitalize() for word in team_name.split())
+
         variables['opponent'] = opponent.get('name', '')
         variables['opponent_abbrev'] = opponent.get('abbrev', '')
         variables['matchup_abbrev'] = f"{away_team.get('abbrev', '')} @ {home_team.get('abbrev', '')}"
@@ -142,6 +147,8 @@ class TemplateEngine:
         # Use league_name (e.g., "NBA") instead of league code (e.g., "nba")
         variables['league'] = team_config.get('league_name', '') or team_config.get('league', '').upper()
         variables['league_name'] = team_config.get('league_name', '')
+        # League code in lowercase for channel IDs (e.g., "nba", "nhl")
+        variables['league_id'] = team_config.get('league', '').lower()
 
         # Conference/Division variables
         # - college_conference: Conference name for college sports (e.g., "Sun Belt", "ACC")
@@ -646,9 +653,9 @@ class TemplateEngine:
             'away_record', 'away_streak', 'away_win_pct', 'games_back', 'head_coach',
             'home_record', 'home_streak', 'home_win_pct', 'is_national_broadcast', 'is_playoff',
             'is_preseason', 'is_ranked', 'is_ranked_matchup', 'is_regular_season', 'last_10_record',
-            'last_5_record', 'league', 'league_name', 'opponent_is_ranked', 'playoff_seed',
+            'last_5_record', 'league', 'league_id', 'league_name', 'opponent_is_ranked', 'playoff_seed',
             'pro_conference', 'pro_conference_abbrev', 'pro_division', 'recent_form', 'sport',
-            'streak', 'team_abbrev', 'team_losses', 'team_name', 'team_papg', 'team_ppg',
+            'streak', 'team_abbrev', 'team_losses', 'team_name', 'team_name_pascal', 'team_papg', 'team_ppg',
             'team_rank', 'team_record', 'team_ties', 'team_win_pct', 'team_wins'
         }
 
