@@ -29,6 +29,10 @@ class EPGOrchestrator:
         self.template_engine = TemplateEngine()
         self.api_calls = 0
 
+    def _round_to_last_hour(self, dt: datetime) -> datetime:
+        """Round datetime down to the last top of hour"""
+        return dt.replace(minute=0, second=0, microsecond=0)
+
     def _normalize_event(self, event: dict) -> dict:
         """
         Normalize ESPN API event structure to template engine format
@@ -78,7 +82,7 @@ class EPGOrchestrator:
 
         return normalized
 
-    def generate_epg(self, days_ahead: int = 14, epg_timezone: str = 'America/New_York', settings: dict = None, progress_callback=None) -> Dict[str, Any]:
+    def generate_epg(self, days_ahead: int = 14, epg_timezone: str = 'America/New_York', settings: dict = None, progress_callback=None, start_datetime: datetime = None) -> Dict[str, Any]:
         """
         Generate complete EPG data for all active teams with templates
 
@@ -87,6 +91,7 @@ class EPGOrchestrator:
             epg_timezone: Timezone for EPG generation
             settings: Global settings dict (includes midnight_crossover_mode, etc.)
             progress_callback: Optional callback function(current, total, team_name, message) for progress updates
+            start_datetime: Optional explicit start datetime for EPG (overrides auto-calculation)
 
         Returns:
             Dict with:
@@ -116,20 +121,29 @@ class EPGOrchestrator:
         # Get settings
         settings = self._get_settings()
 
-        # Smart lookback: Check last 6 hours for any games to determine EPG start time
-        # This avoids generating unnecessary retrospective EPG data
+        # Calculate EPG start datetime (single source of truth)
         epg_tz = ZoneInfo(epg_timezone)
-        lookback_hours = 6
-        epg_start_datetime = self._calculate_epg_start_time(teams_list, epg_timezone, settings, lookback_hours)
 
-        if epg_start_datetime:
-            # Found recent game - start EPG from that game's start time
-            logger.info(f"EPG will start from {epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')} (recent game within {lookback_hours} hours)")
+        if start_datetime:
+            # Explicit start datetime provided - use as-is
+            if start_datetime.tzinfo:
+                epg_start_datetime = start_datetime.astimezone(epg_tz)
+            else:
+                epg_start_datetime = start_datetime.replace(tzinfo=epg_tz)
+            logger.info(f"EPG will start from {epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')} (explicit start_datetime)")
         else:
-            # No recent games - start from 6 hours ago to catch anything in progress
-            now = datetime.now(epg_tz)
-            epg_start_datetime = now - timedelta(hours=lookback_hours)
-            logger.info(f"EPG will start from {epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')} ({lookback_hours} hour lookback)")
+            # Auto-calculate: check for games in last 6 hours
+            lookback_hours = 6
+            epg_start_datetime = self._calculate_epg_start_time(teams_list, epg_timezone, settings, lookback_hours)
+
+            if epg_start_datetime:
+                # Found recent game - start EPG from that game's start time
+                logger.info(f"EPG will start from {epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')} (in-progress game)")
+            else:
+                # No recent games - start from last top of hour
+                now = datetime.now(epg_tz)
+                epg_start_datetime = self._round_to_last_hour(now)
+                logger.info(f"EPG will start from {epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')} (last top of hour)")
 
         # Fetch schedules for each team
         all_events = {}
@@ -541,29 +555,22 @@ class EPGOrchestrator:
             logger.warning(f"No schedule data for team {team.get('team_name')}")
             return []
 
-        # Calculate days_behind from epg_start_datetime to synchronize with filler generation
-        # This ensures events and filler both start from the same point in time
-        epg_tz = ZoneInfo(epg_timezone)
-        now = datetime.now(epg_tz)
-        time_diff = now - epg_start_datetime.astimezone(epg_tz)
-        days_behind = max(0, int(time_diff.total_seconds() / 86400))  # Convert to full days
-
-        logger.debug(f"Parsing events with days_behind={days_behind} based on epg_start_datetime={epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')}")
-
-        # Parse events (only within EPG window, starting from epg_start_datetime)
-        events = self.espn.parse_schedule_events(schedule_data, days_ahead, days_behind=days_behind)
+        # Parse events using epg_start_datetime as the cutoff (single source of truth)
+        logger.debug(f"Parsing events with cutoff_past_datetime={epg_start_datetime.strftime('%Y-%m-%d %H:%M %Z')}")
+        events = self.espn.parse_schedule_events(schedule_data, days_ahead, cutoff_past_datetime=epg_start_datetime)
 
         # Enrich today's games with scoreboard data (odds, conferenceCompetition, etc.)
         api_counter = {'count': self.api_calls}
         events = self._enrich_with_scoreboard(events, team, api_counter, epg_timezone)
         self.api_calls = api_counter['count']
 
-        # Parse extended events (for context only)
-        # Include past 30 days for last game context with scores
+        # Parse extended events (for context only - look back 30 days for last game info)
+        epg_tz = ZoneInfo(epg_timezone)
+        context_cutoff = datetime.now(epg_tz) - timedelta(days=30)
         extended_events = self.espn.parse_schedule_events(
             extended_schedule_data,
             days_ahead=30,
-            days_behind=30
+            cutoff_past_datetime=context_cutoff
         ) if extended_schedule_data else []
 
         # Enrich past events with scoreboard data to get actual scores
@@ -1111,19 +1118,16 @@ class EPGOrchestrator:
         midnight_mode = settings.get('midnight_crossover_mode', 'idle') if settings else 'idle'
 
         # Build date range for EPG window - synchronized with event parsing
+        now = datetime.now(team_tz)
         if epg_start_datetime is None:
-            now = datetime.now(team_tz)
+            first_day_start = self._round_to_last_hour(now)
             start_date = now.date()
         else:
-            # Convert to team timezone and extract date
-            start_datetime_tz = epg_start_datetime.astimezone(team_tz)
-            start_date = start_datetime_tz.date()
+            # Convert to team timezone - this is the exact start time for filler on first day
+            first_day_start = epg_start_datetime.astimezone(team_tz)
+            start_date = first_day_start.date()
 
         # Calculate end_date based on today + (days_ahead - 1)
-        # days_ahead=1 means today only, days_ahead=2 means today and tomorrow, etc.
-        # If start_date is earlier due to midnight crossover, we'll generate filler from that
-        # point forward to the calculated end_date
-        now = datetime.now(team_tz)
         end_date = now.date() + timedelta(days=days_ahead - 1)
 
         # Create a set of game dates for quick lookup (only EPG window games)
@@ -1177,9 +1181,12 @@ class EPGOrchestrator:
         # Process each day in the EPG window
         current_date = start_date
         while current_date <= end_date:
-            # Get midnight times for this day
-            day_start = datetime.combine(current_date, datetime.min.time()).replace(tzinfo=team_tz)
-            day_end = day_start + timedelta(days=1)
+            # First day: start from epg_start_datetime; subsequent days: start from midnight
+            if current_date == start_date:
+                day_start = first_day_start
+            else:
+                day_start = datetime.combine(current_date, datetime.min.time()).replace(tzinfo=team_tz)
+            day_end = datetime.combine(current_date + timedelta(days=1), datetime.min.time()).replace(tzinfo=team_tz)
 
             if current_date in game_dates:
                 # This day has game(s)
@@ -1345,28 +1352,6 @@ class EPGOrchestrator:
         # No more blocks today, return first block of next day
         next_day = dt + timedelta(days=1)
         return next_day.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    def _get_time_block_start(self, dt: datetime) -> datetime:
-        """
-        Get the time block boundary that starts at or before the given datetime
-
-        Args:
-            dt: Current datetime
-
-        Returns:
-            Datetime of current/previous time block boundary
-        """
-        time_blocks = [0, 6, 12, 18]
-        current_hour = dt.hour
-
-        # Find the most recent block
-        block_hour = 0
-        for bh in reversed(time_blocks):
-            if current_hour >= bh:
-                block_hour = bh
-                break
-
-        return dt.replace(hour=block_hour, minute=0, second=0, microsecond=0)
 
     def _create_filler_chunks(
         self,

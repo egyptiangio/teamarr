@@ -355,14 +355,14 @@ class ESPNClient:
         url = f"{self.base_url}/{sport}/{league}/scoreboard?dates={date}"
         return self._make_request(url)
 
-    def parse_schedule_events(self, schedule_data: Dict, days_ahead: int = 14, days_behind: int = 1) -> List[Dict]:
+    def parse_schedule_events(self, schedule_data: Dict, days_ahead: int = 14, cutoff_past_datetime: datetime = None) -> List[Dict]:
         """
         Parse schedule data and extract relevant event information
 
         Args:
             schedule_data: Raw schedule data from ESPN API
             days_ahead: Number of days to include (1 = today only, 2 = today and tomorrow, etc.)
-            days_behind: Filter to events within this many days in the past (default: 1 to include today's games that may have started)
+            cutoff_past_datetime: Earliest event datetime to include (events before this are filtered out)
 
         Returns:
             List of parsed event dictionaries
@@ -373,10 +373,17 @@ class ESPNClient:
         events = []
         from datetime import timezone as tz
         now = datetime.now(tz.utc)
-        # Calculate cutoff as end of the Nth day (days_ahead=1 means today only, 2 means today+tomorrow, etc.)
+
+        # Calculate future cutoff as end of the Nth day
         cutoff_date = now.date() + timedelta(days=days_ahead - 1)
         cutoff_future = datetime.combine(cutoff_date, datetime.max.time()).replace(tzinfo=tz.utc)
-        cutoff_past = now - timedelta(days=days_behind)
+
+        # Use provided cutoff_past_datetime or default to 6 hours ago
+        if cutoff_past_datetime:
+            # Convert to UTC for comparison
+            cutoff_past = cutoff_past_datetime.astimezone(tz.utc) if cutoff_past_datetime.tzinfo else cutoff_past_datetime.replace(tzinfo=tz.utc)
+        else:
+            cutoff_past = now - timedelta(hours=6)
 
         for event in schedule_data.get('events', []):
             try:
