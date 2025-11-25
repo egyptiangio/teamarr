@@ -327,27 +327,34 @@ class EPGManager:
 
         return None
 
-    def find_by_url_filename(self, filename: str) -> Optional[Dict]:
+    def find_teamarr_source(self) -> Optional[Dict]:
         """
-        Find EPG source by URL containing the given filename.
+        Find EPG source that matches Teamarr.
 
-        Args:
-            filename: Filename to search for in EPG source URLs
+        Searches for:
+        1. EPG source name containing "teamarr" (case-insensitive)
+        2. EPG source URL containing "teamarr" (case-insensitive)
 
         Returns:
             First matching EPG source or None
         """
+        import re
+
         sources = self.list_sources(include_dummy=False)
+        teamarr_pattern = re.compile(r'teamarr', re.IGNORECASE)
 
         for source in sources:
             if source.get("source_type") != "url":
                 continue
 
-            url = source.get("url", "")
-            # Extract filename from URL
-            url_filename = url.split("/")[-1].split("?")[0]
+            # Check name for "teamarr"
+            name = source.get("name", "")
+            if teamarr_pattern.search(name):
+                return source
 
-            if url_filename == filename:
+            # Check URL for "teamarr"
+            url = source.get("url", "")
+            if teamarr_pattern.search(url):
                 return source
 
         return None

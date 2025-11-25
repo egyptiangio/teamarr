@@ -882,7 +882,7 @@ def dispatcharr_test():
 
 @app.route('/api/dispatcharr/discover', methods=['POST'])
 def dispatcharr_discover():
-    """Discover EPG source matching Teamarr's output filename"""
+    """Discover EPG source matching Teamarr"""
     from api.dispatcharr_client import EPGManager
 
     data = request.get_json()
@@ -897,14 +897,6 @@ def dispatcharr_discover():
         }), 400
 
     try:
-        # Get the output filename from settings
-        conn = get_connection()
-        settings = dict(conn.execute("SELECT epg_output_path FROM settings WHERE id = 1").fetchone())
-        conn.close()
-
-        output_path = settings.get('epg_output_path', 'teamarr.xml')
-        filename = output_path.split('/')[-1]
-
         manager = EPGManager(url, username, password)
 
         # First test the connection
@@ -912,8 +904,8 @@ def dispatcharr_discover():
         if not test_result['success']:
             return jsonify(test_result)
 
-        # Try to find EPG source by filename
-        source = manager.find_by_url_filename(filename)
+        # Try to find EPG source by "teamarr" in name or URL
+        source = manager.find_teamarr_source()
 
         if source:
             return jsonify({
@@ -928,7 +920,7 @@ def dispatcharr_discover():
             sources = manager.list_sources(include_dummy=False)
             return jsonify({
                 'success': False,
-                'message': f"No EPG source found with URL containing '{filename}'. Check that Dispatcharr has an EPG source pointing to Teamarr's output file.",
+                'message': "No EPG source found with 'teamarr' in name or URL. Check that Dispatcharr has an EPG source pointing to Teamarr.",
                 'available_sources': [{'id': s['id'], 'name': s['name'], 'url': s.get('url', '')} for s in sources]
             })
 
