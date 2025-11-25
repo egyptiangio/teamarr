@@ -1687,8 +1687,7 @@ def _analyze_epg_content(xml_content):
         'filler_programs': {
             'pregame': 0,
             'postgame': 0,
-            'idle': 0,
-            'other': 0
+            'idle': 0
         },
         'unreplaced_variables': [],
         'channels': 0,
@@ -1741,10 +1740,6 @@ def _analyze_epg_content(xml_content):
                     is_filler = True
                 elif 'programming' in title_lower or 'next game' in title_lower or 'no game' in title_lower:
                     analysis['filler_programs']['idle'] += 1
-                    is_filler = True
-                elif not any(sport in title_lower for sport in ['football', 'basketball', 'baseball', 'hockey', 'soccer']):
-                    # Might be other filler
-                    analysis['filler_programs']['other'] += 1
                     is_filler = True
 
             if not is_filler:
