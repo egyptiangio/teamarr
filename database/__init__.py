@@ -63,6 +63,29 @@ def run_migrations(conn):
         conn.commit()
         print(f"✅ Ran {migrations_run} migration(s)")
 
+    # Conditional postgame/idle description columns (added in v1.0.7)
+    cursor.execute("PRAGMA table_info(templates)")
+    template_columns = {row[1] for row in cursor.fetchall()}
+
+    conditional_columns = [
+        ("postgame_conditional_enabled", "BOOLEAN DEFAULT 0"),
+        ("postgame_description_final", "TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}'"),
+        ("postgame_description_not_final", "TEXT DEFAULT 'The game between the {team_name} and {opponent.last} on {game_day.last} {game_date.last} has not yet ended.'"),
+        ("idle_conditional_enabled", "BOOLEAN DEFAULT 0"),
+        ("idle_description_final", "TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last}. Next: {opponent.next} on {game_date.next}'"),
+        ("idle_description_not_final", "TEXT DEFAULT 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}'"),
+    ]
+
+    for col_name, col_def in conditional_columns:
+        if col_name not in template_columns:
+            try:
+                cursor.execute(f"ALTER TABLE templates ADD COLUMN {col_name} {col_def}")
+                print(f"  ✅ Added column: templates.{col_name}")
+            except Exception as e:
+                print(f"  ⚠️ Could not add column {col_name}: {e}")
+
+    conn.commit()
+
     # Fix NCAA league logos (use NCAA.com sport banners)
     ncaa_logo_fixes = [
         ("ncaaf", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png"),

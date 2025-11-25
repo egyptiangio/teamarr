@@ -92,15 +92,21 @@ CREATE TABLE IF NOT EXISTS templates (
     ]',
     postgame_title TEXT DEFAULT 'Postgame Recap',
     postgame_subtitle TEXT,
-    postgame_description TEXT DEFAULT '{team_name} {result_text} {opponent} - Final: {final_score}',
+    postgame_description TEXT DEFAULT '{team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}',
     postgame_art_url TEXT,
+    postgame_conditional_enabled BOOLEAN DEFAULT 0,
+    postgame_description_final TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}',
+    postgame_description_not_final TEXT DEFAULT 'The game between the {team_name} and {opponent.last} on {game_day.last} {game_date.last} has not yet ended.',
 
     -- Schedule Filler: Idle Days (Between Games / No Game Days)
     idle_enabled BOOLEAN DEFAULT 1,
     idle_title TEXT DEFAULT '{team_name} Programming',
     idle_subtitle TEXT,
-    idle_description TEXT DEFAULT 'Next game: {next_date} at {next_time} vs {next_opponent}',
+    idle_description TEXT DEFAULT 'Next game: {game_date.next} at {game_time.next} vs {opponent.next}',
     idle_art_url TEXT,
+    idle_conditional_enabled BOOLEAN DEFAULT 0,
+    idle_description_final TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last}. Next: {opponent.next} on {game_date.next}',
+    idle_description_not_final TEXT DEFAULT 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}',
 
     -- Conditional Descriptions (Templates tab)
     description_options JSON DEFAULT '[]'    -- Array of conditional description templates

@@ -1419,8 +1419,19 @@ class EPGOrchestrator:
         # Get templates for this filler type
         title_template = team.get(f'{filler_type}_title', f'{filler_type.capitalize()} Coverage')
         subtitle_template = team.get(f'{filler_type}_subtitle', '')
-        desc_template = team.get(f'{filler_type}_description', '')
         art_url_template = team.get(f'{filler_type}_art_url', '')
+
+        # Description template - check for conditional mode (postgame/idle only)
+        desc_template = team.get(f'{filler_type}_description', '')
+        if filler_type in ['postgame', 'idle'] and team.get(f'{filler_type}_conditional_enabled'):
+            # Check if last game is final
+            last_game_status = (last_game_event or {}).get('status', {})
+            is_last_game_final = last_game_status.get('completed', False)
+
+            if is_last_game_final:
+                desc_template = team.get(f'{filler_type}_description_final', desc_template)
+            else:
+                desc_template = team.get(f'{filler_type}_description_not_final', desc_template)
 
         # Get program datetime for relative next/last game finding
         program_datetime = start_dt

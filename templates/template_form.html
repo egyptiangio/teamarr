@@ -719,10 +719,32 @@
                         </div>
                         <div class="form-group">
                             <label for="postgame_description">Description</label>
-                            <input type="text" name="postgame_description" id="postgame_description" value="{{ template.postgame_description if template else '{team_name} {result_text} {opponent} - Final: {final_score}' }}" class="template-field">
+                            <input type="text" name="postgame_description" id="postgame_description" value="{{ template.postgame_description if template else '{team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}' }}" class="template-field">
                             <div class="inline-preview">
                                 <small>Preview:</small>
-                                <span id="preview-postgame-description">Pistons defeated Heat - Final: 125-124</span>
+                                <span id="preview-postgame-description">Pistons defeated Heat 125-124</span>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 6px;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <input type="checkbox" name="postgame_conditional_enabled" id="postgame_conditional_enabled"
+                                       {% if template and template.postgame_conditional_enabled %}checked{% endif %}
+                                       onchange="togglePostgameConditional()">
+                                <span>Use conditional description based on last game status</span>
+                            </label>
+                            <div id="postgame-conditional-fields" style="{% if not template or not template.postgame_conditional_enabled %}display: none;{% endif %}">
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="postgame_description_final" style="font-size: 0.85rem; color: var(--success);">✓ If last game is final:</label>
+                                    <input type="text" name="postgame_description_final" id="postgame_description_final"
+                                           value="{{ template.postgame_description_final if template else 'The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}' }}"
+                                           class="template-field" placeholder="The {team_name} {result_text.last} the {opponent.last} {final_score.last}">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="postgame_description_not_final" style="font-size: 0.85rem; color: var(--warning);">⏳ If last game is NOT final:</label>
+                                    <input type="text" name="postgame_description_not_final" id="postgame_description_not_final"
+                                           value="{{ template.postgame_description_not_final if template else 'The game between the {team_name} and {opponent.last} on {game_day.last} {game_date.last} has not yet ended.' }}"
+                                           class="template-field" placeholder="The game between {team_name} and {opponent.last} has not yet ended.">
+                                </div>
                             </div>
                         </div>
                         <div class="form-group">
@@ -758,10 +780,32 @@
                         </div>
                         <div class="form-group">
                             <label for="idle_description">Description</label>
-                            <input type="text" name="idle_description" id="idle_description" value="{{ template.idle_description if template else 'Next game: {next_date} at {next_time} vs {next_opponent}' }}" class="template-field">
+                            <input type="text" name="idle_description" id="idle_description" value="{{ template.idle_description if template else 'Next game: {game_date.next} at {game_time.next} vs {opponent.next}' }}" class="template-field">
                             <div class="inline-preview">
                                 <small>Preview:</small>
-                                <span id="preview-idle-description">Next game: LA Clippers on November 25</span>
+                                <span id="preview-idle-description">Next game: November 25 at 7:00 PM vs LA Clippers</span>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 6px;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <input type="checkbox" name="idle_conditional_enabled" id="idle_conditional_enabled"
+                                       {% if template and template.idle_conditional_enabled %}checked{% endif %}
+                                       onchange="toggleIdleConditional()">
+                                <span>Use conditional description based on last game status</span>
+                            </label>
+                            <div id="idle-conditional-fields" style="{% if not template or not template.idle_conditional_enabled %}display: none;{% endif %}">
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="idle_description_final" style="font-size: 0.85rem; color: var(--success);">✓ If last game is final:</label>
+                                    <input type="text" name="idle_description_final" id="idle_description_final"
+                                           value="{{ template.idle_description_final if template else 'The {team_name} {result_text.last} the {opponent.last} {final_score.last}. Next: {opponent.next} on {game_date.next}' }}"
+                                           class="template-field" placeholder="The {team_name} {result_text.last} {opponent.last}. Next: {opponent.next}">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="idle_description_not_final" style="font-size: 0.85rem; color: var(--warning);">⏳ If last game is NOT final:</label>
+                                    <input type="text" name="idle_description_not_final" id="idle_description_not_final"
+                                           value="{{ template.idle_description_not_final if template else 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}' }}"
+                                           class="template-field" placeholder="Last played {opponent.last}. Next: {opponent.next}">
+                                </div>
                             </div>
                         </div>
                         <div class="form-group">
@@ -988,6 +1032,20 @@ function updateGameDurationMode() {
     }
 }
 
+// ============================================================================
+// CONDITIONAL FILLER TOGGLES
+// ============================================================================
+function togglePostgameConditional() {
+    const checkbox = document.getElementById('postgame_conditional_enabled');
+    const fields = document.getElementById('postgame-conditional-fields');
+    fields.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+function toggleIdleConditional() {
+    const checkbox = document.getElementById('idle_conditional_enabled');
+    const fields = document.getElementById('idle-conditional-fields');
+    fields.style.display = checkbox.checked ? 'block' : 'none';
+}
 
 // ============================================================================
 // TEMPLATE PREVIEW

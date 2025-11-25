@@ -1882,12 +1882,18 @@ def _extract_template_form_data(form):
         'postgame_description': form.get('postgame_description'),
         'postgame_art_url': form.get('postgame_art_url'),
         'postgame_periods': form.get('postgame_periods'),  # JSON string
+        'postgame_conditional_enabled': 1 if form.get('postgame_conditional_enabled') == 'on' else 0,
+        'postgame_description_final': form.get('postgame_description_final'),
+        'postgame_description_not_final': form.get('postgame_description_not_final'),
 
         'idle_enabled': 1 if form.get('idle_enabled') == 'on' else 0,
         'idle_title': form.get('idle_title'),
         'idle_subtitle': form.get('idle_subtitle'),
         'idle_description': form.get('idle_description'),
         'idle_art_url': form.get('idle_art_url'),
+        'idle_conditional_enabled': 1 if form.get('idle_conditional_enabled') == 'on' else 0,
+        'idle_description_final': form.get('idle_description_final'),
+        'idle_description_not_final': form.get('idle_description_not_final'),
 
         # Conditional descriptions
         'description_options': form.get('description_options')  # JSON string
