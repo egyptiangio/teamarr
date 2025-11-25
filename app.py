@@ -880,58 +880,6 @@ def dispatcharr_test():
         }), 500
 
 
-@app.route('/api/dispatcharr/discover', methods=['POST'])
-def dispatcharr_discover():
-    """Discover EPG source matching Teamarr"""
-    from api.dispatcharr_client import EPGManager
-
-    data = request.get_json()
-    url = data.get('url', '').strip()
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-
-    if not all([url, username, password]):
-        return jsonify({
-            'success': False,
-            'message': 'URL, username, and password are required'
-        }), 400
-
-    try:
-        manager = EPGManager(url, username, password)
-
-        # First test the connection
-        test_result = manager.test_connection()
-        if not test_result['success']:
-            return jsonify(test_result)
-
-        # Try to find EPG source by "teamarr" in name or URL
-        source = manager.find_teamarr_source()
-
-        if source:
-            return jsonify({
-                'success': True,
-                'message': f"Found EPG source: {source['name']}",
-                'epg_id': source['id'],
-                'epg_name': source['name'],
-                'epg_url': source.get('url', '')
-            })
-        else:
-            # Return sources list so user can see what's available
-            sources = manager.list_sources(include_dummy=False)
-            return jsonify({
-                'success': False,
-                'message': "No EPG source found with 'teamarr' in name or URL. Check that Dispatcharr has an EPG source pointing to Teamarr.",
-                'available_sources': [{'id': s['id'], 'name': s['name'], 'url': s.get('url', '')} for s in sources]
-            })
-
-    except Exception as e:
-        app.logger.error(f"Dispatcharr discover error: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-
 @app.route('/api/dispatcharr/refresh', methods=['POST'])
 def dispatcharr_refresh_manual():
     """Manually trigger Dispatcharr EPG refresh"""

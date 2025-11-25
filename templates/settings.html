@@ -204,26 +204,23 @@
 
                 <div class="form-row" style="margin-top: 1rem; align-items: flex-end;">
                     <div class="form-group">
-                        <button type="button" class="btn btn-secondary" onclick="testDispatcharrConnection()"
-                                id="dispatcharr-test-btn" style="width: 100%;">
-                            Test Connection & Discover EPG
+                        <button type="button" class="btn btn-secondary" onclick="loginDispatcharr()"
+                                id="dispatcharr-login-btn" style="width: 100%;">
+                            Login & List EPGs
                         </button>
                     </div>
-                    <div class="form-group">
-                        <label for="dispatcharr_epg_id">EPG Source ID</label>
-                        <input type="number" id="dispatcharr_epg_id" name="dispatcharr_epg_id" class="form-control"
-                               value="{{ settings.dispatcharr_epg_id or '' }}"
-                               placeholder="Auto-discovered" readonly style="background: var(--bg-primary);">
-                    </div>
                     <div class="form-group" style="flex: 2;">
-                        <label>Discovered EPG Source</label>
-                        <div id="dispatcharr-epg-name" class="form-control" style="background: var(--bg-primary); min-height: 2rem; display: flex; align-items: center;">
+                        <label for="dispatcharr_epg_select">Select EPG Source</label>
+                        <select id="dispatcharr_epg_select" class="form-control" onchange="selectDispatcharrEpg()"
+                                style="{% if not settings.dispatcharr_epg_id %}opacity: 0.5;{% endif %}">
                             {% if settings.dispatcharr_epg_id %}
-                                <span style="color: var(--success);">EPG #{{ settings.dispatcharr_epg_id }} configured</span>
+                                <option value="{{ settings.dispatcharr_epg_id }}" selected>EPG #{{ settings.dispatcharr_epg_id }} (saved)</option>
                             {% else %}
-                                <span style="color: var(--text-muted);">Not discovered yet</span>
+                                <option value="">-- Login to load EPG sources --</option>
                             {% endif %}
-                        </div>
+                        </select>
+                        <input type="hidden" id="dispatcharr_epg_id" name="dispatcharr_epg_id"
+                               value="{{ settings.dispatcharr_epg_id or '' }}">
                     </div>
                 </div>
 
@@ -404,8 +401,9 @@ function showDispatcharrStatus(message, isSuccess) {
     statusDiv.innerHTML = message;
 }
 
-async function testDispatcharrConnection() {
-    const btn = document.getElementById('dispatcharr-test-btn');
+async function loginDispatcharr() {
+    const btn = document.getElementById('dispatcharr-login-btn');
+    const select = document.getElementById('dispatcharr_epg_select');
     const url = document.getElementById('dispatcharr_url').value.trim();
     const username = document.getElementById('dispatcharr_username').value.trim();
     const password = document.getElementById('dispatcharr_password').value;
@@ -416,10 +414,10 @@ async function testDispatcharrConnection() {
     }
 
     btn.disabled = true;
-    btn.textContent = 'Testing...';
+    btn.textContent = 'Logging in...';
 
     try {
-        const response = await fetch('/api/dispatcharr/discover', {
+        const response = await fetch('/api/dispatcharr/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url, username, password })
@@ -427,27 +425,45 @@ async function testDispatcharrConnection() {
 
         const result = await response.json();
 
-        if (result.success) {
-            document.getElementById('dispatcharr_epg_id').value = result.epg_id;
-            document.getElementById('dispatcharr-epg-name').innerHTML =
-                `<span style="color: var(--success);">${result.epg_name}</span>`;
-            showDispatcharrStatus(`✓ ${result.message}`, true);
-        } else {
-            let message = result.message;
-            if (result.available_sources && result.available_sources.length > 0) {
-                message += '<br><br><strong>Available EPG sources:</strong><ul style="margin: 0.5rem 0 0 1rem; padding: 0;">';
-                result.available_sources.forEach(s => {
-                    message += `<li style="margin: 0.25rem 0;">${s.name} (ID: ${s.id})</li>`;
-                });
-                message += '</ul>';
+        if (result.success && result.sources) {
+            // Filter to only show URL-based sources (not dummy)
+            const urlSources = result.sources.filter(s => s.source_type === 'url');
+
+            // Populate the dropdown
+            select.innerHTML = '<option value="">-- Select an EPG source --</option>';
+            urlSources.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.id;
+                option.textContent = `${s.name} (ID: ${s.id})`;
+                select.appendChild(option);
+            });
+            select.style.opacity = '1';
+
+            // Pre-select if there's a saved value
+            const savedId = document.getElementById('dispatcharr_epg_id').value;
+            if (savedId) {
+                select.value = savedId;
             }
-            showDispatcharrStatus(message, false);
+
+            showDispatcharrStatus(`✓ ${result.message} Select an EPG source from the dropdown.`, true);
+        } else {
+            showDispatcharrStatus(result.message || 'Login failed', false);
         }
     } catch (error) {
         showDispatcharrStatus(`Error: ${error.message}`, false);
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Test Connection & Discover EPG';
+        btn.textContent = 'Login & List EPGs';
+    }
+}
+
+function selectDispatcharrEpg() {
+    const select = document.getElementById('dispatcharr_epg_select');
+    const hiddenInput = document.getElementById('dispatcharr_epg_id');
+    hiddenInput.value = select.value;
+
+    if (select.value) {
+        showDispatcharrStatus(`✓ Selected EPG #${select.value}. Don't forget to save settings!`, true);
     }
 }
 </script>

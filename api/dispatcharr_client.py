@@ -327,38 +327,6 @@ class EPGManager:
 
         return None
 
-    def find_teamarr_source(self) -> Optional[Dict]:
-        """
-        Find EPG source that matches Teamarr.
-
-        Searches for:
-        1. EPG source name containing "teamarr" (case-insensitive)
-        2. EPG source URL containing "teamarr" (case-insensitive)
-
-        Returns:
-            First matching EPG source or None
-        """
-        import re
-
-        sources = self.list_sources(include_dummy=False)
-        teamarr_pattern = re.compile(r'teamarr', re.IGNORECASE)
-
-        for source in sources:
-            if source.get("source_type") != "url":
-                continue
-
-            # Check name for "teamarr"
-            name = source.get("name", "")
-            if teamarr_pattern.search(name):
-                return source
-
-            # Check URL for "teamarr"
-            url = source.get("url", "")
-            if teamarr_pattern.search(url):
-                return source
-
-        return None
-
     def refresh(self, epg_id: int) -> Dict[str, Any]:
         """
         Trigger refresh for a single EPG source.
