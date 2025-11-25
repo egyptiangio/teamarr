@@ -17,7 +17,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import (
-    init_database, get_connection,
+    init_database, get_connection, run_migrations,
     get_all_templates, get_template, create_template, update_template, delete_template, get_template_team_count,
     get_all_teams, get_team, create_team, update_team, delete_team,
     bulk_assign_template, bulk_delete_teams, bulk_set_active,
@@ -41,6 +41,15 @@ if not os.path.exists(os.path.join(os.path.dirname(__file__), 'teamarr.db')):
     app.logger.info("🔧 Initializing database...")
     init_database()
     app.logger.info("✅ Database initialized")
+else:
+    # Run migrations on existing database
+    conn = get_connection()
+    try:
+        migrations = run_migrations(conn)
+        if migrations > 0:
+            app.logger.info(f"✅ Applied {migrations} database migration(s)")
+    finally:
+        conn.close()
 
 # Initialize EPG components
 epg_orchestrator = EPGOrchestrator()
@@ -802,26 +811,31 @@ def settings_update():
             'game_duration_baseball', 'game_duration_soccer',
             'cache_enabled', 'cache_duration_hours',
             'xmltv_generator_name', 'xmltv_generator_url',
-            'auto_generate_enabled', 'auto_generate_frequency'
+            'auto_generate_enabled', 'auto_generate_frequency',
+            'dispatcharr_enabled', 'dispatcharr_url', 'dispatcharr_username',
+            'dispatcharr_password', 'dispatcharr_epg_id'
         ]
 
         for field in fields:
             value = request.form.get(field)
             if value is not None:
                 # Handle boolean fields
-                if field in ['cache_enabled', 'auto_generate_enabled']:
+                if field in ['cache_enabled', 'auto_generate_enabled', 'dispatcharr_enabled']:
                     value = 1 if value == 'on' else 0
                 # Handle numeric fields
-                elif field in ['epg_days_ahead', 'cache_duration_hours']:
-                    value = int(value)
+                elif field in ['epg_days_ahead', 'cache_duration_hours', 'dispatcharr_epg_id']:
+                    value = int(value) if value else None
                     # Validate epg_days_ahead range
-                    if field == 'epg_days_ahead' and (value < 1 or value > 14):
+                    if field == 'epg_days_ahead' and value and (value < 1 or value > 14):
                         flash('Days to Generate must be between 1 and 14', 'error')
                         return redirect(url_for('settings_form'))
                 elif field in ['game_duration_default', 'max_program_hours_default',
                                'game_duration_basketball', 'game_duration_football',
                                'game_duration_hockey', 'game_duration_baseball', 'game_duration_soccer']:
                     value = float(value)
+                # Handle empty strings as NULL for optional fields
+                elif field in ['dispatcharr_url', 'dispatcharr_username', 'dispatcharr_password']:
+                    value = value.strip() if value else None
 
                 cursor.execute(f"UPDATE settings SET {field} = ? WHERE id = 1", (value,))
 
@@ -833,6 +847,148 @@ def settings_update():
         flash(f"Error updating settings: {str(e)}", 'error')
 
     return redirect(url_for('settings_form'))
+
+# =============================================================================
+# DISPATCHARR INTEGRATION
+# =============================================================================
+
+@app.route('/api/dispatcharr/test', methods=['POST'])
+def dispatcharr_test():
+    """Test connection to Dispatcharr and return EPG sources"""
+    from api.dispatcharr_client import EPGManager
+
+    data = request.get_json()
+    url = data.get('url', '').strip()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+
+    if not all([url, username, password]):
+        return jsonify({
+            'success': False,
+            'message': 'URL, username, and password are required'
+        }), 400
+
+    try:
+        manager = EPGManager(url, username, password)
+        result = manager.test_connection()
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Dispatcharr test error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/dispatcharr/discover', methods=['POST'])
+def dispatcharr_discover():
+    """Discover EPG source matching Teamarr's output filename"""
+    from api.dispatcharr_client import EPGManager
+
+    data = request.get_json()
+    url = data.get('url', '').strip()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+
+    if not all([url, username, password]):
+        return jsonify({
+            'success': False,
+            'message': 'URL, username, and password are required'
+        }), 400
+
+    try:
+        # Get the output filename from settings
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT epg_output_path FROM settings WHERE id = 1").fetchone())
+        conn.close()
+
+        output_path = settings.get('epg_output_path', 'teamarr.xml')
+        filename = output_path.split('/')[-1]
+
+        manager = EPGManager(url, username, password)
+
+        # First test the connection
+        test_result = manager.test_connection()
+        if not test_result['success']:
+            return jsonify(test_result)
+
+        # Try to find EPG source by filename
+        source = manager.find_by_url_filename(filename)
+
+        if source:
+            return jsonify({
+                'success': True,
+                'message': f"Found EPG source: {source['name']}",
+                'epg_id': source['id'],
+                'epg_name': source['name'],
+                'epg_url': source.get('url', '')
+            })
+        else:
+            # Return sources list so user can see what's available
+            sources = manager.list_sources(include_dummy=False)
+            return jsonify({
+                'success': False,
+                'message': f"No EPG source found with URL containing '{filename}'. Check that Dispatcharr has an EPG source pointing to Teamarr's output file.",
+                'available_sources': [{'id': s['id'], 'name': s['name'], 'url': s.get('url', '')} for s in sources]
+            })
+
+    except Exception as e:
+        app.logger.error(f"Dispatcharr discover error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/dispatcharr/refresh', methods=['POST'])
+def dispatcharr_refresh_manual():
+    """Manually trigger Dispatcharr EPG refresh"""
+    from api.dispatcharr_client import EPGManager
+
+    conn = get_connection()
+    settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+    conn.close()
+
+    if not settings.get('dispatcharr_enabled'):
+        return jsonify({
+            'success': False,
+            'message': 'Dispatcharr integration is not enabled'
+        }), 400
+
+    url = settings.get('dispatcharr_url')
+    username = settings.get('dispatcharr_username')
+    password = settings.get('dispatcharr_password')
+    epg_id = settings.get('dispatcharr_epg_id')
+
+    if not all([url, username, password, epg_id]):
+        return jsonify({
+            'success': False,
+            'message': 'Dispatcharr settings are incomplete'
+        }), 400
+
+    try:
+        manager = EPGManager(url, username, password)
+        result = manager.refresh(epg_id)
+
+        if result['success']:
+            # Update last sync time
+            conn = get_connection()
+            conn.execute(
+                "UPDATE settings SET dispatcharr_last_sync = ? WHERE id = 1",
+                (datetime.now().isoformat(),)
+            )
+            conn.commit()
+            conn.close()
+
+        return jsonify(result)
+
+    except Exception as e:
+        app.logger.error(f"Dispatcharr refresh error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
 
 # =============================================================================
 # EPG GENERATION
@@ -919,6 +1075,35 @@ def generate_epg():
         conn.close()
 
         app.logger.info(f"✅ EPG generated successfully: {total_programmes} programmes, {generation_time:.2f}s")
+
+        # Dispatcharr auto-refresh hook
+        if settings.get('dispatcharr_enabled') and settings.get('dispatcharr_epg_id'):
+            try:
+                from api.dispatcharr_client import EPGManager
+
+                app.logger.info("🔄 Triggering Dispatcharr EPG refresh...")
+                manager = EPGManager(
+                    settings.get('dispatcharr_url'),
+                    settings.get('dispatcharr_username'),
+                    settings.get('dispatcharr_password')
+                )
+                refresh_result = manager.refresh(settings.get('dispatcharr_epg_id'))
+
+                if refresh_result['success']:
+                    # Update last sync time
+                    sync_conn = get_connection()
+                    sync_conn.execute(
+                        "UPDATE settings SET dispatcharr_last_sync = ? WHERE id = 1",
+                        (datetime.now().isoformat(),)
+                    )
+                    sync_conn.commit()
+                    sync_conn.close()
+                    app.logger.info("✅ Dispatcharr EPG refresh initiated successfully")
+                else:
+                    app.logger.warning(f"⚠️ Dispatcharr refresh failed: {refresh_result['message']}")
+
+            except Exception as e:
+                app.logger.error(f"❌ Dispatcharr refresh error: {e}")
 
         # Return JSON for scheduler, redirect for web UI
         if request.accept_mimetypes.accept_json and not request.accept_mimetypes.accept_html:

@@ -31,8 +31,43 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def run_migrations(conn):
+    """Run database migrations for schema updates"""
+    cursor = conn.cursor()
+
+    # Get existing columns in settings table
+    cursor.execute("PRAGMA table_info(settings)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    # Dispatcharr integration columns (added in v1.0.6)
+    dispatcharr_columns = [
+        ("dispatcharr_enabled", "BOOLEAN DEFAULT 0"),
+        ("dispatcharr_url", "TEXT DEFAULT 'http://localhost:9191'"),
+        ("dispatcharr_username", "TEXT"),
+        ("dispatcharr_password", "TEXT"),
+        ("dispatcharr_epg_id", "INTEGER"),
+        ("dispatcharr_last_sync", "TEXT"),
+    ]
+
+    migrations_run = 0
+    for col_name, col_def in dispatcharr_columns:
+        if col_name not in existing_columns:
+            try:
+                cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
+                migrations_run += 1
+                print(f"  ✅ Added column: settings.{col_name}")
+            except Exception as e:
+                print(f"  ⚠️ Could not add column {col_name}: {e}")
+
+    if migrations_run > 0:
+        conn.commit()
+        print(f"✅ Ran {migrations_run} migration(s)")
+
+    return migrations_run
+
+
 def init_database():
-    """Initialize database with schema (fresh start, no migrations)"""
+    """Initialize database with schema and run migrations"""
     schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
 
     with open(schema_path, 'r') as f:
@@ -42,6 +77,9 @@ def init_database():
     try:
         conn.executescript(schema_sql)
         conn.commit()
+
+        # Run migrations for existing databases
+        run_migrations(conn)
 
         # Sync timezone from environment variable if set
         env_tz = os.environ.get('TZ')

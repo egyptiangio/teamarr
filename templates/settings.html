@@ -155,6 +155,88 @@
             </div>
         </div>
 
+        <!-- Dispatcharr Integration -->
+        <div class="form-section">
+            <h2>Dispatcharr Integration</h2>
+            <p style="color: var(--text-muted); font-size: 0.8125rem; margin: 0 0 1rem 0;">
+                Automatically refresh your EPG source in Dispatcharr after Teamarr generates new EPG data.
+            </p>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="dispatcharr_enabled" id="dispatcharr_enabled"
+                           {% if settings.dispatcharr_enabled %}checked{% endif %}
+                           onchange="toggleDispatcharrFields()">
+                    <span>Enable Dispatcharr Auto-Refresh</span>
+                </label>
+            </div>
+
+            <div id="dispatcharr-fields" style="{% if not settings.dispatcharr_enabled %}opacity: 0.5; pointer-events: none;{% endif %}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="dispatcharr_url">Dispatcharr URL</label>
+                        <input type="text" id="dispatcharr_url" name="dispatcharr_url" class="form-control"
+                               value="{{ settings.dispatcharr_url or 'http://localhost:9191' }}"
+                               placeholder="http://localhost:9191">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dispatcharr_username">Username</label>
+                        <input type="text" id="dispatcharr_username" name="dispatcharr_username" class="form-control"
+                               value="{{ settings.dispatcharr_username or '' }}"
+                               placeholder="admin">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dispatcharr_password">Password</label>
+                        <div style="position: relative;">
+                            <input type="password" id="dispatcharr_password" name="dispatcharr_password" class="form-control"
+                                   value="{{ settings.dispatcharr_password or '' }}"
+                                   placeholder="••••••••" style="padding-right: 2.5rem;">
+                            <button type="button" onclick="togglePasswordVisibility()"
+                                    style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+                                           background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.875rem;">
+                                <span id="password-toggle-icon">👁</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row" style="margin-top: 1rem; align-items: flex-end;">
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="testDispatcharrConnection()"
+                                id="dispatcharr-test-btn" style="width: 100%;">
+                            Test Connection & Discover EPG
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <label for="dispatcharr_epg_id">EPG Source ID</label>
+                        <input type="number" id="dispatcharr_epg_id" name="dispatcharr_epg_id" class="form-control"
+                               value="{{ settings.dispatcharr_epg_id or '' }}"
+                               placeholder="Auto-discovered" readonly style="background: var(--bg-primary);">
+                    </div>
+                    <div class="form-group" style="flex: 2;">
+                        <label>Discovered EPG Source</label>
+                        <div id="dispatcharr-epg-name" class="form-control" style="background: var(--bg-primary); min-height: 2rem; display: flex; align-items: center;">
+                            {% if settings.dispatcharr_epg_id %}
+                                <span style="color: var(--success);">EPG #{{ settings.dispatcharr_epg_id }} configured</span>
+                            {% else %}
+                                <span style="color: var(--text-muted);">Not discovered yet</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div id="dispatcharr-status" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px; display: none;"></div>
+
+                {% if settings.dispatcharr_last_sync %}
+                <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);">
+                    Last sync: {{ settings.dispatcharr_last_sync }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Form Actions -->
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">💾 Save Settings</button>
@@ -287,4 +369,86 @@ select.form-control {
     margin-top: 1.5rem;
 }
 </style>
+
+<script>
+function toggleDispatcharrFields() {
+    const enabled = document.getElementById('dispatcharr_enabled').checked;
+    const fields = document.getElementById('dispatcharr-fields');
+    if (enabled) {
+        fields.style.opacity = '1';
+        fields.style.pointerEvents = 'auto';
+    } else {
+        fields.style.opacity = '0.5';
+        fields.style.pointerEvents = 'none';
+    }
+}
+
+function togglePasswordVisibility() {
+    const passwordInput = document.getElementById('dispatcharr_password');
+    const toggleIcon = document.getElementById('password-toggle-icon');
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleIcon.textContent = '🙈';
+    } else {
+        passwordInput.type = 'password';
+        toggleIcon.textContent = '👁';
+    }
+}
+
+function showDispatcharrStatus(message, isSuccess) {
+    const statusDiv = document.getElementById('dispatcharr-status');
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = isSuccess ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+    statusDiv.style.border = isSuccess ? '1px solid var(--success)' : '1px solid var(--danger)';
+    statusDiv.style.color = isSuccess ? 'var(--success)' : 'var(--danger)';
+    statusDiv.innerHTML = message;
+}
+
+async function testDispatcharrConnection() {
+    const btn = document.getElementById('dispatcharr-test-btn');
+    const url = document.getElementById('dispatcharr_url').value.trim();
+    const username = document.getElementById('dispatcharr_username').value.trim();
+    const password = document.getElementById('dispatcharr_password').value;
+
+    if (!url || !username || !password) {
+        showDispatcharrStatus('Please fill in URL, username, and password', false);
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+
+    try {
+        const response = await fetch('/api/dispatcharr/discover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, username, password })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            document.getElementById('dispatcharr_epg_id').value = result.epg_id;
+            document.getElementById('dispatcharr-epg-name').innerHTML =
+                `<span style="color: var(--success);">${result.epg_name}</span>`;
+            showDispatcharrStatus(`✓ ${result.message}`, true);
+        } else {
+            let message = result.message;
+            if (result.available_sources && result.available_sources.length > 0) {
+                message += '<br><br><strong>Available EPG sources:</strong><ul style="margin: 0.5rem 0 0 1rem; padding: 0;">';
+                result.available_sources.forEach(s => {
+                    message += `<li style="margin: 0.25rem 0;">${s.name} (ID: ${s.id})</li>`;
+                });
+                message += '</ul>';
+            }
+            showDispatcharrStatus(message, false);
+        }
+    } catch (error) {
+        showDispatcharrStatus(`Error: ${error.message}`, false);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Connection & Discover EPG';
+    }
+}
+</script>
 {% endblock %}

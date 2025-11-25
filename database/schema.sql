@@ -212,6 +212,14 @@ CREATE TABLE IF NOT EXISTS settings (
     auto_generate_enabled BOOLEAN DEFAULT 1,
     auto_generate_frequency TEXT DEFAULT 'hourly',
 
+    -- Dispatcharr Integration Settings
+    dispatcharr_enabled BOOLEAN DEFAULT 0,
+    dispatcharr_url TEXT DEFAULT 'http://localhost:9191',
+    dispatcharr_username TEXT,
+    dispatcharr_password TEXT,              -- Encrypted password
+    dispatcharr_epg_id INTEGER,             -- Discovered EPG source ID
+    dispatcharr_last_sync TEXT,             -- ISO datetime of last successful refresh
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
