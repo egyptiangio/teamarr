@@ -2051,19 +2051,13 @@ class EPGOrchestrator:
         mode = team.get('game_duration_mode', 'default')
 
         if mode == 'custom':
-            # Use custom override
+            # Use custom override from template
             return float(team.get('game_duration_override', 4.0))
         elif mode == 'sport':
-            # Use sport-specific recommendation
+            # Use sport-specific value from settings
             sport = team.get('sport', 'basketball').lower()
-            sport_defaults = {
-                'basketball': 3.0,
-                'football': 3.5,
-                'soccer': 2.0,
-                'baseball': 3.0,
-                'hockey': 3.0
-            }
-            return float(sport_defaults.get(sport, 3.0))
+            sport_key = f'game_duration_{sport}'
+            return float(settings.get(sport_key, settings.get('game_duration_default', 4.0)))
         else:  # mode == 'default'
             # Use global default from settings
             return float(settings.get('game_duration_default', 4.0))

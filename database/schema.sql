@@ -399,7 +399,6 @@ CREATE TABLE IF NOT EXISTS league_config (
     api_path TEXT NOT NULL,                 -- 'basketball/nba'
 
     -- Default Settings
-    default_game_duration REAL,             -- Default hours for this sport
     default_category TEXT,                  -- Default XMLTV category
 
     -- Record Format
@@ -413,23 +412,24 @@ CREATE TABLE IF NOT EXISTS league_config (
 );
 
 -- Pre-populate league configurations
-INSERT OR IGNORE INTO league_config (league_code, league_name, sport, api_path, default_game_duration, default_category, record_format, logo_url) VALUES
-    ('nba', 'NBA', 'basketball', 'basketball/nba', 3.0, 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png'),
-    ('wnba', 'WNBA', 'basketball', 'basketball/wnba', 3.0, 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png'),
-    ('nfl', 'NFL', 'football', 'football/nfl', 3.5, 'Football', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png'),
-    ('mlb', 'MLB', 'baseball', 'baseball/mlb', 3.5, 'Baseball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png'),
-    ('nhl', 'NHL', 'hockey', 'hockey/nhl', 3.0, 'Hockey', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png'),
-    ('mls', 'MLS', 'soccer', 'soccer/usa.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
-    ('nwsl', 'NWSL', 'soccer', 'soccer/usa.nwsl', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png'),
-    ('epl', 'English Premier League', 'soccer', 'soccer/eng.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png'),
-    ('efl', 'EFL Championship', 'soccer', 'soccer/eng.2', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png'),
-    ('laliga', 'La Liga', 'soccer', 'soccer/esp.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png'),
-    ('bundesliga', 'Bundesliga', 'soccer', 'soccer/ger.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png'),
-    ('seriea', 'Serie A', 'soccer', 'soccer/ita.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png'),
-    ('ligue1', 'Ligue 1', 'soccer', 'soccer/fra.1', 2.0, 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png'),
-    ('ncaaf', 'NCAA Football', 'football', 'football/college-football', 4.0, 'College Football', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png'),
-    ('ncaam', 'NCAA Men''s Basketball', 'basketball', 'basketball/mens-college-basketball', 2.5, 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
-    ('ncaaw', 'NCAA Women''s Basketball', 'basketball', 'basketball/womens-college-basketball', 2.5, 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png');
+INSERT OR IGNORE INTO league_config (league_code, league_name, sport, api_path, default_category, record_format, logo_url) VALUES
+    ('nba', 'NBA', 'basketball', 'basketball/nba', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png'),
+    ('wnba', 'WNBA', 'basketball', 'basketball/wnba', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png'),
+    ('nfl', 'NFL', 'football', 'football/nfl', 'Football', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png'),
+    ('mlb', 'MLB', 'baseball', 'baseball/mlb', 'Baseball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png'),
+    ('nhl', 'NHL', 'hockey', 'hockey/nhl', 'Hockey', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png'),
+    ('mls', 'MLS', 'soccer', 'soccer/usa.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
+    ('nwsl', 'NWSL', 'soccer', 'soccer/usa.nwsl', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png'),
+    ('epl', 'English Premier League', 'soccer', 'soccer/eng.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png'),
+    ('efl', 'EFL Championship', 'soccer', 'soccer/eng.2', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png'),
+    ('efl1', 'EFL League One', 'soccer', 'soccer/eng.3', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png'),
+    ('laliga', 'La Liga', 'soccer', 'soccer/esp.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png'),
+    ('bundesliga', 'Bundesliga', 'soccer', 'soccer/ger.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png'),
+    ('seriea', 'Serie A', 'soccer', 'soccer/ita.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png'),
+    ('ligue1', 'Ligue 1', 'soccer', 'soccer/fra.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png'),
+    ('ncaaf', 'NCAA Football', 'football', 'football/college-football', 'College Football', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png'),
+    ('ncaam', 'NCAA Men''s Basketball', 'basketball', 'basketball/mens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
+    ('ncaaw', 'NCAA Women''s Basketball', 'basketball', 'basketball/womens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png');
 
 CREATE INDEX IF NOT EXISTS idx_league_code ON league_config(league_code);
 
