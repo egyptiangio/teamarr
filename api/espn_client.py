@@ -597,13 +597,10 @@ class ESPNClient:
 
     def get_league_conferences(self, sport: str, league: str) -> Optional[List[Dict]]:
         """
-        Fetch all conferences for a college league
+        Fetch all conferences for a college league dynamically from ESPN API.
 
-        This is primarily for college sports which are organized by conference.
-        Returns conference IDs, names, abbreviations, and logos.
-
-        For college football, includes an "Other FBS Teams" pseudo-conference
-        for any FBS teams not in the 11 main conferences.
+        Uses the standings API to get current conference list, which automatically
+        handles conference changes (realignment, new conferences, etc.).
 
         Args:
             sport: Sport type (e.g., 'football', 'basketball')
@@ -612,22 +609,30 @@ class ESPNClient:
         Returns:
             List of conference dictionaries with id, name, abbreviation, logo
         """
-        # Hardcoded conference group IDs for college sports
-        # These are stable ESPN group IDs that don't change
-        if league == 'college-football':
-            # FBS conferences - Independents (18) will be sorted to bottom in UI
-            conference_ids = [1, 151, 4, 5, 12, 15, 17, 9, 8, 37, 18]
-        elif league == 'mens-college-basketball':
-            # All Division I conferences (32 conferences, ~360 teams)
-            # Excludes group 50 (aggregate Division I)
-            conference_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 43, 44, 45, 46, 49]
-        elif league == 'womens-college-basketball':
-            # All Division I conferences (32 conferences, ~345 teams)
-            # Excludes group 50 (aggregate Division I)
-            conference_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 43, 44, 45, 46, 47]
-        else:
+        # Only support college leagues
+        college_leagues = ['college-football', 'mens-college-basketball', 'womens-college-basketball']
+        if league not in college_leagues:
             return None
 
+        # Fetch conferences dynamically from standings API
+        # This endpoint returns all current conferences in the 'children' array
+        standings_url = f"https://site.api.espn.com/apis/v2/sports/{sport}/{league}/standings"
+        logger.info(f"Fetching conferences for {league} from standings API")
+
+        try:
+            standings_data = self._make_request(standings_url)
+            if not standings_data or 'children' not in standings_data:
+                logger.warning(f"No conference data found in standings for {league}")
+                return None
+
+            conference_ids = [int(child.get('id')) for child in standings_data.get('children', []) if child.get('id')]
+            logger.info(f"Found {len(conference_ids)} conferences from standings API: {conference_ids}")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch conferences from standings API: {e}")
+            return None
+
+        # Now fetch detailed info for each conference
         conferences = []
         season_year = datetime.now().year
 
@@ -638,7 +643,6 @@ class ESPNClient:
 
                 if response:
                     # Don't fetch team count upfront - it's fetched on-demand when user expands conference
-                    # This reduces initial load from 64 API calls (32 conferences x 2) to just 32
                     conferences.append({
                         'id': conf_id,
                         'name': response.get('name'),
@@ -651,7 +655,7 @@ class ESPNClient:
                 continue
 
         # Sort conferences alphabetically by name
-        conferences.sort(key=lambda x: x['name'])
+        conferences.sort(key=lambda x: x['name'] or '')
 
         logger.info(f"Found {len(conferences)} conferences for {league}")
         return conferences if conferences else None
