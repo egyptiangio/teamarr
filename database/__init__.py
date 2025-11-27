@@ -2,16 +2,33 @@
 import sqlite3
 import os
 import json
+import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # Database path - respects Docker volume mount at /app/data
 # In Docker: /app/data/teamarr.db (persisted via volume)
 # In local dev: ./data/teamarr.db (or project root if data/ doesn't exist)
+def is_running_in_docker():
+    """Check if we're actually running inside a Docker container"""
+    # Check for .dockerenv file (most reliable)
+    if os.path.exists('/.dockerenv'):
+        return True
+    # Check cgroup for docker/container indicators
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
+            return 'docker' in f.read() or 'container' in f.read()
+    except:
+        pass
+    return False
+
+
 def get_db_path():
     """Get database path, preferring /app/data/ for Docker compatibility"""
-    # Check if we're in Docker (has /app/data directory)
-    if os.path.exists('/app/data'):
+    # Only use /app/data if we're actually in Docker
+    if is_running_in_docker() and os.path.exists('/app/data'):
         return '/app/data/teamarr.db'
 
     # Check if we have a local data directory
@@ -117,6 +134,44 @@ def run_migrations(conn):
     ]
 
     for col_name, col_def in epg_history_new_columns:
+        if col_name not in epg_history_columns:
+            try:
+                cursor.execute(f"ALTER TABLE epg_history ADD COLUMN {col_name} {col_def}")
+                migrations_run += 1
+                print(f"  ✅ Added column: epg_history.{col_name}")
+            except Exception as e:
+                print(f"  ⚠️ Could not add column {col_name}: {e}")
+
+    conn.commit()
+
+    # ==========================================================================
+    # EPG Stats - Single Source of Truth Columns (added in v1.2.0)
+    # ==========================================================================
+
+    # Refresh epg_history columns after previous migration
+    cursor.execute("PRAGMA table_info(epg_history)")
+    epg_history_columns = {row[1] for row in cursor.fetchall()}
+
+    # New columns for comprehensive EPG stats tracking
+    epg_stats_columns = [
+        # Team-based EPG stats
+        ("team_based_channels", "INTEGER DEFAULT 0"),
+        ("team_based_events", "INTEGER DEFAULT 0"),
+        ("team_based_pregame", "INTEGER DEFAULT 0"),
+        ("team_based_postgame", "INTEGER DEFAULT 0"),
+        ("team_based_idle", "INTEGER DEFAULT 0"),
+        # Event-based EPG stats
+        ("event_based_channels", "INTEGER DEFAULT 0"),
+        ("event_based_events", "INTEGER DEFAULT 0"),
+        ("event_based_pregame", "INTEGER DEFAULT 0"),
+        ("event_based_postgame", "INTEGER DEFAULT 0"),
+        # Quality/Error stats
+        ("unresolved_vars_count", "INTEGER DEFAULT 0"),
+        ("coverage_gaps_count", "INTEGER DEFAULT 0"),
+        ("warnings_json", "TEXT"),  # JSON array of warning messages
+    ]
+
+    for col_name, col_def in epg_stats_columns:
         if col_name not in epg_history_columns:
             try:
                 cursor.execute(f"ALTER TABLE epg_history ADD COLUMN {col_name} {col_def}")
@@ -280,6 +335,28 @@ def run_migrations(conn):
         except Exception as e:
             print(f"  ⚠️ Could not add account_name column: {e}")
 
+    # Channel group assignment for managed channels (Phase 8.5)
+    cursor.execute("PRAGMA table_info(event_epg_groups)")
+    event_group_columns = {row[1] for row in cursor.fetchall()}
+    if 'channel_group_id' not in event_group_columns:
+        try:
+            cursor.execute("ALTER TABLE event_epg_groups ADD COLUMN channel_group_id INTEGER")
+            migrations_run += 1
+            print("  ✅ Added column: event_epg_groups.channel_group_id")
+        except Exception as e:
+            print(f"  ⚠️ Could not add channel_group_id column: {e}")
+
+    # Logo tracking for managed channels (for cleanup when channels are deleted)
+    cursor.execute("PRAGMA table_info(managed_channels)")
+    managed_channel_columns = {row[1] for row in cursor.fetchall()}
+    if 'dispatcharr_logo_id' not in managed_channel_columns:
+        try:
+            cursor.execute("ALTER TABLE managed_channels ADD COLUMN dispatcharr_logo_id INTEGER")
+            migrations_run += 1
+            print("  ✅ Added column: managed_channels.dispatcharr_logo_id")
+        except Exception as e:
+            print(f"  ⚠️ Could not add dispatcharr_logo_id column: {e}")
+
     conn.commit()
 
     # Managed Channels table (tracks channels Teamarr creates in Dispatcharr)
@@ -320,6 +397,29 @@ def run_migrations(conn):
             print("  ✅ Created table: managed_channels")
         except Exception as e:
             print(f"  ⚠️ Could not create managed_channels table: {e}")
+
+    conn.commit()
+
+    # ==========================================================================
+    # Global Channel Lifecycle Settings (Settings table)
+    # ==========================================================================
+
+    cursor.execute("PRAGMA table_info(settings)")
+    settings_columns = {row[1] for row in cursor.fetchall()}
+
+    global_lifecycle_columns = [
+        ("channel_create_timing", "TEXT DEFAULT 'same_day'"),  # Global default: stream_available, same_day, day_before, 2_days_before, manual
+        ("channel_delete_timing", "TEXT DEFAULT 'same_day'"),  # Global default: stream_removed, same_day, day_after, 2_days_after, manual
+    ]
+
+    for col_name, col_def in global_lifecycle_columns:
+        if col_name not in settings_columns:
+            try:
+                cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
+                migrations_run += 1
+                print(f"  ✅ Added column: settings.{col_name}")
+            except Exception as e:
+                print(f"  ⚠️ Could not add column {col_name}: {e}")
 
     conn.commit()
 
@@ -976,8 +1076,7 @@ def create_event_epg_group(
     event_template_id: int = None,
     account_name: str = None,
     channel_start: int = None,
-    channel_create_timing: str = 'day_of',
-    channel_delete_timing: str = 'stream_removed'
+    channel_group_id: int = None
 ) -> int:
     """
     Create a new event EPG group.
@@ -986,8 +1085,7 @@ def create_event_epg_group(
         event_template_id: Optional template ID (must be an 'event' type template)
         account_name: Optional M3U account name for display purposes
         channel_start: Starting channel number for auto-created channels
-        channel_create_timing: When to create channels (day_of, day_before, 2_days_before, week_before)
-        channel_delete_timing: When to delete channels (stream_removed, end_of_day, end_of_next_day, manual)
+        channel_group_id: Dispatcharr channel group ID to assign created channels to
 
     Returns:
         ID of created group
@@ -1003,16 +1101,15 @@ def create_event_epg_group(
             INSERT INTO event_epg_groups
             (dispatcharr_group_id, dispatcharr_account_id, group_name,
              assigned_league, assigned_sport, enabled, refresh_interval_minutes,
-             event_template_id, account_name, channel_start, channel_create_timing,
-             channel_delete_timing)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             event_template_id, account_name, channel_start, channel_group_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
                 assigned_league.lower(), assigned_sport.lower(),
                 1 if enabled else 0, refresh_interval_minutes,
                 event_template_id, account_name, channel_start,
-                channel_create_timing, channel_delete_timing
+                channel_group_id
             )
         )
         conn.commit()
@@ -1175,16 +1272,17 @@ def get_managed_channels_for_group(group_id: int, include_deleted: bool = False)
 
 
 def get_all_managed_channels(include_deleted: bool = False) -> List[Dict[str, Any]]:
-    """Get all managed channels with group info."""
+    """Get all managed channels with group info and global timing settings."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         query = """
             SELECT mc.*,
                    eg.group_name,
-                   eg.channel_delete_timing
+                   s.channel_delete_timing
             FROM managed_channels mc
             LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+            LEFT JOIN settings s ON s.id = 1
         """
         if not include_deleted:
             query += " WHERE mc.deleted_at IS NULL"
@@ -1226,10 +1324,14 @@ def create_managed_channel(
     event_date: str = None,
     home_team: str = None,
     away_team: str = None,
-    scheduled_delete_at: str = None
+    scheduled_delete_at: str = None,
+    dispatcharr_logo_id: int = None
 ) -> int:
     """
     Create a new managed channel record.
+
+    Args:
+        dispatcharr_logo_id: Logo ID in Dispatcharr (for cleanup when channel is deleted)
 
     Returns:
         ID of created record
@@ -1245,13 +1347,13 @@ def create_managed_channel(
             INSERT INTO managed_channels
             (event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
              channel_number, channel_name, tvg_id, espn_event_id, event_date,
-             home_team, away_team, scheduled_delete_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             home_team, away_team, scheduled_delete_at, dispatcharr_logo_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
                 channel_number, channel_name, tvg_id, espn_event_id, event_date,
-                home_team, away_team, scheduled_delete_at
+                home_team, away_team, scheduled_delete_at, dispatcharr_logo_id
             )
         )
         conn.commit()
@@ -1312,12 +1414,82 @@ def delete_managed_channel(channel_id: int) -> bool:
         conn.close()
 
 
-def get_next_channel_number(group_id: int) -> Optional[int]:
+def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_username: str = None, dispatcharr_password: str = None) -> int:
+    """
+    Calculate the next available channel range start (1001, 2001, 3001, etc.).
+
+    This is used as a fallback when a group doesn't have a channel_start set.
+    Considers:
+    1. All existing event groups' channel_start values
+    2. All managed channels' actual channel numbers
+    3. All channels in Dispatcharr (if credentials provided)
+
+    Returns:
+        The next available 1001 multiple (e.g., 1001, 2001, 3001, etc.)
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        highest_channel = 0
+
+        # 1. Check event_epg_groups channel_start values
+        rows = cursor.execute("""
+            SELECT channel_start FROM event_epg_groups
+            WHERE channel_start IS NOT NULL
+        """).fetchall()
+
+        for row in rows:
+            if row['channel_start'] and row['channel_start'] > highest_channel:
+                highest_channel = row['channel_start']
+
+        # 2. Check managed_channels for actual channel numbers
+        row = cursor.execute("""
+            SELECT MAX(channel_number) as max_num FROM managed_channels
+            WHERE deleted_at IS NULL
+        """).fetchone()
+
+        if row and row['max_num'] and row['max_num'] > highest_channel:
+            highest_channel = row['max_num']
+
+        # 3. If Dispatcharr credentials available, check all channels there
+        if dispatcharr_url:
+            try:
+                from api.dispatcharr_client import ChannelManager
+                channel_mgr = ChannelManager(dispatcharr_url, dispatcharr_username or '', dispatcharr_password or '')
+                channels = channel_mgr.get_channels()
+                for ch in channels:
+                    ch_num = ch.get('channel_number')
+                    if ch_num and ch_num > highest_channel:
+                        highest_channel = ch_num
+            except Exception as e:
+                logger.debug(f"Could not query Dispatcharr channels: {e}")
+
+        # Calculate next 1001 multiple after highest channel
+        # E.g., if highest is 5419, next range is 6001
+        if highest_channel == 0:
+            return 1001
+
+        next_range = ((int(highest_channel) // 1000) + 1) * 1000 + 1
+        return int(next_range)
+
+    finally:
+        conn.close()
+
+
+def get_next_channel_number(group_id: int, auto_assign: bool = True) -> Optional[int]:
     """
     Get the next available channel number for a group.
 
     Uses the group's channel_start and finds the next unused number.
-    Returns None if the group has no channel_start configured.
+    If the group has no channel_start and auto_assign is True, assigns
+    the next available 1001 range and saves it to the group.
+
+    Args:
+        group_id: The event group ID
+        auto_assign: If True, auto-assign a channel_start when missing
+
+    Returns:
+        The next available channel number, or None if disabled
     """
     conn = get_connection()
     try:
@@ -1329,10 +1501,24 @@ def get_next_channel_number(group_id: int) -> Optional[int]:
             (group_id,)
         ).fetchone()
 
-        if not group or not group['channel_start']:
+        if not group:
             return None
 
         channel_start = group['channel_start']
+
+        # If no channel_start, auto-assign the next available range
+        if not channel_start and auto_assign:
+            channel_start = get_next_available_channel_range()
+            # Save to the group
+            cursor.execute(
+                "UPDATE event_epg_groups SET channel_start = ? WHERE id = ?",
+                (channel_start, group_id)
+            )
+            conn.commit()
+            logger.info(f"Auto-assigned channel_start {channel_start} to group {group_id}")
+
+        if not channel_start:
+            return None
 
         # Get all active channel numbers for this group
         used_numbers = cursor.execute(
@@ -1377,3 +1563,276 @@ def cleanup_old_deleted_channels(days_old: int = 30) -> int:
         return cursor.rowcount
     finally:
         conn.close()
+
+
+# =============================================================================
+# EPG Generation Stats Functions (Single Source of Truth)
+# =============================================================================
+
+def save_epg_generation_stats(stats: Dict[str, Any]) -> int:
+    """
+    Save comprehensive EPG generation stats to epg_history.
+
+    This is the single source of truth for all EPG generation statistics.
+
+    Args:
+        stats: Dict with the following keys:
+            # Basic info
+            file_path: str - path to generated EPG file
+            file_size: int - file size in bytes
+            file_hash: str - SHA256 hash of file
+            generation_time_seconds: float - how long generation took
+            api_calls_made: int - number of API calls
+            status: str - 'success', 'error', or 'partial'
+            error_message: str - error message if status is 'error'
+
+            # Legacy totals (maintained for backwards compatibility)
+            num_channels: int - total channels
+            num_programmes: int - total programmes
+            num_events: int - total events (with ESPN ID)
+            num_pregame: int - total pregame filler
+            num_postgame: int - total postgame filler
+            num_idle: int - total idle filler
+
+            # Team-based EPG breakdown
+            team_based_channels: int
+            team_based_events: int
+            team_based_pregame: int
+            team_based_postgame: int
+            team_based_idle: int
+
+            # Event-based EPG breakdown
+            event_based_channels: int
+            event_based_events: int
+            event_based_pregame: int
+            event_based_postgame: int
+
+            # Quality/Error stats
+            unresolved_vars_count: int
+            coverage_gaps_count: int
+            warnings_json: str (JSON array)
+
+    Returns:
+        ID of the created epg_history record
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        # Build the INSERT statement with all available columns
+        cursor.execute("""
+            INSERT INTO epg_history (
+                file_path, file_size, file_hash,
+                generation_time_seconds, api_calls_made,
+                status, error_message,
+                num_channels, num_programmes, num_events,
+                num_pregame, num_postgame, num_idle,
+                team_based_channels, team_based_events,
+                team_based_pregame, team_based_postgame, team_based_idle,
+                event_based_channels, event_based_events,
+                event_based_pregame, event_based_postgame,
+                unresolved_vars_count, coverage_gaps_count, warnings_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            stats.get('file_path', ''),
+            stats.get('file_size', 0),
+            stats.get('file_hash', ''),
+            stats.get('generation_time_seconds', 0),
+            stats.get('api_calls_made', 0),
+            stats.get('status', 'success'),
+            stats.get('error_message'),
+            # Legacy totals
+            stats.get('num_channels', 0),
+            stats.get('num_programmes', 0),
+            stats.get('num_events', 0),
+            stats.get('num_pregame', 0),
+            stats.get('num_postgame', 0),
+            stats.get('num_idle', 0),
+            # Team-based breakdown
+            stats.get('team_based_channels', 0),
+            stats.get('team_based_events', 0),
+            stats.get('team_based_pregame', 0),
+            stats.get('team_based_postgame', 0),
+            stats.get('team_based_idle', 0),
+            # Event-based breakdown
+            stats.get('event_based_channels', 0),
+            stats.get('event_based_events', 0),
+            stats.get('event_based_pregame', 0),
+            stats.get('event_based_postgame', 0),
+            # Quality stats
+            stats.get('unresolved_vars_count', 0),
+            stats.get('coverage_gaps_count', 0),
+            stats.get('warnings_json'),
+        ))
+
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def get_latest_epg_stats() -> Optional[Dict[str, Any]]:
+    """
+    Get the most recent EPG generation stats.
+
+    This is the single source of truth for displaying EPG stats in the UI.
+
+    Returns:
+        Dict with all stats columns, or None if no history exists
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        result = cursor.execute("""
+            SELECT * FROM epg_history
+            WHERE status = 'success'
+            ORDER BY generated_at DESC
+            LIMIT 1
+        """).fetchone()
+
+        if result:
+            stats = dict(result)
+            # Parse warnings_json if present
+            if stats.get('warnings_json'):
+                try:
+                    stats['warnings'] = json.loads(stats['warnings_json'])
+                except:
+                    stats['warnings'] = []
+            else:
+                stats['warnings'] = []
+            return stats
+        return None
+    finally:
+        conn.close()
+
+
+def get_epg_history(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get recent EPG generation history.
+
+    Args:
+        limit: Number of records to return
+
+    Returns:
+        List of epg_history dicts, newest first
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        results = cursor.execute("""
+            SELECT * FROM epg_history
+            ORDER BY generated_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        history = []
+        for row in results:
+            entry = dict(row)
+            # Parse warnings_json if present
+            if entry.get('warnings_json'):
+                try:
+                    entry['warnings'] = json.loads(entry['warnings_json'])
+                except:
+                    entry['warnings'] = []
+            else:
+                entry['warnings'] = []
+            history.append(entry)
+
+        return history
+    finally:
+        conn.close()
+
+
+def get_epg_stats_summary() -> Dict[str, Any]:
+    """
+    Get a summary of EPG stats for the dashboard.
+
+    Returns aggregated stats from the most recent successful generation,
+    formatted for display in UI tiles.
+
+    Returns:
+        Dict with:
+            - last_generated: ISO datetime string
+            - total_channels: int
+            - total_programmes: int
+            - events: dict with team_based and event_based counts
+            - filler: dict with pregame, postgame, idle counts (broken down by type)
+            - quality: dict with unresolved_vars, coverage_gaps, warnings_count
+    """
+    latest = get_latest_epg_stats()
+
+    if not latest:
+        return {
+            'last_generated': None,
+            'total_channels': 0,
+            'total_programmes': 0,
+            'events': {
+                'total': 0,
+                'team_based': 0,
+                'event_based': 0,
+            },
+            'filler': {
+                'total': 0,
+                'pregame': {'total': 0, 'team_based': 0, 'event_based': 0},
+                'postgame': {'total': 0, 'team_based': 0, 'event_based': 0},
+                'idle': {'total': 0, 'team_based': 0, 'event_based': 0},
+            },
+            'quality': {
+                'unresolved_vars': 0,
+                'coverage_gaps': 0,
+                'warnings_count': 0,
+            },
+            'generation_time': 0,
+        }
+
+    # Calculate totals from breakdowns (use breakdown values if available, else legacy)
+    team_events = latest.get('team_based_events', 0) or 0
+    event_events = latest.get('event_based_events', 0) or 0
+    total_events = team_events + event_events if (team_events or event_events) else (latest.get('num_events', 0) or 0)
+
+    team_pregame = latest.get('team_based_pregame', 0) or 0
+    event_pregame = latest.get('event_based_pregame', 0) or 0
+    total_pregame = team_pregame + event_pregame if (team_pregame or event_pregame) else (latest.get('num_pregame', 0) or 0)
+
+    team_postgame = latest.get('team_based_postgame', 0) or 0
+    event_postgame = latest.get('event_based_postgame', 0) or 0
+    total_postgame = team_postgame + event_postgame if (team_postgame or event_postgame) else (latest.get('num_postgame', 0) or 0)
+
+    team_idle = latest.get('team_based_idle', 0) or 0
+    # Event-based doesn't have idle
+    total_idle = team_idle
+
+    return {
+        'last_generated': latest.get('generated_at'),
+        'total_channels': latest.get('num_channels', 0) or 0,
+        'total_programmes': latest.get('num_programmes', 0) or 0,
+        'events': {
+            'total': total_events,
+            'team_based': team_events,
+            'event_based': event_events,
+        },
+        'filler': {
+            'total': total_pregame + total_postgame + total_idle,
+            'pregame': {
+                'total': total_pregame,
+                'team_based': team_pregame,
+                'event_based': event_pregame,
+            },
+            'postgame': {
+                'total': total_postgame,
+                'team_based': team_postgame,
+                'event_based': event_postgame,
+            },
+            'idle': {
+                'total': total_idle,
+                'team_based': team_idle,
+                'event_based': 0,
+            },
+        },
+        'quality': {
+            'unresolved_vars': latest.get('unresolved_vars_count', 0) or 0,
+            'coverage_gaps': latest.get('coverage_gaps_count', 0) or 0,
+            'warnings_count': len(latest.get('warnings', [])),
+        },
+        'generation_time': latest.get('generation_time_seconds', 0) or 0,
+    }

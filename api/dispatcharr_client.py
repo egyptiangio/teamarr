@@ -1044,6 +1044,73 @@ class ChannelManager:
 
         return None
 
+    def delete_logo(self, logo_id: int) -> Dict[str, Any]:
+        """
+        Delete a logo from Dispatcharr.
+
+        Should be called when deleting channels to prevent logo buildup.
+        Only deletes if the logo is not used by any other channels.
+
+        Args:
+            logo_id: Dispatcharr logo ID
+
+        Returns:
+            Result dict with:
+            - success: bool
+            - error: str (if failed)
+            - status: 'deleted' | 'in_use' | 'not_found' | 'error'
+        """
+        if not logo_id:
+            return {"success": False, "error": "No logo_id provided", "status": "error"}
+
+        # First check if this logo is still used by any other channels
+        # Query channels that have this logo_id
+        try:
+            response = self.auth.get(f"/api/channels/channels/?logo_id={logo_id}")
+            if response and response.status_code == 200:
+                data = response.json()
+                # Handle both list and paginated responses
+                channels = data.get('results', data) if isinstance(data, dict) else data
+                if isinstance(channels, list) and len(channels) > 0:
+                    logger.debug(f"Logo {logo_id} still in use by {len(channels)} channel(s) - keeping")
+                    return {
+                        "success": True,
+                        "status": "in_use",
+                        "channel_count": len(channels)
+                    }
+        except Exception as e:
+            logger.warning(f"Could not check logo usage: {e}")
+            # Continue with deletion attempt anyway
+
+        # Delete the logo
+        response = self.auth.request("DELETE", f"/api/channels/logos/{logo_id}/")
+
+        if not response:
+            return {"success": False, "error": "Request failed - no response", "status": "error"}
+
+        if response.status_code in (200, 204):
+            logger.info(f"Deleted logo {logo_id}")
+            return {"success": True, "status": "deleted"}
+
+        if response.status_code == 404:
+            logger.debug(f"Logo {logo_id} not found (already deleted?)")
+            return {"success": True, "status": "not_found"}
+
+        # Check for "in use" errors
+        try:
+            error_data = response.json()
+            error_str = str(error_data).lower()
+            if 'in use' in error_str or 'referenced' in error_str or 'channels' in error_str:
+                return {"success": True, "status": "in_use"}
+        except Exception:
+            pass
+
+        return {
+            "success": False,
+            "error": f"HTTP {response.status_code}",
+            "status": "error"
+        }
+
     def test_connection(self) -> Dict[str, Any]:
         """Test connection to Dispatcharr."""
         try:
@@ -1058,3 +1125,160 @@ class ChannelManager:
             }
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    # ========================================================================
+    # Channel Groups Management
+    # ========================================================================
+
+    def get_channel_groups(self, exclude_m3u: bool = False) -> List[Dict]:
+        """
+        Get all channel groups from Dispatcharr.
+
+        Args:
+            exclude_m3u: If True, exclude groups originating from M3U accounts
+
+        Returns:
+            List of group dicts with id, name, m3u_account_count, channel_count
+        """
+        response = self.auth.get("/api/channels/groups/")
+        if not response or response.status_code != 200:
+            logger.error(f"Failed to get channel groups: {response.status_code if response else 'No response'}")
+            return []
+
+        groups = response.json()
+
+        if exclude_m3u:
+            # Filter out groups that have M3U accounts associated
+            groups = [g for g in groups if not g.get('m3u_account_count', 0)]
+
+        return groups
+
+    def create_channel_group(self, name: str) -> Dict[str, Any]:
+        """
+        Create a new channel group in Dispatcharr.
+
+        Args:
+            name: Group name
+
+        Returns:
+            Result dict with:
+            - success: bool
+            - group: dict (created group data) if successful
+            - group_id: int if successful
+            - error: str if failed
+        """
+        if not name or not name.strip():
+            return {"success": False, "error": "Group name is required"}
+
+        payload = {'name': name.strip()}
+        response = self.auth.post("/api/channels/groups/", payload)
+
+        if not response:
+            return {"success": False, "error": "Request failed - no response"}
+
+        if response.status_code in (200, 201):
+            group_data = response.json()
+            return {
+                "success": True,
+                "group": group_data,
+                "group_id": group_data.get('id')
+            }
+
+        # Parse error
+        try:
+            error_data = response.json()
+            if isinstance(error_data, dict):
+                # Check for pattern/validation errors
+                if 'name' in error_data:
+                    error_msg = f"Invalid group name: {error_data['name']}"
+                else:
+                    errors = []
+                    for field, msgs in error_data.items():
+                        if isinstance(msgs, list):
+                            errors.append(f"{field}: {', '.join(str(m) for m in msgs)}")
+                        else:
+                            errors.append(f"{field}: {msgs}")
+                    error_msg = "; ".join(errors) if errors else str(error_data)
+            else:
+                error_msg = str(error_data)
+        except Exception:
+            error_msg = f"HTTP {response.status_code}"
+
+        return {"success": False, "error": error_msg}
+
+    def get_channel_group(self, group_id: int) -> Optional[Dict]:
+        """
+        Get a single channel group by ID.
+
+        Args:
+            group_id: Dispatcharr group ID
+
+        Returns:
+            Group dict or None if not found
+        """
+        response = self.auth.get(f"/api/channels/groups/{group_id}/")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+
+    def update_channel_group(self, group_id: int, name: str) -> Dict[str, Any]:
+        """
+        Update a channel group's name.
+
+        Args:
+            group_id: Dispatcharr group ID
+            name: New group name
+
+        Returns:
+            Result dict with success, group, or error
+        """
+        payload = {'name': name.strip()}
+        response = self.auth.request("PATCH", f"/api/channels/groups/{group_id}/", payload)
+
+        if not response:
+            return {"success": False, "error": "Request failed - no response"}
+
+        if response.status_code == 200:
+            return {"success": True, "group": response.json()}
+
+        try:
+            error_msg = response.json()
+        except Exception:
+            error_msg = f"HTTP {response.status_code}"
+
+        return {"success": False, "error": str(error_msg)}
+
+    def delete_channel_group(self, group_id: int) -> Dict[str, Any]:
+        """
+        Delete a channel group from Dispatcharr.
+
+        Note: Cannot delete groups that have channels or M3U associations.
+
+        Args:
+            group_id: Dispatcharr group ID
+
+        Returns:
+            Result dict with success or error
+        """
+        response = self.auth.request("DELETE", f"/api/channels/groups/{group_id}/")
+
+        if not response:
+            return {"success": False, "error": "Request failed - no response"}
+
+        if response.status_code in (200, 204):
+            return {"success": True}
+
+        if response.status_code == 404:
+            return {"success": False, "error": "Group not found"}
+
+        # Check for "cannot delete" errors
+        try:
+            error_data = response.json()
+            error_str = str(error_data).lower()
+            if 'cannot delete' in error_str or 'has channels' in error_str:
+                return {"success": False, "error": "Cannot delete group with existing channels"}
+            error_msg = str(error_data)
+        except Exception:
+            error_msg = f"HTTP {response.status_code}"
+
+        return {"success": False, "error": error_msg}

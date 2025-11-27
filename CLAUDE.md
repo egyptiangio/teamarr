@@ -33,6 +33,7 @@ Teamarr generates XMLTV EPG data for sports team channels. It supports two modes
 │   ├── template_form.html    # Template editor (team + event types)
 │   ├── template_list.html    # Templates listing
 │   ├── event_epg.html        # Event EPG groups management
+│   ├── channels.html         # Managed channels table
 │   ├── event_groups_import.html  # Import modal
 │   └── ...
 └── config/
@@ -61,7 +62,7 @@ python3 app.py
 - **Phase 6**: API endpoints for Dispatcharr integration (accounts, groups, streams)
 - **Phase 7**: UI for event groups management
 
-### Completed: Phases 8.1-8.3 (Channel Lifecycle Management)
+### Completed: Phases 8.1-8.4 (Channel Lifecycle Management)
 
 **Phase 8.1: Database & API Foundation**
 - Added columns to `event_epg_groups`: `channel_start`, `channel_create_timing`, `channel_delete_timing`
@@ -77,41 +78,59 @@ python3 app.py
 
 **Phase 8.3: Channel Lifecycle Scheduler**
 - `should_create_channel()` - timing check based on event date
-- `calculate_delete_time()` - scheduled deletion calculation
+- `calculate_delete_time()` - scheduled deletion calculation with sport-specific durations
 - Background scheduler thread for automatic deletion processing
 - All timing uses user's configured timezone (no hardcoded defaults)
 
-### Completed: Phase 8.4 (UI Updates)
-
+**Phase 8.4: UI Updates & Lifecycle Enhancements**
 - Dashboard redesigned with compact tiles (50% smaller)
 - Dashboard sections reordered to match tabs: Templates → Teams → Events → EPG Summary
 - Added "Manage →" links to each section header
-- Dashboard stats now include event-based data
-- Added `channel_name` field to event templates (template_form.html)
-  - Variables: {home_team}, {away_team}, {league}, {sport}, {event_date}
-  - Default: "{away_team} @ {home_team}"
-- Added edit button (✏️) to event groups table for editing settings
-- Edit modal with lifecycle settings:
-  - Template selection
-  - Channel start number
-  - Channel create timing (day_of, day_before, 2_days_before, week_before)
-  - Channel delete timing (stream_removed, end_of_day, end_of_next_day, manual)
-- Channel Start column already in event groups table
-- Smaller, more compact group tiles in import modal
-- Managed channels section with 4x taller scrollable table
-- Team aliases section with 4x taller scrollable table
-- Simplified stream preview modal (removed Action column, cleaner status display)
+- Renamed "Event Groups" tab to "Events" for brevity
+- Added dedicated "Channels" tab with managed channels table
+- Bulk delete for channels table (matching teams/events pattern with shift-click)
+- Edit modal for event groups with lifecycle settings
+- `sync_group_settings()` ensures setting changes are honored on every EPG generation
+- Sport-specific duration calculations for accurate event end times
+- Delete times use 23:59:59 for clarity (not 00:00)
+
+### Completed: Phase 9 (EPG Generation Consolidation)
+
+**Single Source of Truth Architecture:**
+- `generate_all_epg()` is the AUTHORITATIVE function for ALL EPG generation
+- Scheduler, manual generation, and streaming endpoints all use this single function
+- History saving and stats logging consolidated into single location
+
+**EPG Generation Phases (in `generate_all_epg()`):**
+1. **Phase 1: Team-based EPG** - Process teams via `epg_orchestrator.generate_epg()`
+2. **Phase 2: Event-based EPG** - Refresh event groups via `refresh_event_group_core()`
+3. **Phase 3: Channel Lifecycle** - Process scheduled deletions
+4. **Phase 4: History & Stats** - Save to `epg_history` table (single source of truth)
+5. **Phase 5: Dispatcharr Refresh** - Auto-trigger EPG refresh if configured
+
+**Endpoint Architecture:**
+- `/generate/stream` (SSE) - Primary UI endpoint, streams progress via callbacks
+- `/generate` (POST) - API compatibility wrapper, calls `generate_all_epg()` synchronously
+- Both endpoints use the same underlying function - no duplicate implementations
+
+**Progress Callback System:**
+- `progress_callback(status, message, percent, **extra)` - High-level progress
+- `team_progress_callback(current, total, team_name, message)` - Per-team updates
+- Status values: `starting`, `progress`, `complete`, `error`
 
 ---
 
-## Key Files Added in Phase 8
+## Key Files in Phase 8
 
 ### `epg/channel_lifecycle.py`
 Channel lifecycle management module:
 - `ChannelLifecycleManager` - coordinates channel creation/deletion with Dispatcharr
 - `should_create_channel(event, timing, timezone)` - checks if channel should be created
-- `calculate_delete_time(event, timing, timezone)` - calculates deletion schedule
-- `generate_channel_name(event, template, timezone)` - generates channel name
+- `calculate_delete_time(event, timing, timezone, sport)` - calculates deletion schedule using sport duration
+- `get_sport_duration_hours(sport)` - returns typical duration (football: 4h, basketball/hockey: 3h, baseball: 4h, soccer: 2.5h)
+- `generate_channel_name(event, template, timezone)` - generates channel name from template
+- `sync_group_settings(group)` - updates ALL channels when group settings change
+- `update_existing_channels(matched_streams, group)` - refreshes delete times with latest event data
 - `start_lifecycle_scheduler()` / `stop_lifecycle_scheduler()` - background scheduler
 - `get_lifecycle_manager()` - factory using settings from DB
 
@@ -135,6 +154,7 @@ class ChannelManager:
 | `/api/channel-lifecycle/process-deletions` | POST | Process pending deletions |
 | `/api/channel-lifecycle/scheduler` | POST | Start/stop background scheduler |
 | `/api/channel-lifecycle/cleanup-old` | POST | Hard delete old records |
+| `/api/managed-channels/bulk-delete` | POST | Bulk delete selected channels |
 
 ### Database Schema (managed_channels)
 ```sql
@@ -167,6 +187,8 @@ CREATE TABLE managed_channels (
 4. **Direct EPG injection** via `set_channel_epg()` API - no tvg_id matching needed
 5. **Timezone sensitivity** - all lifecycle timing uses user's configured timezone
 6. **Channel creation flow**: Generate EPG first, then create channels and inject EPG
+7. **Sport-specific durations** for calculating event end times (handles midnight crossings)
+8. **Settings sync on every EPG generation** - ensures setting changes take effect immediately
 
 ## Lifecycle Timing Options
 
@@ -178,42 +200,63 @@ CREATE TABLE managed_channels (
 
 **Channel Deletion (`channel_delete_timing`):**
 - `stream_removed` - Delete when stream no longer detected
-- `end_of_day` - Delete at end of event day
-- `end_of_next_day` - Delete at end of day after event
+- `end_of_day` - Delete at 23:59 of the day event ENDS (not starts)
+- `end_of_next_day` - Delete at 23:59 of the day after event ends
 - `manual` - Never auto-delete
 
----
-
-## Recent Fixes (This Session)
-
-1. **Path mismatch fix**: Event EPG was saving to `./data/` but consolidator looked in `/app/data/`. Fixed by using `get_data_dir()` consistently.
-
-2. **Game completed reason**: EventMatcher now returns "Game completed (previous day)" for streams where the game finished on a previous day.
-
-3. **Double notification fix**: Removed success notification before `location.reload()` since it disappears immediately anyway.
-
-4. **Scheduler handling**: Updated scheduler to handle both team and event EPG, doesn't treat "no teams" as error.
-
-5. **Unified EPG Generation (Refactoring)**: Created shared core functions to eliminate code duplication:
-   - `refresh_event_group_core()` - Core logic for refreshing a single event group (M3U, matching, EPG gen, channels)
-   - `generate_all_epg()` - Unified function for both scheduled and manual EPG generation
-   - `run_scheduled_generation()` now calls `generate_all_epg()` directly
-   - `generate_epg_stream()` uses `refresh_event_group_core()` for event groups (no HTTP overhead)
-   - `api_event_epg_refresh()` uses `refresh_event_group_core()` for consistency
-
-6. **UX Simplification (Event Groups → Events, Channels tab)**:
-   - Removed confusing "Refresh" button from Event Groups - all EPG generation now via "Generate EPG"
-   - Renamed "Preview" button to "Test" - does lightweight matching without EPG generation
-   - Renamed "Event Groups" tab to "Events" for brevity
-   - Moved managed channels to new dedicated "Channels" tab
-   - New navigation order: Dashboard → Templates → Teams → Events → EPG → Channels → Settings
-   - Clearer mental model: Preview/Test = look, Generate EPG = build
+**Sport Durations (for end time calculation):**
+- Football: 4 hours
+- Basketball: 3 hours
+- Hockey: 3 hours
+- Baseball: 4 hours
+- Soccer: 2.5 hours
+- Default: 3.5 hours
 
 ---
 
-## What's Next After Phase 8.4
-- Test with live upcoming games
+## EPG Generation Flow
+
+All EPG generation uses `generate_all_epg()` as the single source of truth:
+
+```
+generate_all_epg(progress_callback, team_progress_callback, settings, save_history)
+├── Phase 1: Team-based EPG
+│   └── epg_orchestrator.generate_epg() → teams.xml via consolidator
+├── Phase 2: Event-based EPG
+│   └── For each enabled event group with template:
+│       └── refresh_event_group_core() → events.xml via consolidator
+├── Phase 3: Channel Lifecycle
+│   └── get_lifecycle_manager().process_scheduled_deletions()
+├── Phase 4: History & Stats
+│   └── save_epg_generation_stats() → epg_history table
+└── Phase 5: Dispatcharr Refresh
+    └── EPGManager.refresh() if configured
+```
+
+**Entry Points (all use `generate_all_epg()`):**
+- UI "Generate EPG" button → `/generate/stream` (SSE with progress)
+- Scheduler → `run_scheduled_generation()` → `generate_all_epg()`
+- API clients → `/generate` POST → `generate_all_epg()`
+
+---
+
+## UI Navigation
+
+Dashboard → Templates → Teams → Events → EPG → Channels → Settings
+
+- **Dashboard**: Overview stats, quick links
+- **Templates**: Create/edit team and event EPG templates
+- **Teams**: Manage tracked teams, team aliases
+- **Events**: Configure event groups from Dispatcharr channel groups
+- **EPG**: View/download generated EPG XML
+- **Channels**: View/manage Teamarr-created channels in Dispatcharr
+- **Settings**: Dispatcharr connection, timezone, scheduled generation
+
+---
+
+## What's Next
 - Better UI feedback for stream matching issues
-- Scheduled auto-refresh for event groups
 - More event template variables (venue, broadcast network)
 - Documentation/help text in UI
+- EPG preview before generation
+- Backup/restore functionality

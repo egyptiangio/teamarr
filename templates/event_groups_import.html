@@ -510,39 +510,37 @@
             </div>
 
             <hr style="border-color: var(--border); margin: 1rem 0;">
-            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Channel Lifecycle (Optional)</h4>
+            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Channel Number and Group</h4>
 
             <div class="form-group">
                 <label for="config-channel-start">Channel Start Number</label>
-                <input type="number" id="config-channel-start" class="form-control" placeholder="e.g., 1000" min="1">
-                <small class="form-help">First channel number for auto-created channels. Leave empty to disable auto-creation.</small>
+                <input type="number" id="config-channel-start" class="form-control" placeholder="Auto-calculated if empty" min="1">
+                <small class="form-help">First channel number for created channels. Leave empty to auto-assign next available range.</small>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                <div class="form-group">
-                    <label for="config-create-timing">Create Timing</label>
-                    <select id="config-create-timing" class="form-control">
-                        <option value="day_of">Day of event</option>
-                        <option value="day_before">Day before</option>
-                        <option value="2_days_before">2 days before</option>
-                        <option value="week_before">Week before</option>
-                    </select>
+            <div class="form-group">
+                <label for="config-channel-group">Channel Group</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                    <input type="text" id="config-group-filter" class="form-control" placeholder="Filter groups..." style="flex: 1;" oninput="filterChannelGroups()">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">➕ New</button>
                 </div>
-
-                <div class="form-group">
-                    <label for="config-delete-timing">Delete Timing</label>
-                    <select id="config-delete-timing" class="form-control">
-                        <option value="stream_removed">When stream removed</option>
-                        <option value="end_of_day">End of event day</option>
-                        <option value="end_of_next_day">End of next day</option>
-                        <option value="manual">Manual only</option>
-                    </select>
+                <div id="create-group-form" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="new-group-name" class="form-control" placeholder="New group name..." style="flex: 1;">
+                        <button type="button" class="btn btn-sm btn-success" onclick="createGroupInline()">Create</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">✕</button>
+                    </div>
+                    <div id="create-group-status" style="margin-top: 0.25rem; font-size: 0.75rem;"></div>
                 </div>
+                <select id="config-channel-group" class="form-control" size="4" style="height: auto;">
+                    <option value="">Loading groups...</option>
+                </select>
+                <small class="form-help">Dispatcharr group to assign created channels to. Only non-M3U groups shown.</small>
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" onclick="closeConfigureModal()">Cancel</button>
-            <button class="btn btn-success" onclick="enableSelectedGroups()">Enable Groups</button>
+            <button class="btn btn-success" onclick="enableSelectedGroups()">Enable Group</button>
         </div>
     </div>
 </div>
@@ -586,13 +584,34 @@ let leagues = [];
 let selectedGroups = new Set();
 let enabledGroupIds = new Set();
 let currentAccount = null;
+let channelGroups = [];  // Dispatcharr channel groups for assignment
+let nextChannelRange = 1001;  // Next available channel range (fallback)
 
 // Load data on page load
 document.addEventListener('DOMContentLoaded', async function() {
     await loadLeagues();
     await loadAccounts();
     await loadEnabledGroups();
+    await loadChannelGroups();
+    await loadNextChannelRange();
 });
+
+async function loadNextChannelRange() {
+    try {
+        const response = await fetch('/api/channel-lifecycle/next-channel-range');
+        const data = await response.json();
+        if (response.ok && data.next_channel_range) {
+            nextChannelRange = data.next_channel_range;
+            // Update placeholder to show the default
+            const input = document.getElementById('config-channel-start');
+            if (input) {
+                input.placeholder = `Default: ${nextChannelRange}`;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load next channel range:', error);
+    }
+}
 
 async function loadLeagues() {
     try {
@@ -841,13 +860,111 @@ function updateLeagueOptions() {
     });
 }
 
+// Channel Groups Management
+async function loadChannelGroups() {
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups?exclude_m3u=true');
+        const data = await response.json();
+
+        if (response.ok) {
+            channelGroups = data.groups || [];
+            renderChannelGroupSelect();
+        } else {
+            console.error('Failed to load channel groups:', data.error);
+            channelGroups = [];
+            renderChannelGroupSelect();
+        }
+    } catch (error) {
+        console.error('Failed to load channel groups:', error);
+        channelGroups = [];
+        renderChannelGroupSelect();
+    }
+}
+
+function renderChannelGroupSelect(filter = '') {
+    const select = document.getElementById('config-channel-group');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">(No group - channels will be ungrouped)</option>';
+
+    const filterLower = filter.toLowerCase();
+    const filtered = channelGroups.filter(g =>
+        !filter || g.name.toLowerCase().includes(filterLower)
+    );
+
+    filtered.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = `${group.name} (${group.channel_count || 0} channels)`;
+        select.appendChild(option);
+    });
+}
+
+function filterChannelGroups() {
+    const filter = document.getElementById('config-group-filter').value;
+    renderChannelGroupSelect(filter);
+}
+
+function toggleCreateGroupForm() {
+    const form = document.getElementById('create-group-form');
+    const isVisible = form.style.display !== 'none';
+    form.style.display = isVisible ? 'none' : 'block';
+    if (!isVisible) {
+        document.getElementById('new-group-name').value = '';
+        document.getElementById('create-group-status').innerHTML = '';
+        document.getElementById('new-group-name').focus();
+    }
+}
+
+async function createGroupInline() {
+    const groupName = document.getElementById('new-group-name').value.trim();
+    const statusDiv = document.getElementById('create-group-status');
+
+    if (!groupName) {
+        statusDiv.innerHTML = '<span style="color: var(--danger);">Group name is required</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color: var(--text-muted);">Creating...</span>';
+
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: groupName })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            statusDiv.innerHTML = '<span style="color: var(--success);">✓ Created!</span>';
+
+            // Reload groups and select the new one
+            await loadChannelGroups();
+            const select = document.getElementById('config-channel-group');
+            const newOption = Array.from(select.options).find(opt => opt.value == data.group_id);
+            if (newOption) {
+                newOption.selected = true;
+            }
+
+            // Hide form after short delay
+            setTimeout(() => {
+                toggleCreateGroupForm();
+            }, 500);
+        } else {
+            statusDiv.innerHTML = `<span style="color: var(--danger);">${data.error || 'Failed to create group'}</span>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: var(--danger);">Error: ${error.message}</span>`;
+    }
+}
+
 async function enableSelectedGroups() {
     const sport = document.getElementById('config-sport').value;
     const league = document.getElementById('config-league').value;
     const templateId = document.getElementById('config-template').value;
     const channelStart = document.getElementById('config-channel-start').value;
-    const createTiming = document.getElementById('config-create-timing').value;
-    const deleteTiming = document.getElementById('config-delete-timing').value;
+    const channelGroupId = document.getElementById('config-channel-group').value;
 
     if (!sport || !league) {
         alert('Please select sport and league');
@@ -867,9 +984,7 @@ async function enableSelectedGroups() {
             group_name: group.name,
             assigned_sport: sport,
             assigned_league: league,
-            account_name: currentAccount.name,
-            channel_create_timing: createTiming,
-            channel_delete_timing: deleteTiming
+            account_name: currentAccount.name
         };
 
         if (templateId) {
@@ -878,6 +993,10 @@ async function enableSelectedGroups() {
 
         if (channelStart) {
             payload.channel_start = parseInt(channelStart);
+        }
+
+        if (channelGroupId) {
+            payload.channel_group_id = parseInt(channelGroupId);
         }
 
         try {

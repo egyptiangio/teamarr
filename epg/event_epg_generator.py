@@ -538,7 +538,10 @@ def generate_event_epg(
         - xml_content: str (if successful)
         - file_path: str (if saved)
         - channel_count: int
-        - programme_count: int
+        - programme_count: int (total programmes including filler)
+        - event_count: int (actual events/games)
+        - pregame_count: int (pregame filler programmes)
+        - postgame_count: int (postgame filler programmes)
     """
     try:
         generator = EventEPGGenerator()
@@ -550,11 +553,30 @@ def generate_event_epg(
             template=template
         )
 
+        # Count programmes by type
+        event_count = len(matched_streams)  # Each matched stream = 1 event
+        pregame_count = 0
+        postgame_count = 0
+
+        # If template has pregame enabled, each stream gets a pregame programme
+        if template and template.get('pregame_enabled'):
+            pregame_count = len(matched_streams)
+
+        # If template has postgame enabled, each stream gets a postgame programme
+        if template and template.get('postgame_enabled'):
+            postgame_count = len(matched_streams)
+
+        # Total programmes = events + pregame + postgame
+        total_programmes = event_count + pregame_count + postgame_count
+
         result = {
             'success': True,
             'xml_content': xml_content,
             'channel_count': len(matched_streams),
-            'programme_count': len(matched_streams)
+            'programme_count': total_programmes,
+            'event_count': event_count,
+            'pregame_count': pregame_count,
+            'postgame_count': postgame_count,
         }
 
         if save:

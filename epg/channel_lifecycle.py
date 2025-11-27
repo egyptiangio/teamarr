@@ -16,6 +16,54 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 
+def get_global_lifecycle_settings() -> Dict[str, str]:
+    """
+    Get global channel lifecycle settings from the settings table.
+
+    Returns:
+        Dict with channel_create_timing and channel_delete_timing
+    """
+    try:
+        from database import get_connection
+        conn = get_connection()
+        row = conn.execute("""
+            SELECT channel_create_timing, channel_delete_timing
+            FROM settings WHERE id = 1
+        """).fetchone()
+        conn.close()
+
+        if row:
+            return {
+                'channel_create_timing': row['channel_create_timing'] or 'same_day',
+                'channel_delete_timing': row['channel_delete_timing'] or 'same_day'
+            }
+    except Exception as e:
+        logger.warning(f"Could not get global lifecycle settings: {e}")
+
+    return {
+        'channel_create_timing': 'same_day',
+        'channel_delete_timing': 'same_day'
+    }
+
+
+def normalize_create_timing(timing: str) -> str:
+    """Normalize legacy create timing values to new format."""
+    mapping = {
+        'day_of': 'same_day',
+        'week_before': '2_days_before',  # No week option, use 2 days
+    }
+    return mapping.get(timing, timing)
+
+
+def normalize_delete_timing(timing: str) -> str:
+    """Normalize legacy delete timing values to new format."""
+    mapping = {
+        'end_of_day': 'same_day',
+        'end_of_next_day': 'day_after',
+    }
+    return mapping.get(timing, timing)
+
+
 def generate_channel_name(
     event: Dict,
     template: Optional[Dict] = None,
@@ -61,14 +109,28 @@ def should_create_channel(
     """
     Check if a channel should be created based on event date and timing setting.
 
+    This is the "earliest creation" check - channel won't be created before
+    the threshold date, even if the stream exists.
+
     Args:
         event: ESPN event data with 'date' field
-        create_timing: One of 'day_of', 'day_before', '2_days_before', 'week_before'
+        create_timing: One of 'stream_available', 'same_day', 'day_before', '2_days_before', 'manual'
         timezone: Timezone for date comparison
 
     Returns:
         Tuple of (should_create: bool, reason: str)
     """
+    # Normalize legacy values
+    create_timing = normalize_create_timing(create_timing)
+
+    # Manual means never auto-create
+    if create_timing == 'manual':
+        return False, "Manual creation only"
+
+    # stream_available means create immediately when stream exists
+    if create_timing == 'stream_available':
+        return True, "Stream available - immediate creation"
+
     event_date_str = event.get('date')
     if not event_date_str:
         return False, "No event date"
@@ -88,17 +150,15 @@ def should_create_channel(
         now = datetime.now(tz)
         today = now.date()
 
-        # Calculate threshold based on timing
-        if create_timing == 'day_of':
+        # Calculate threshold based on timing (earliest creation date)
+        if create_timing == 'same_day' or create_timing == 'day_of':
             threshold_date = event_date
         elif create_timing == 'day_before':
             threshold_date = event_date - timedelta(days=1)
         elif create_timing == '2_days_before':
             threshold_date = event_date - timedelta(days=2)
-        elif create_timing == 'week_before':
-            threshold_date = event_date - timedelta(days=7)
         else:
-            # Default to day_of
+            # Default to same day
             threshold_date = event_date
 
         if today >= threshold_date:
@@ -137,18 +197,24 @@ def calculate_delete_time(
     """
     Calculate when a channel should be deleted based on event and timing setting.
 
+    This is the "latest deletion" time - channel will be deleted by this time
+    even if the stream still exists.
+
     Uses the actual event start time and sport duration to determine if the
     event will cross midnight, then schedules deletion appropriately.
 
     Args:
         event: ESPN event data with 'date' field
-        delete_timing: One of 'stream_removed', 'end_of_day', 'end_of_next_day', 'manual'
+        delete_timing: One of 'stream_removed', 'same_day', 'day_after', '2_days_after', 'manual'
         timezone: Timezone for date calculation
         sport: Sport type for duration calculation (e.g., 'basketball', 'football')
 
     Returns:
         Datetime when channel should be deleted (at 23:59), or None for 'manual'/'stream_removed'
     """
+    # Normalize legacy values
+    delete_timing = normalize_delete_timing(delete_timing)
+
     if delete_timing in ('manual', 'stream_removed'):
         return None
 
@@ -175,12 +241,16 @@ def calculate_delete_time(
         # Check if event crosses midnight (ends on a different day than it started)
         crosses_midnight = event_end_date > event_start_date
 
-        if delete_timing == 'end_of_day':
+        # Calculate delete date based on when event ENDS
+        if delete_timing == 'same_day' or delete_timing == 'end_of_day':
             # Delete at end of the day the event ENDS (not starts)
             delete_date = event_end_date
-        elif delete_timing == 'end_of_next_day':
+        elif delete_timing == 'day_after' or delete_timing == 'end_of_next_day':
             # Delete at end of the day AFTER the event ends
             delete_date = event_end_date + timedelta(days=1)
+        elif delete_timing == '2_days_after':
+            # Delete at end of 2 days after the event ends
+            delete_date = event_end_date + timedelta(days=2)
         else:
             return None
 
@@ -278,10 +348,12 @@ class ChannelLifecycleManager:
             'existing': []
         }
 
-        # Get lifecycle settings from group
+        # Get lifecycle settings from group, falling back to global settings
+        global_settings = get_global_lifecycle_settings()
         channel_start = group.get('channel_start')
-        create_timing = group.get('channel_create_timing', 'day_of')
-        delete_timing = group.get('channel_delete_timing', 'stream_removed')
+        channel_group_id = group.get('channel_group_id')  # Dispatcharr channel group
+        create_timing = group.get('channel_create_timing') or global_settings['channel_create_timing']
+        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         # Check if group has channel management enabled
@@ -366,6 +438,7 @@ class ChannelLifecycleManager:
                 name=channel_name,
                 channel_number=channel_number,
                 stream_ids=[stream['id']],
+                channel_group_id=channel_group_id,
                 logo_id=logo_id
             )
 
@@ -407,7 +480,8 @@ class ChannelLifecycleManager:
                     event_date=event_date,
                     home_team=home_team,
                     away_team=away_team,
-                    scheduled_delete_at=delete_at.isoformat() if delete_at else None
+                    scheduled_delete_at=delete_at.isoformat() if delete_at else None,
+                    dispatcharr_logo_id=logo_id  # Track logo for cleanup on deletion
                 )
 
                 results['created'].append({
@@ -416,6 +490,7 @@ class ChannelLifecycleManager:
                     'channel_number': channel_number,
                     'channel_name': channel_name,
                     'managed_id': managed_id,
+                    'logo_id': logo_id,
                     'scheduled_delete_at': delete_at.isoformat() if delete_at else None
                 })
 
@@ -462,7 +537,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        delete_timing = group.get('channel_delete_timing', 'stream_removed')
+        # Get delete timing from group or global settings
+        global_settings = get_global_lifecycle_settings()
+        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
         if delete_timing != 'stream_removed':
             return results
 
@@ -480,10 +557,19 @@ class ChannelLifecycleManager:
                 if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
                     # Mark as deleted in database
                     mark_managed_channel_deleted(channel['id'])
+
+                    # Clean up associated logo if present
+                    logo_id = channel.get('dispatcharr_logo_id')
+                    if logo_id:
+                        logo_result = self.channel_api.delete_logo(logo_id)
+                        if logo_result.get('status') == 'deleted':
+                            logger.debug(f"Deleted logo {logo_id} for channel '{channel['channel_name']}'")
+
                     results['deleted'].append({
                         'channel_id': channel['dispatcharr_channel_id'],
                         'channel_number': channel['channel_number'],
-                        'channel_name': channel['channel_name']
+                        'channel_name': channel['channel_name'],
+                        'logo_deleted': logo_id if logo_id else None
                     })
                     logger.info(
                         f"Deleted channel {channel['channel_number']} "
@@ -525,10 +611,19 @@ class ChannelLifecycleManager:
 
             if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
                 mark_managed_channel_deleted(channel['id'])
+
+                # Clean up associated logo if present
+                logo_id = channel.get('dispatcharr_logo_id')
+                if logo_id:
+                    logo_result = self.channel_api.delete_logo(logo_id)
+                    if logo_result.get('status') == 'deleted':
+                        logger.debug(f"Deleted logo {logo_id} for channel '{channel['channel_name']}'")
+
                 results['deleted'].append({
                     'channel_id': channel['dispatcharr_channel_id'],
                     'channel_number': channel['channel_number'],
-                    'channel_name': channel['channel_name']
+                    'channel_name': channel['channel_name'],
+                    'logo_deleted': logo_id if logo_id else None
                 })
                 logger.info(
                     f"Deleted channel {channel['channel_number']} "
@@ -570,7 +665,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        delete_timing = group.get('channel_delete_timing', 'stream_removed')
+        # Get delete timing from group or global settings
+        global_settings = get_global_lifecycle_settings()
+        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         for matched in matched_streams:
@@ -650,7 +747,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        delete_timing = group.get('channel_delete_timing', 'stream_removed')
+        # Get delete timing from group or global settings
+        global_settings = get_global_lifecycle_settings()
+        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         # Get all active (non-deleted) channels for this group

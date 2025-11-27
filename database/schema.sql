@@ -226,6 +226,10 @@ CREATE TABLE IF NOT EXISTS settings (
     dispatcharr_epg_id INTEGER,             -- Discovered EPG source ID
     dispatcharr_last_sync TEXT,             -- ISO datetime of last successful refresh
 
+    -- Global Channel Lifecycle Settings (for event-based channels)
+    channel_create_timing TEXT DEFAULT 'same_day',   -- stream_available, same_day, day_before, 2_days_before, manual
+    channel_delete_timing TEXT DEFAULT 'same_day',   -- stream_removed, same_day, day_after, 2_days_after, manual
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

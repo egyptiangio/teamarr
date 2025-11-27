@@ -9,169 +9,123 @@
             <h1>Dashboard</h1>
             <p class="page-subtitle">Overview of your EPG system</p>
         </div>
-        <div class="page-actions">
-            <a href="{{ url_for('templates_add_form') }}" class="btn btn-primary">
-                ➕ Create Template
-            </a>
-            <a href="{{ url_for('teams_import') }}" class="btn btn-secondary">
-                📥 Import Teams
-            </a>
-            <button onclick="generateEPGWithProgress()" class="btn btn-success" id="generate-epg-btn" style="vertical-align: top;">
-                🚀 Generate EPG
-            </button>
-        </div>
-    </div>
-
-    <!-- Templates Summary -->
-    <div class="section">
-        <div class="section-header">
-            <h2>Templates</h2>
-            <a href="{{ url_for('templates_list') }}" class="manage-link">Manage →</a>
-        </div>
-        <div class="stats-grid stats-grid-compact">
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">📋</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ template_count }}</div>
-                    <div class="stat-label-compact">Total</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">🏆</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ team_template_count }}</div>
-                    <div class="stat-label-compact">Teams</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">🎯</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ event_template_count }}</div>
-                    <div class="stat-label-compact">Events</div>
-                </div>
+        <div class="quick-actions">
+            <span class="quick-actions-label">Quick Actions</span>
+            <div class="quick-actions-buttons">
+                <a href="{{ url_for('templates_add_form') }}" class="btn btn-secondary">📝 Create Template</a>
+                <a href="{{ url_for('teams_import') }}" class="btn btn-secondary">📥 Import Teams</a>
+                <a href="{{ url_for('event_groups_import') }}" class="btn btn-secondary">📺 Import Event Group</a>
+                <button onclick="generateEPGWithProgress()" class="btn btn-success" id="generate-epg-btn">🚀 Generate EPG</button>
             </div>
         </div>
     </div>
 
-    <!-- Teams Summary -->
-    <div class="section">
-        <div class="section-header">
-            <h2>Teams</h2>
-            <a href="{{ url_for('teams_list') }}" class="manage-link">Manage →</a>
-        </div>
-        <div class="stats-grid stats-grid-compact">
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">🏆</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ team_count }}</div>
-                    <div class="stat-label-compact">Total</div>
-                </div>
+    <!-- 4 Quadrants Grid -->
+    <div class="quadrants-grid">
+        <!-- Teams Quadrant -->
+        <div class="quadrant">
+            <div class="quadrant-header">
+                <h3>Teams</h3>
+                <a href="{{ url_for('teams_list') }}" class="manage-link">Manage →</a>
             </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">✅</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ active_team_count }}</div>
-                    <div class="stat-label-compact">Active</div>
+            <div class="quadrant-tiles">
+                <div class="tile">
+                    <div class="tile-value">{{ team_count }}</div>
+                    <div class="tile-label">Total</div>
                 </div>
-            </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">🔗</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ assigned_team_count }}</div>
-                    <div class="stat-label-compact">Assigned</div>
+                <div class="tile">
+                    <div class="tile-value">{{ active_team_count }}</div>
+                    <div class="tile-label">Active</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ assigned_team_count }}</div>
+                    <div class="tile-label">Assigned</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ team_count - assigned_team_count }}</div>
+                    <div class="tile-label">Unassigned</div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Events Summary -->
-    <div class="section">
-        <div class="section-header">
-            <h2>Events</h2>
-            <a href="{{ url_for('event_groups_list') }}" class="manage-link">Manage →</a>
-        </div>
-        <div class="stats-grid stats-grid-compact">
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">📁</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ event_group_count }}</div>
-                    <div class="stat-label-compact">Groups</div>
-                </div>
+        <!-- Events Quadrant -->
+        <div class="quadrant">
+            <div class="quadrant-header">
+                <h3>Events</h3>
+                <a href="{{ url_for('event_groups_list') }}" class="manage-link">Manage →</a>
             </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">✅</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ enabled_event_group_count }}</div>
-                    <div class="stat-label-compact">Enabled</div>
+            <div class="quadrant-tiles">
+                <div class="tile">
+                    <div class="tile-value">{{ event_group_count }}</div>
+                    <div class="tile-label">Groups</div>
                 </div>
-            </div>
-            <div class="stat-card stat-card-compact">
-                <div class="stat-icon-compact">📺</div>
-                <div class="stat-content">
-                    <div class="stat-value-compact">{{ managed_channel_count }}</div>
-                    <div class="stat-label-compact">Channels</div>
+                <div class="tile">
+                    <div class="tile-value">{{ enabled_event_group_count }}</div>
+                    <div class="tile-label">Enabled</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ total_event_streams }}</div>
+                    <div class="tile-label">Streams</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ matched_event_streams }}</div>
+                    <div class="tile-label">Matched</div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- EPG Summary -->
-    {% if latest_epg or matched_event_streams > 0 %}
-        <div class="section">
-            <div class="section-header">
-                <h2>EPG Summary</h2>
+        <!-- EPG Quadrant -->
+        <div class="quadrant">
+            <div class="quadrant-header">
+                <h3>EPG</h3>
                 <a href="{{ url_for('epg_management') }}" class="manage-link">Manage →</a>
             </div>
-            <!-- Row 1: Channels -->
-            <div class="stats-grid stats-grid-compact">
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">📺</div>
-                    <div class="stat-content">
-                        <div class="stat-value-compact">{{ (latest_epg.num_channels if latest_epg else 0) + matched_event_streams }}</div>
-                        <div class="stat-label-compact">Total Channels</div>
-                    </div>
+            <div class="quadrant-tiles">
+                <div class="tile">
+                    <div class="tile-value">{{ epg_stats.total_channels }}</div>
+                    <div class="tile-label">Channels</div>
                 </div>
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">🏆</div>
-                    <div class="stat-content">
-                        <div class="stat-value-compact">{{ latest_epg.num_channels if latest_epg else 0 }}</div>
-                        <div class="stat-label-compact">Team Channels</div>
-                    </div>
+                <div class="tile" title="Team-based: {{ epg_stats.events.team_based }} | Event-based: {{ epg_stats.events.event_based }}">
+                    <div class="tile-value">{{ epg_stats.events.total }}</div>
+                    <div class="tile-label">Events</div>
                 </div>
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">🎯</div>
-                    <div class="stat-content">
-                        <div class="stat-value-compact">{{ matched_event_streams }}</div>
-                        <div class="stat-label-compact">Event Channels</div>
-                    </div>
+                <div class="tile" title="Pregame: {{ epg_stats.filler.pregame.total }} | Postgame: {{ epg_stats.filler.postgame.total }} | Idle: {{ epg_stats.filler.idle.total }}">
+                    <div class="tile-value">{{ epg_stats.filler.total }}</div>
+                    <div class="tile-label">Filler</div>
                 </div>
-            </div>
-            <!-- Row 2: Programs -->
-            <div class="stats-grid stats-grid-compact">
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">🎬</div>
-                    <div class="stat-content">
-                        <div class="stat-value-compact">{{ latest_epg.num_events if latest_epg else 0 }}</div>
-                        <div class="stat-label-compact">Events</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">📊</div>
-                    <div class="stat-content">
-                        <div class="stat-value-compact">{{ (latest_epg.num_programmes - latest_epg.num_events) if latest_epg else 0 }}</div>
-                        <div class="stat-label-compact">Filler Programs</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-compact epg-stat">
-                    <div class="stat-icon-compact">📅</div>
-                    <div class="stat-content">
-                        <div class="stat-value-tiny">{{ latest_epg.generated_at_formatted if latest_epg else 'Never' }}</div>
-                        <div class="stat-label-compact">Last Generated</div>
-                    </div>
+                <div class="tile">
+                    <div class="tile-value">{{ epg_stats.total_programmes }}</div>
+                    <div class="tile-label">Programs</div>
                 </div>
             </div>
         </div>
-    {% endif %}
+
+        <!-- Channels Quadrant -->
+        <div class="quadrant">
+            <div class="quadrant-header">
+                <h3>Channels</h3>
+                <a href="{{ url_for('channels_list') }}" class="manage-link">Manage →</a>
+            </div>
+            <div class="quadrant-tiles">
+                <div class="tile">
+                    <div class="tile-value">{{ managed_channel_count }}</div>
+                    <div class="tile-label">Active</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ pending_delete_count }}</div>
+                    <div class="tile-label">Pending</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ groups_with_channels }}</div>
+                    <div class="tile-label">Groups</div>
+                </div>
+                <div class="tile">
+                    <div class="tile-value">{{ deleted_channel_count }}</div>
+                    <div class="tile-label">Deleted</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- EPG Generation History Table -->
     {% if epg_history %}
@@ -205,11 +159,11 @@
                                 </td>
                                 <td class="text-center">
                                     {% if entry.status == 'success' %}
-                                        <span class="status-badge status-success">✓ Success</span>
+                                        <span class="status-badge status-success">✓</span>
                                     {% elif entry.status == 'error' %}
-                                        <span class="status-badge status-error">✗ Error</span>
+                                        <span class="status-badge status-error">✗</span>
                                     {% elif entry.status == 'partial' %}
-                                        <span class="status-badge status-warning">⚠ Partial</span>
+                                        <span class="status-badge status-warning">⚠</span>
                                     {% else %}
                                         <span class="status-badge">{{ entry.status }}</span>
                                     {% endif %}
@@ -226,20 +180,12 @@
     {% if template_count == 0 and team_count == 0 %}
         <div class="section">
             <div class="info-box">
-                <h3>🚀 Getting Started</h3>
+                <h3>Getting Started</h3>
                 <ol class="getting-started">
-                    <li>
-                        <strong>Create a template</strong> - Define how your EPG programs will look (titles, descriptions, filler content, etc.)
-                    </li>
-                    <li>
-                        <strong>Add teams</strong> - Add your favorite sports teams using their ESPN URLs
-                    </li>
-                    <li>
-                        <strong>Assign templates</strong> - Assign each team to a template (or use bulk assignment)
-                    </li>
-                    <li>
-                        <strong>Generate EPG</strong> - Click "Generate EPG" to create your XMLTV file
-                    </li>
+                    <li><strong>Create a template</strong> - Define how your EPG programs will look</li>
+                    <li><strong>Add teams</strong> - Add sports teams using their ESPN URLs</li>
+                    <li><strong>Assign templates</strong> - Assign each team to a template</li>
+                    <li><strong>Generate EPG</strong> - Click "Generate EPG" to create your XMLTV file</li>
                 </ol>
             </div>
         </div>
@@ -248,158 +194,128 @@
 
 <style>
 .page-container {
-    max-width: 1400px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 2rem 0;
+    padding: 1.5rem 0;
 }
 
 .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 2rem;
-    gap: 2rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
 }
 
 .page-header h1 {
-    margin: 0 0 0.5rem 0;
-    font-size: 2rem;
+    margin: 0 0 0.25rem 0;
+    font-size: 1.5rem;
     color: var(--text-primary);
 }
 
 .page-subtitle {
     margin: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: 0.875rem;
 }
 
-.page-actions {
+.quick-actions {
     display: flex;
-    gap: 0.75rem;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
 }
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
+.quick-actions-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
-.stats-grid-compact {
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+.quick-actions-buttons {
+    display: flex;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
 }
 
-.stat-card {
+/* Quadrants Grid */
+.quadrants-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.quadrant {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 1rem;
-    transition: box-shadow 0.2s;
+    padding: 0.75rem;
 }
 
-.stat-card-compact {
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.stat-card:hover {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.stat-icon {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.stat-icon-compact {
-    font-size: 1rem;
-}
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--primary);
-    line-height: 1;
-}
-
-.stat-value-compact {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--primary);
-    line-height: 1;
-}
-
-.stat-label {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
-}
-
-.stat-label-compact {
-    color: var(--text-muted);
-    font-size: 0.7rem;
-    margin-top: 0.1rem;
-}
-
-.stat-value-tiny {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--primary);
-    line-height: 1.2;
-}
-
-.epg-stats {
-    margin-bottom: 2rem;
-}
-
-.epg-stats h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    color: var(--text-primary);
-}
-
-.stat-value-small {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--primary);
-    line-height: 1.2;
-}
-
-.epg-stat {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-light);
-}
-
-.section {
-    margin-bottom: 2rem;
-}
-
-.section h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text-primary);
-}
-
-.section-header {
+.quadrant-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.quadrant-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.quadrant-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+
+.tile {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 0.5rem;
+    text-align: center;
+}
+
+.tile-wide {
+    grid-column: span 4;
+}
+
+.tile-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+}
+
+.tile-value-small {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary);
+    line-height: 1.2;
+}
+
+.tile-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
 }
 
 .manage-link {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
     text-decoration: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
     transition: color 0.2s, background-color 0.2s;
 }
 
@@ -408,50 +324,64 @@
     background-color: rgba(59, 130, 246, 0.1);
 }
 
+/* Section */
+.section {
+    margin-bottom: 1.5rem;
+}
+
+.section h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--text-primary);
+}
+
+/* Info Box */
 .info-box {
     background: rgba(59, 130, 246, 0.15);
     border: 1px solid var(--primary);
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: 1rem;
 }
 
 .info-box h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
     color: var(--primary);
 }
 
 .getting-started {
     margin: 0;
-    padding-left: 1.5rem;
+    padding-left: 1.25rem;
+    font-size: 0.875rem;
 }
 
 .getting-started li {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     color: var(--text-secondary);
 }
 
-/* History Table Styles */
+/* History Table */
 .table-container {
     overflow-x: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--bg-secondary);
 }
 
 .history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
 }
 
 .history-table thead {
     background: var(--bg-tertiary);
-    border-bottom: 2px solid var(--border);
+    border-bottom: 1px solid var(--border);
 }
 
 .history-table th {
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     font-weight: 600;
     color: var(--text-primary);
@@ -459,7 +389,7 @@
 }
 
 .history-table td {
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--border);
     color: var(--text-secondary);
 }
@@ -478,9 +408,9 @@
 
 .status-badge {
     display: inline-block;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
     font-weight: 500;
 }
 
@@ -497,6 +427,13 @@
 .status-warning {
     background: rgba(245, 158, 11, 0.2);
     color: #fcd34d;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .quadrants-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 

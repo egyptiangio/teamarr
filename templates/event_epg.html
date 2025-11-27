@@ -121,8 +121,7 @@
                             data-template="{{ group.event_template_name or '' }}"
                             data-template-id="{{ group.event_template_id or '' }}"
                             data-channel-start="{{ group.channel_start or 0 }}"
-                            data-create-timing="{{ group.channel_create_timing or 'day_of' }}"
-                            data-delete-timing="{{ group.channel_delete_timing or 'stream_removed' }}"
+                            data-channel-group-id="{{ group.channel_group_id or '' }}"
                             data-streams="{{ group.stream_count or 0 }}"
                             data-matched="{{ group.matched_count or 0 }}"
                             data-enabled="{{ group.enabled }}"
@@ -361,32 +360,33 @@
                 <small class="form-help">Required. Controls EPG title, description, and channel naming.</small>
             </div>
 
+            <hr style="border-color: var(--border); margin: 1rem 0;">
+            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Channel Number and Group</h4>
+
             <div class="form-group">
                 <label for="edit-channel-start">Channel Start Number</label>
-                <input type="number" id="edit-channel-start" class="form-control" placeholder="e.g., 1000" min="1">
-                <small class="form-help">First channel number for auto-created channels in this group</small>
+                <input type="number" id="edit-channel-start" class="form-control" placeholder="Auto-calculated if empty" min="1">
+                <small class="form-help">First channel number for created channels. Leave empty to auto-assign next available range.</small>
             </div>
 
             <div class="form-group">
-                <label for="edit-create-timing">Channel Create Timing</label>
-                <select id="edit-create-timing" class="form-control">
-                    <option value="day_of">Day of event</option>
-                    <option value="day_before">Day before event</option>
-                    <option value="2_days_before">2 days before event</option>
-                    <option value="week_before">Week before event</option>
+                <label for="edit-channel-group">Channel Group</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                    <input type="text" id="edit-group-filter" class="form-control" placeholder="Filter groups..." style="flex: 1;" oninput="filterEditChannelGroups()">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="toggleEditCreateGroupForm()">➕ New</button>
+                </div>
+                <div id="edit-create-group-form" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="edit-new-group-name" class="form-control" placeholder="New group name..." style="flex: 1;">
+                        <button type="button" class="btn btn-sm btn-success" onclick="createEditGroupInline()">Create</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleEditCreateGroupForm()">✕</button>
+                    </div>
+                    <div id="edit-create-group-status" style="margin-top: 0.25rem; font-size: 0.75rem;"></div>
+                </div>
+                <select id="edit-channel-group" class="form-control" size="4" style="height: auto;">
+                    <option value="">Loading groups...</option>
                 </select>
-                <small class="form-help">When to create channels in Dispatcharr</small>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-delete-timing">Channel Delete Timing</label>
-                <select id="edit-delete-timing" class="form-control">
-                    <option value="stream_removed">When stream removed</option>
-                    <option value="end_of_day">End of event day</option>
-                    <option value="end_of_next_day">End of next day</option>
-                    <option value="manual">Manual only</option>
-                </select>
-                <small class="form-help">When to delete channels after event ends</small>
+                <small class="form-help">Dispatcharr group to assign created channels to. Only non-M3U groups shown.</small>
             </div>
         </div>
         <div class="modal-footer">
@@ -400,6 +400,25 @@
 // Sorting state
 let currentSort = { column: null, direction: 'asc' };
 let lastChecked = null;
+let channelGroups = [];  // Dispatcharr channel groups for assignment
+let nextChannelRange = 1001;  // Next available channel range (fallback)
+
+// Load next available channel range on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadNextChannelRange();
+});
+
+async function loadNextChannelRange() {
+    try {
+        const response = await fetch('/api/channel-lifecycle/next-channel-range');
+        const data = await response.json();
+        if (response.ok && data.next_channel_range) {
+            nextChannelRange = data.next_channel_range;
+        }
+    } catch (error) {
+        console.error('Failed to load next channel range:', error);
+    }
+}
 
 // ============================================================================
 // Checkbox & Batch Operations
@@ -889,7 +908,7 @@ async function deleteAlias(aliasId) {
 // Edit Group Modal
 // ============================================================================
 
-function editGroup(groupId) {
+async function editGroup(groupId) {
     const row = document.querySelector(`tr[data-group-id="${groupId}"]`);
     if (!row) return;
 
@@ -901,13 +920,19 @@ function editGroup(groupId) {
     const templateId = row.dataset.templateId || '';
     document.getElementById('edit-template').value = templateId;
 
-    // Set channel start
+    // Set channel start with fallback placeholder
     const channelStart = row.dataset.channelStart || '';
-    document.getElementById('edit-channel-start').value = channelStart !== '0' ? channelStart : '';
+    const channelStartInput = document.getElementById('edit-channel-start');
+    channelStartInput.value = channelStart !== '0' ? channelStart : '';
+    channelStartInput.placeholder = `Default: ${nextChannelRange}`;
 
-    // Set timings (get from data attributes if available)
-    document.getElementById('edit-create-timing').value = row.dataset.createTiming || 'day_of';
-    document.getElementById('edit-delete-timing').value = row.dataset.deleteTiming || 'stream_removed';
+    // Load channel groups and set current value
+    await loadEditChannelGroups();
+    const channelGroupId = row.dataset.channelGroupId || '';
+    document.getElementById('edit-channel-group').value = channelGroupId;
+
+    // Clear filter
+    document.getElementById('edit-group-filter').value = '';
 
     document.getElementById('edit-modal').classList.add('active');
 }
@@ -921,14 +946,12 @@ async function saveGroupSettings() {
     const groupId = document.getElementById('edit-group-id').value;
     const templateId = document.getElementById('edit-template').value;
     const channelStart = document.getElementById('edit-channel-start').value;
-    const createTiming = document.getElementById('edit-create-timing').value;
-    const deleteTiming = document.getElementById('edit-delete-timing').value;
+    const channelGroupId = document.getElementById('edit-channel-group').value;
 
     const payload = {
         event_template_id: templateId ? parseInt(templateId) : null,
         channel_start: channelStart ? parseInt(channelStart) : null,
-        channel_create_timing: createTiming,
-        channel_delete_timing: deleteTiming
+        channel_group_id: channelGroupId ? parseInt(channelGroupId) : null
     };
 
     try {
@@ -947,6 +970,114 @@ async function saveGroupSettings() {
         }
     } catch (error) {
         showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Channel Groups for Edit Modal
+// ============================================================================
+
+async function loadEditChannelGroups() {
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups?exclude_m3u=true');
+        const data = await response.json();
+
+        if (response.ok) {
+            channelGroups = data.groups || [];
+            renderEditChannelGroupSelect();
+        } else {
+            console.error('Failed to load channel groups:', data.error);
+            channelGroups = [];
+            renderEditChannelGroupSelect();
+        }
+    } catch (error) {
+        console.error('Failed to load channel groups:', error);
+        channelGroups = [];
+        renderEditChannelGroupSelect();
+    }
+}
+
+function renderEditChannelGroupSelect(filter = '') {
+    const select = document.getElementById('edit-channel-group');
+    if (!select) return;
+
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">(No group - channels will be ungrouped)</option>';
+
+    const filterLower = filter.toLowerCase();
+    const filtered = channelGroups.filter(g =>
+        !filter || g.name.toLowerCase().includes(filterLower)
+    );
+
+    filtered.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = `${group.name} (${group.channel_count || 0} channels)`;
+        select.appendChild(option);
+    });
+
+    // Restore previous selection if it exists
+    if (currentValue) {
+        select.value = currentValue;
+    }
+}
+
+function filterEditChannelGroups() {
+    const filter = document.getElementById('edit-group-filter').value;
+    renderEditChannelGroupSelect(filter);
+}
+
+function toggleEditCreateGroupForm() {
+    const form = document.getElementById('edit-create-group-form');
+    const isVisible = form.style.display !== 'none';
+    form.style.display = isVisible ? 'none' : 'block';
+    if (!isVisible) {
+        document.getElementById('edit-new-group-name').value = '';
+        document.getElementById('edit-create-group-status').innerHTML = '';
+        document.getElementById('edit-new-group-name').focus();
+    }
+}
+
+async function createEditGroupInline() {
+    const groupName = document.getElementById('edit-new-group-name').value.trim();
+    const statusDiv = document.getElementById('edit-create-group-status');
+
+    if (!groupName) {
+        statusDiv.innerHTML = '<span style="color: var(--danger);">Group name is required</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color: var(--text-muted);">Creating...</span>';
+
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: groupName })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            statusDiv.innerHTML = '<span style="color: var(--success);">✓ Created!</span>';
+
+            // Reload groups and select the new one
+            await loadEditChannelGroups();
+            const select = document.getElementById('edit-channel-group');
+            const newOption = Array.from(select.options).find(opt => opt.value == data.group_id);
+            if (newOption) {
+                newOption.selected = true;
+            }
+
+            // Hide form after short delay
+            setTimeout(() => {
+                toggleEditCreateGroupForm();
+            }, 500);
+        } else {
+            statusDiv.innerHTML = `<span style="color: var(--danger);">${data.error || 'Failed to create group'}</span>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: var(--danger);">Error: ${error.message}</span>`;
     }
 }
 

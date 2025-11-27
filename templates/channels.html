@@ -42,10 +42,12 @@
                         <th style="width: 40px;">
                             <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)">
                         </th>
+                        <th style="width: 50px;">Logo</th>
                         <th style="width: 80px;">Channel</th>
                         <th>Name</th>
                         <th>Event</th>
-                        <th style="width: 120px;">Group</th>
+                        <th style="width: 120px;">Event Group</th>
+                        <th style="width: 130px;">Channel Group</th>
                         <th style="width: 120px;">Created</th>
                         <th style="width: 140px;">Scheduled Delete</th>
                         <th style="width: 80px;">Actions</th>
@@ -153,7 +155,7 @@ async function loadChannels() {
                 const row = document.createElement('tr');
                 row.dataset.channelId = channel.id;
 
-                // Format scheduled delete time based on timing mode
+                // Format scheduled delete time based on timing mode (uses global settings)
                 let deleteText = '—';
                 if (channel.scheduled_delete_at) {
                     deleteText = formatDateTime(channel.scheduled_delete_at);
@@ -161,14 +163,26 @@ async function loadChannels() {
                     deleteText = '<span class="text-muted">Manual</span>';
                 } else if (channel.channel_delete_timing === 'stream_removed') {
                     deleteText = '<span class="text-muted">When stream removed</span>';
-                } else if (channel.channel_delete_timing === 'end_of_day') {
+                } else if (channel.channel_delete_timing === 'same_day' || channel.channel_delete_timing === 'end_of_day') {
                     deleteText = '<span class="text-muted">End of game day</span>';
-                } else if (channel.channel_delete_timing === 'end_of_next_day') {
+                } else if (channel.channel_delete_timing === 'day_after' || channel.channel_delete_timing === 'end_of_next_day') {
                     deleteText = '<span class="text-muted">Day after game</span>';
+                } else if (channel.channel_delete_timing === '2_days_after') {
+                    deleteText = '<span class="text-muted">2 days after game</span>';
                 }
 
                 // Format created time
                 const createdText = formatDateTime(channel.created_at);
+
+                // Logo thumbnail
+                const logoHtml = channel.logo_url
+                    ? `<img src="${escapeHtml(channel.logo_url)}" class="channel-logo" alt="Logo" onerror="this.style.display='none'">`
+                    : '<span class="text-muted">—</span>';
+
+                // Channel group badge
+                const channelGroupHtml = channel.channel_group_name
+                    ? `<span class="badge badge-info">${escapeHtml(channel.channel_group_name)}</span>`
+                    : '<span class="text-muted">—</span>';
 
                 row.innerHTML = `
                     <td>
@@ -176,6 +190,7 @@ async function loadChannels() {
                                data-name="${escapeHtml(channel.channel_name || 'this channel')}"
                                onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
                     </td>
+                    <td>${logoHtml}</td>
                     <td><strong>${channel.channel_number || '—'}</strong></td>
                     <td>
                         <div style="font-weight: 500;">${escapeHtml(channel.channel_name || 'Unnamed')}</div>
@@ -186,6 +201,7 @@ async function loadChannels() {
                         <div class="text-muted" style="font-size: 0.75rem;">${escapeHtml(channel.event_date || '')}</div>
                     </td>
                     <td><span class="badge badge-secondary">${escapeHtml(channel.group_name || '—')}</span></td>
+                    <td>${channelGroupHtml}</td>
                     <td class="text-muted" style="font-size: 0.875rem;">${createdText}</td>
                     <td style="font-size: 0.875rem;">${deleteText}</td>
                     <td>
@@ -600,6 +616,20 @@ document.addEventListener('DOMContentLoaded', loadChannels);
 .badge-secondary {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
+}
+
+.badge-info {
+    background: rgba(6, 182, 212, 0.2);
+    color: #67e8f9;
+}
+
+/* Logo thumbnail */
+.channel-logo {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
 }
 
 .text-muted {

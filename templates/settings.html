@@ -117,6 +117,40 @@
             </div>
         </div>
 
+        <!-- Channel Lifecycle Settings -->
+        <div class="form-section">
+            <h2>Channel Lifecycle</h2>
+            <p style="color: var(--text-muted); font-size: 0.8125rem; margin: 0 0 1rem 0;">
+                When to create and delete event channels in Dispatcharr. Day boundaries use midnight in your timezone.
+            </p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="channel_create_timing">Earliest Creation</label>
+                    <select id="channel_create_timing" name="channel_create_timing" class="form-control">
+                        <option value="stream_available" {% if settings.channel_create_timing == 'stream_available' %}selected{% endif %}>Immediately</option>
+                        <option value="same_day" {% if settings.channel_create_timing == 'same_day' or settings.channel_create_timing == 'day_of' or not settings.channel_create_timing %}selected{% endif %}>Day of event</option>
+                        <option value="day_before" {% if settings.channel_create_timing == 'day_before' %}selected{% endif %}>1 day before</option>
+                        <option value="2_days_before" {% if settings.channel_create_timing == '2_days_before' %}selected{% endif %}>2 days before</option>
+                        <option value="manual" {% if settings.channel_create_timing == 'manual' %}selected{% endif %}>Never (manual)</option>
+                    </select>
+                    <small class="form-help">Won't create channel before this, even if stream exists</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="channel_delete_timing">Latest Deletion</label>
+                    <select id="channel_delete_timing" name="channel_delete_timing" class="form-control">
+                        <option value="stream_removed" {% if settings.channel_delete_timing == 'stream_removed' %}selected{% endif %}>When stream removed</option>
+                        <option value="same_day" {% if settings.channel_delete_timing == 'same_day' or settings.channel_delete_timing == 'end_of_day' or not settings.channel_delete_timing %}selected{% endif %}>End of event day</option>
+                        <option value="day_after" {% if settings.channel_delete_timing == 'day_after' or settings.channel_delete_timing == 'end_of_next_day' %}selected{% endif %}>1 day after</option>
+                        <option value="2_days_after" {% if settings.channel_delete_timing == '2_days_after' %}selected{% endif %}>2 days after</option>
+                        <option value="manual" {% if settings.channel_delete_timing == 'manual' %}selected{% endif %}>Never (manual)</option>
+                    </select>
+                    <small class="form-help">Will delete by this time, even if stream still exists</small>
+                </div>
+            </div>
+        </div>
+
         <!-- Scheduled EPG Generation -->
         <div class="form-section">
             <h2>Scheduled EPG Generation</h2>

@@ -33,12 +33,33 @@ python3 app.py
 
 Dashboard -> Templates -> Teams -> Events -> EPG -> Channels -> Settings
 
+- **Dashboard**: Overview stats, quick links to each section
 - **Templates**: EPG formatting (title, description, filler). Two types: "team" and "event"
 - **Teams**: Add teams with assigned templates for team-based EPG
-- **Events**: Import Dispatcharr channel groups, assign templates, test matching
+- **Events**: Import Dispatcharr channel groups, assign templates, configure lifecycle
 - **EPG**: Generate all EPG (teams + events), view/download XML
 - **Channels**: Managed channels created by Teamarr (lifecycle management)
-- **Settings**: Dispatcharr URL, timezone, schedule
+- **Settings**: Dispatcharr URL, timezone, schedule, team aliases
+
+---
+
+## Key Architecture: Single Source of Truth
+
+**`generate_all_epg()` is the AUTHORITATIVE function for ALL EPG generation.**
+
+```
+generate_all_epg(progress_callback, team_progress_callback, settings, save_history)
+├── Phase 1: Team-based EPG → epg_orchestrator.generate_epg()
+├── Phase 2: Event-based EPG → refresh_event_group_core() for each group
+├── Phase 3: Channel Lifecycle → process_scheduled_deletions()
+├── Phase 4: History & Stats → save_epg_generation_stats() (single source of truth)
+└── Phase 5: Dispatcharr Refresh → EPGManager.refresh() if configured
+```
+
+**All entry points use this function:**
+- UI "Generate EPG" → `/generate/stream` (SSE) → `generate_all_epg()`
+- Scheduler → `run_scheduled_generation()` → `generate_all_epg()`
+- API → `/generate` POST → `generate_all_epg()`
 
 ---
 
@@ -46,49 +67,62 @@ Dashboard -> Templates -> Teams -> Events -> EPG -> Channels -> Settings
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Main Flask app, all routes, core functions |
+| `app.py` | Main Flask app, `generate_all_epg()`, `refresh_event_group_core()`, all routes |
+| `epg/orchestrator.py` | Team-based EPG orchestration |
 | `epg/event_epg_generator.py` | Generates XMLTV for event-based streams |
 | `epg/team_matcher.py` | Extracts team names from stream names |
 | `epg/event_matcher.py` | Finds ESPN events for detected team matchups |
 | `epg/epg_consolidator.py` | Merges team + event EPGs into final output |
 | `epg/channel_lifecycle.py` | Channel creation/deletion scheduling |
-| `api/dispatcharr_client.py` | Dispatcharr API client (M3U + Channels) |
-| `api/espn_client.py` | ESPN API wrapper |
-| `templates/event_epg.html` | Events page (import groups, test matching) |
-| `templates/channels.html` | Managed channels list |
+| `api/dispatcharr_client.py` | Dispatcharr API client (M3U + ChannelManager + EPGManager) |
+| `database/__init__.py` | `save_epg_generation_stats()` - history saving |
 
 ---
 
 ## Core Functions in app.py
 
 ```python
+# AUTHORITATIVE EPG generation function - ALL paths use this
+generate_all_epg(progress_callback=None, settings=None, save_history=True, team_progress_callback=None)
+
 # Refresh a single event group (M3U, matching, EPG gen, channels)
 refresh_event_group_core(group, m3u_manager, wait_for_m3u=True)
-
-# Unified EPG generation (both scheduled and manual)
-generate_all_epg(progress_callback=None, settings=None)
 ```
 
 ---
 
-## User Workflow
+## Channel Lifecycle System
 
-1. Create templates (team or event type)
-2. Add teams and assign team templates (for team-based EPG)
-3. Import Dispatcharr groups and assign event templates (for event-based EPG)
-4. Click "Test" on event groups to verify stream matching
-5. Go to EPG tab and click "Generate EPG" to build everything
-6. Check Channels tab to see managed channels created
+Teamarr creates/deletes channels in Dispatcharr based on event timing.
+
+**Per-group settings:**
+- `channel_start` - Starting channel number for this group
+- `channel_create_timing` - When to create (day_of, day_before, 2_days_before, week_before)
+- `channel_delete_timing` - When to delete (stream_removed, end_of_day, end_of_next_day, manual)
+
+**Key lifecycle methods in `epg/channel_lifecycle.py`:**
+- `sync_group_settings(group)` - Ensures setting changes are honored (runs every EPG gen)
+- `update_existing_channels(streams, group)` - Updates delete times with fresh event data
+- `process_matched_streams(streams, group, template)` - Creates new channels
+- `process_scheduled_deletions()` - Deletes channels past their scheduled time
+
+**Sport durations (for calculating event end times):**
+- Football: 4h, Basketball: 3h, Hockey: 3h, Baseball: 4h, Soccer: 2.5h
 
 ---
 
-## Recent Architecture Decisions
+## SSE Progress Streaming
 
-- **No Refresh button** - Removed from Events page; all EPG generation happens via "Generate EPG"
-- **Test vs Generate** - "Test" = lightweight matching preview, "Generate EPG" = full build
-- **Unified generation** - `generate_all_epg()` handles both team and event EPG
-- **Managed channels** live on dedicated Channels tab (not Events tab)
-- **Channel lifecycle** - Channels auto-created/deleted based on event timing settings
+The `/generate/stream` endpoint uses Server-Sent Events:
+
+```javascript
+// Frontend expects these status values:
+{ status: 'starting', message: '...', percent: 0 }
+{ status: 'progress', message: '...', percent: N, team_name: '...', current: N, total: N }
+{ status: 'progress', message: '...', percent: N, group_name: '...', current: N, total: N }
+{ status: 'complete', message: '...', percent: 100, total_programmes: N }
+{ status: 'error', message: '...' }
+```
 
 ---
 
@@ -96,24 +130,19 @@ generate_all_epg(progress_callback=None, settings=None)
 
 - `templates` - EPG formatting templates (team or event type)
 - `teams` - User's tracked teams with template assignment
-- `event_epg_groups` - Imported Dispatcharr groups with settings
-- `managed_channels` - Channels created by Teamarr for lifecycle tracking
+- `event_epg_groups` - Imported Dispatcharr groups with lifecycle settings
+- `managed_channels` - Channels created by Teamarr (tracks scheduled_delete_at)
+- `team_aliases` - User-defined aliases for team name matching
+- `epg_history` - Generation history (single source of truth for stats)
 
 ---
 
 ## EPG Output Files
 
-All in `/app/data/`:
+All in `/app/data/` (or `./data/` when running locally):
 - `teams.xml` - Team-based EPG
 - `events.xml` - Merged event-based EPG (all groups)
-- `event_epg_*.xml` - Per-group event EPGs
 - `teamarr.xml` - Final consolidated EPG (teams + events)
-
----
-
-## Pending Work
-
-See CLAUDE.md "What's Next" section for planned features.
 
 ---
 
@@ -121,17 +150,34 @@ See CLAUDE.md "What's Next" section for planned features.
 
 **Add new template variable:**
 1. Add to `config/variables.json`
-2. Implement in `epg/event_template_engine.py` (for event) or `epg/template_engine.py` (for team)
+2. Implement in `epg/event_template_engine.py` (event) or `epg/template_engine.py` (team)
 3. Add UI help text in `templates/template_form.html`
 
-**Add new API endpoint:**
-1. Add route in `app.py`
-2. Document in CLAUDE.md
+**Debug EPG generation:**
+1. Check logs for progress messages
+2. Query `epg_history` table for stats
+3. Use `/api/epg-stats` endpoint for real-time EPG analysis
 
 **Debug stream matching:**
 1. Use "Test" button on Events page
 2. Check logs for `team_matcher` and `event_matcher` debug messages
-3. Check team aliases in Settings
+3. Add team aliases in Settings if names don't match
+
+**Fix lifecycle issues:**
+1. Check Channels tab for scheduled delete times
+2. Verify group settings (delete_timing) in Events edit modal
+3. Check `managed_channels` table for `scheduled_delete_at` values
+4. Run EPG generation to trigger `sync_group_settings()`
+
+---
+
+## Recent Decisions
+
+- **Single Source of Truth** - `generate_all_epg()` is the ONLY EPG generation function
+- **History Saving** - Only saved in `generate_all_epg()`, never duplicated elsewhere
+- **SSE Streaming** - `/generate/stream` uses callbacks into `generate_all_epg()`
+- **Settings sync** - Every EPG generation syncs all channels with current group settings
+- **Delete timing** - Uses actual sport durations, deletes at 23:59 of event END day
 
 ---
 
