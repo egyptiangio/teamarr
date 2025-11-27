@@ -138,158 +138,116 @@ def db_insert(query: str, params: tuple = ()) -> int:
         return cursor.lastrowid
 
 def run_migrations(conn):
-    """Run database migrations for schema updates"""
+    """
+    Run database migrations for schema updates.
+
+    This function handles migrations from v1.x (dev branch) to v2.0 (dev-withevents).
+    New installations get the full schema from schema.sql, so migrations only run
+    for databases that existed before the event-based EPG features were added.
+
+    Migration groups:
+    1. Settings table columns (Dispatcharr, time format, lifecycle)
+    2. Templates table columns (conditional descriptions, event templates)
+    3. EPG History table columns (filler counts, stats breakdown)
+    4. Event EPG tables (event_epg_groups, team_aliases, managed_channels)
+    5. Data fixes (NCAA logos)
+    """
     cursor = conn.cursor()
+    migrations_run = 0
 
-    # Get existing columns in settings table
-    cursor.execute("PRAGMA table_info(settings)")
-    existing_columns = {row[1] for row in cursor.fetchall()}
+    def add_columns_if_missing(table_name, columns):
+        """Helper to add multiple columns to a table if they don't exist"""
+        nonlocal migrations_run
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing = {row[1] for row in cursor.fetchall()}
 
-    # Dispatcharr integration columns (added in v1.0.6)
-    dispatcharr_columns = [
+        for col_name, col_def in columns:
+            if col_name not in existing:
+                try:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
+                    migrations_run += 1
+                    print(f"  ✅ Added column: {table_name}.{col_name}")
+                except Exception as e:
+                    print(f"  ⚠️ Could not add column {table_name}.{col_name}: {e}")
+
+        conn.commit()
+
+    def table_exists(table_name):
+        """Check if a table exists"""
+        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+        return cursor.fetchone() is not None
+
+    # =========================================================================
+    # 1. SETTINGS TABLE MIGRATIONS
+    # =========================================================================
+    settings_columns = [
+        # Dispatcharr integration
         ("dispatcharr_enabled", "BOOLEAN DEFAULT 0"),
         ("dispatcharr_url", "TEXT DEFAULT 'http://localhost:9191'"),
         ("dispatcharr_username", "TEXT"),
         ("dispatcharr_password", "TEXT"),
         ("dispatcharr_epg_id", "INTEGER"),
         ("dispatcharr_last_sync", "TEXT"),
+        # Time format
+        ("time_format", "TEXT DEFAULT '12h'"),
+        ("show_timezone", "BOOLEAN DEFAULT 1"),
+        # Channel lifecycle
+        ("channel_create_timing", "TEXT DEFAULT 'same_day'"),
+        ("channel_delete_timing", "TEXT DEFAULT 'same_day'"),
+        ("include_final_events", "INTEGER DEFAULT 0"),
     ]
+    add_columns_if_missing("settings", settings_columns)
 
-    migrations_run = 0
-    for col_name, col_def in dispatcharr_columns:
-        if col_name not in existing_columns:
-            try:
-                cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
-                migrations_run += 1
-                print(f"  ✅ Added column: settings.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
-    if migrations_run > 0:
-        conn.commit()
-        print(f"✅ Ran {migrations_run} migration(s)")
-
-    # Time format settings (added in v1.0.8)
-    time_format_columns = [
-        ("time_format", "TEXT DEFAULT '12h'"),  # '12h' or '24h'
-        ("show_timezone", "BOOLEAN DEFAULT 1"),  # Show timezone abbreviation (EST, PST, etc.)
-    ]
-
-    for col_name, col_def in time_format_columns:
-        if col_name not in existing_columns:
-            try:
-                cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
-                print(f"  ✅ Added column: settings.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
-    conn.commit()
-
-    # Conditional postgame/idle description columns (added in v1.0.7)
-    cursor.execute("PRAGMA table_info(templates)")
-    template_columns = {row[1] for row in cursor.fetchall()}
-
-    conditional_columns = [
+    # =========================================================================
+    # 2. TEMPLATES TABLE MIGRATIONS
+    # =========================================================================
+    templates_columns = [
+        # Conditional descriptions
         ("postgame_conditional_enabled", "BOOLEAN DEFAULT 0"),
         ("postgame_description_final", "TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}'"),
         ("postgame_description_not_final", "TEXT DEFAULT 'The game between the {team_name} and {opponent.last} on {game_day.last} {game_date.last} has not yet ended.'"),
         ("idle_conditional_enabled", "BOOLEAN DEFAULT 0"),
         ("idle_description_final", "TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last}. Next: {opponent.next} on {game_date.next}'"),
         ("idle_description_not_final", "TEXT DEFAULT 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}'"),
+        # Event template support
+        ("template_type", "TEXT DEFAULT 'team'"),
+        ("channel_name", "TEXT"),
+        ("channel_logo_url", "TEXT"),
     ]
+    add_columns_if_missing("templates", templates_columns)
 
-    for col_name, col_def in conditional_columns:
-        if col_name not in template_columns:
-            try:
-                cursor.execute(f"ALTER TABLE templates ADD COLUMN {col_name} {col_def}")
-                print(f"  ✅ Added column: templates.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
-    conn.commit()
-
-    # Fix NCAA league logos (use NCAA.com sport banners)
-    ncaa_logo_fixes = [
-        ("ncaaf", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png"),
-        ("ncaam", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png"),
-        ("ncaaw", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png"),
-    ]
-
-    for league_code, logo_url in ncaa_logo_fixes:
-        try:
-            cursor.execute(
-                "UPDATE league_config SET logo_url = ? WHERE league_code = ? AND logo_url != ?",
-                (logo_url, league_code, logo_url)
-            )
-            if cursor.rowcount > 0:
-                print(f"  ✅ Fixed logo for {league_code}")
-        except Exception:
-            pass
-
-    conn.commit()
-
-    # EPG history filler count columns (added in v1.1.0)
-    cursor.execute("PRAGMA table_info(epg_history)")
-    epg_history_columns = {row[1] for row in cursor.fetchall()}
-
-    epg_history_new_columns = [
+    # =========================================================================
+    # 3. EPG HISTORY TABLE MIGRATIONS
+    # =========================================================================
+    epg_history_columns = [
+        # Filler counts
         ("num_pregame", "INTEGER DEFAULT 0"),
         ("num_postgame", "INTEGER DEFAULT 0"),
         ("num_idle", "INTEGER DEFAULT 0"),
-    ]
-
-    for col_name, col_def in epg_history_new_columns:
-        if col_name not in epg_history_columns:
-            try:
-                cursor.execute(f"ALTER TABLE epg_history ADD COLUMN {col_name} {col_def}")
-                migrations_run += 1
-                print(f"  ✅ Added column: epg_history.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
-    conn.commit()
-
-    # ==========================================================================
-    # EPG Stats - Single Source of Truth Columns (added in v1.2.0)
-    # ==========================================================================
-
-    # Refresh epg_history columns after previous migration
-    cursor.execute("PRAGMA table_info(epg_history)")
-    epg_history_columns = {row[1] for row in cursor.fetchall()}
-
-    # New columns for comprehensive EPG stats tracking
-    epg_stats_columns = [
-        # Team-based EPG stats
+        # Team-based breakdown
         ("team_based_channels", "INTEGER DEFAULT 0"),
         ("team_based_events", "INTEGER DEFAULT 0"),
         ("team_based_pregame", "INTEGER DEFAULT 0"),
         ("team_based_postgame", "INTEGER DEFAULT 0"),
         ("team_based_idle", "INTEGER DEFAULT 0"),
-        # Event-based EPG stats
+        # Event-based breakdown
         ("event_based_channels", "INTEGER DEFAULT 0"),
         ("event_based_events", "INTEGER DEFAULT 0"),
         ("event_based_pregame", "INTEGER DEFAULT 0"),
         ("event_based_postgame", "INTEGER DEFAULT 0"),
-        # Quality/Error stats
+        # Quality stats
         ("unresolved_vars_count", "INTEGER DEFAULT 0"),
         ("coverage_gaps_count", "INTEGER DEFAULT 0"),
-        ("warnings_json", "TEXT"),  # JSON array of warning messages
+        ("warnings_json", "TEXT"),
     ]
+    add_columns_if_missing("epg_history", epg_history_columns)
 
-    for col_name, col_def in epg_stats_columns:
-        if col_name not in epg_history_columns:
-            try:
-                cursor.execute(f"ALTER TABLE epg_history ADD COLUMN {col_name} {col_def}")
-                migrations_run += 1
-                print(f"  ✅ Added column: epg_history.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
+    # =========================================================================
+    # 4. EVENT EPG TABLES (create if missing)
+    # =========================================================================
 
-    conn.commit()
-
-    # Event EPG Groups table (added for Event Channel EPG feature)
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='event_epg_groups'")
-    if not cursor.fetchone():
+    # 4a. event_epg_groups table
+    if not table_exists("event_epg_groups"):
         try:
             cursor.execute("""
                 CREATE TABLE event_epg_groups (
@@ -299,33 +257,47 @@ def run_migrations(conn):
                     dispatcharr_group_id INTEGER NOT NULL UNIQUE,
                     dispatcharr_account_id INTEGER NOT NULL,
                     group_name TEXT NOT NULL,
+                    account_name TEXT,
                     assigned_league TEXT NOT NULL,
                     assigned_sport TEXT NOT NULL,
+                    event_template_id INTEGER REFERENCES templates(id) ON DELETE SET NULL,
                     enabled INTEGER DEFAULT 1,
                     refresh_interval_minutes INTEGER DEFAULT 60,
+                    channel_start INTEGER,
+                    channel_create_timing TEXT DEFAULT 'same_day',
+                    channel_delete_timing TEXT DEFAULT 'same_day',
+                    channel_group_id INTEGER,
                     last_refresh TIMESTAMP,
                     stream_count INTEGER DEFAULT 0,
                     matched_count INTEGER DEFAULT 0
                 )
             """)
-            cursor.execute("CREATE INDEX idx_event_epg_groups_league ON event_epg_groups(assigned_league)")
-            cursor.execute("CREATE INDEX idx_event_epg_groups_enabled ON event_epg_groups(enabled)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_epg_groups_league ON event_epg_groups(assigned_league)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_epg_groups_enabled ON event_epg_groups(enabled)")
             cursor.execute("""
-                CREATE TRIGGER update_event_epg_groups_timestamp
-                AFTER UPDATE ON event_epg_groups
-                FOR EACH ROW
-                BEGIN
-                    UPDATE event_epg_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-                END
+                CREATE TRIGGER IF NOT EXISTS update_event_epg_groups_timestamp
+                AFTER UPDATE ON event_epg_groups FOR EACH ROW
+                BEGIN UPDATE event_epg_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id; END
             """)
             migrations_run += 1
             print("  ✅ Created table: event_epg_groups")
         except Exception as e:
             print(f"  ⚠️ Could not create event_epg_groups table: {e}")
+        conn.commit()
+    else:
+        # Add columns to existing event_epg_groups table
+        event_group_columns = [
+            ("event_template_id", "INTEGER REFERENCES templates(id) ON DELETE SET NULL"),
+            ("channel_start", "INTEGER"),
+            ("channel_create_timing", "TEXT DEFAULT 'same_day'"),
+            ("channel_delete_timing", "TEXT DEFAULT 'same_day'"),
+            ("account_name", "TEXT"),
+            ("channel_group_id", "INTEGER"),
+        ]
+        add_columns_if_missing("event_epg_groups", event_group_columns)
 
-    # Team Aliases table (added for Event Channel EPG feature)
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='team_aliases'")
-    if not cursor.fetchone():
+    # 4b. team_aliases table
+    if not table_exists("team_aliases"):
         try:
             cursor.execute("""
                 CREATE TABLE team_aliases (
@@ -338,135 +310,16 @@ def run_migrations(conn):
                     UNIQUE(alias, league)
                 )
             """)
-            cursor.execute("CREATE INDEX idx_team_aliases_league ON team_aliases(league)")
-            cursor.execute("CREATE INDEX idx_team_aliases_alias ON team_aliases(alias)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_team_aliases_league ON team_aliases(league)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_team_aliases_alias ON team_aliases(alias)")
             migrations_run += 1
             print("  ✅ Created table: team_aliases")
         except Exception as e:
             print(f"  ⚠️ Could not create team_aliases table: {e}")
+        conn.commit()
 
-    conn.commit()
-
-    # Template type column (added for Event EPG templates)
-    cursor.execute("PRAGMA table_info(templates)")
-    template_columns = {row[1] for row in cursor.fetchall()}
-
-    if 'template_type' not in template_columns:
-        try:
-            cursor.execute("""
-                ALTER TABLE templates ADD COLUMN template_type TEXT DEFAULT 'team'
-                CHECK(template_type IN ('team', 'event'))
-            """)
-            migrations_run += 1
-            print("  ✅ Added column: templates.template_type")
-        except Exception as e:
-            print(f"  ⚠️ Could not add template_type column: {e}")
-
-    conn.commit()
-
-    # Channel name column for event templates (generates Dispatcharr channel names)
-    if 'channel_name' not in template_columns:
-        try:
-            cursor.execute("""
-                ALTER TABLE templates ADD COLUMN channel_name TEXT
-            """)
-            migrations_run += 1
-            print("  ✅ Added column: templates.channel_name")
-        except Exception as e:
-            print(f"  ⚠️ Could not add channel_name column: {e}")
-
-    # Channel logo URL column for event templates (sets Dispatcharr channel logo)
-    if 'channel_logo_url' not in template_columns:
-        try:
-            cursor.execute("""
-                ALTER TABLE templates ADD COLUMN channel_logo_url TEXT
-            """)
-            migrations_run += 1
-            print("  ✅ Added column: templates.channel_logo_url")
-        except Exception as e:
-            print(f"  ⚠️ Could not add channel_logo_url column: {e}")
-
-    conn.commit()
-
-    # Event template assignment column (added for Event EPG groups)
-    cursor.execute("PRAGMA table_info(event_epg_groups)")
-    event_group_columns = {row[1] for row in cursor.fetchall()}
-
-    if 'event_template_id' not in event_group_columns:
-        try:
-            cursor.execute("""
-                ALTER TABLE event_epg_groups ADD COLUMN event_template_id INTEGER
-                REFERENCES templates(id) ON DELETE SET NULL
-            """)
-            migrations_run += 1
-            print("  ✅ Added column: event_epg_groups.event_template_id")
-        except Exception as e:
-            print(f"  ⚠️ Could not add event_template_id column: {e}")
-
-    conn.commit()
-
-    # ==========================================================================
-    # Channel Lifecycle Management (Phase 8)
-    # ==========================================================================
-
-    # Refresh event_group_columns after commit
-    cursor.execute("PRAGMA table_info(event_epg_groups)")
-    event_group_columns = {row[1] for row in cursor.fetchall()}
-
-    # Channel lifecycle columns for event_epg_groups
-    lifecycle_columns = [
-        ("channel_start", "INTEGER"),  # Starting channel number for this group
-        ("channel_create_timing", "TEXT DEFAULT 'day_of'"),  # When to create: day_of, day_before, 2_days_before, week_before
-        ("channel_delete_timing", "TEXT DEFAULT 'stream_removed'"),  # When to delete: stream_removed, end_of_day, end_of_next_day, manual
-    ]
-
-    for col_name, col_def in lifecycle_columns:
-        if col_name not in event_group_columns:
-            try:
-                cursor.execute(f"ALTER TABLE event_epg_groups ADD COLUMN {col_name} {col_def}")
-                migrations_run += 1
-                print(f"  ✅ Added column: event_epg_groups.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
-    # Account name column for event_epg_groups (for UI display)
-    cursor.execute("PRAGMA table_info(event_epg_groups)")
-    event_group_columns = {row[1] for row in cursor.fetchall()}
-    if 'account_name' not in event_group_columns:
-        try:
-            cursor.execute("ALTER TABLE event_epg_groups ADD COLUMN account_name TEXT")
-            migrations_run += 1
-            print("  ✅ Added column: event_epg_groups.account_name")
-        except Exception as e:
-            print(f"  ⚠️ Could not add account_name column: {e}")
-
-    # Channel group assignment for managed channels (Phase 8.5)
-    cursor.execute("PRAGMA table_info(event_epg_groups)")
-    event_group_columns = {row[1] for row in cursor.fetchall()}
-    if 'channel_group_id' not in event_group_columns:
-        try:
-            cursor.execute("ALTER TABLE event_epg_groups ADD COLUMN channel_group_id INTEGER")
-            migrations_run += 1
-            print("  ✅ Added column: event_epg_groups.channel_group_id")
-        except Exception as e:
-            print(f"  ⚠️ Could not add channel_group_id column: {e}")
-
-    # Logo tracking for managed channels (for cleanup when channels are deleted)
-    cursor.execute("PRAGMA table_info(managed_channels)")
-    managed_channel_columns = {row[1] for row in cursor.fetchall()}
-    if 'dispatcharr_logo_id' not in managed_channel_columns:
-        try:
-            cursor.execute("ALTER TABLE managed_channels ADD COLUMN dispatcharr_logo_id INTEGER")
-            migrations_run += 1
-            print("  ✅ Added column: managed_channels.dispatcharr_logo_id")
-        except Exception as e:
-            print(f"  ⚠️ Could not add dispatcharr_logo_id column: {e}")
-
-    conn.commit()
-
-    # Managed Channels table (tracks channels Teamarr creates in Dispatcharr)
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='managed_channels'")
-    if not cursor.fetchone():
+    # 4c. managed_channels table
+    if not table_exists("managed_channels"):
         try:
             cursor.execute("""
                 CREATE TABLE managed_channels (
@@ -476,6 +329,7 @@ def run_migrations(conn):
                     event_epg_group_id INTEGER NOT NULL REFERENCES event_epg_groups(id) ON DELETE CASCADE,
                     dispatcharr_channel_id INTEGER NOT NULL UNIQUE,
                     dispatcharr_stream_id INTEGER NOT NULL,
+                    dispatcharr_logo_id INTEGER,
                     channel_number INTEGER NOT NULL,
                     channel_name TEXT NOT NULL,
                     tvg_id TEXT,
@@ -487,47 +341,47 @@ def run_migrations(conn):
                     deleted_at TIMESTAMP
                 )
             """)
-            cursor.execute("CREATE INDEX idx_managed_channels_group ON managed_channels(event_epg_group_id)")
-            cursor.execute("CREATE INDEX idx_managed_channels_event ON managed_channels(espn_event_id)")
-            cursor.execute("CREATE INDEX idx_managed_channels_delete ON managed_channels(scheduled_delete_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_managed_channels_group ON managed_channels(event_epg_group_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_managed_channels_event ON managed_channels(espn_event_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_managed_channels_delete ON managed_channels(scheduled_delete_at)")
             cursor.execute("""
-                CREATE TRIGGER update_managed_channels_timestamp
-                AFTER UPDATE ON managed_channels
-                FOR EACH ROW
-                BEGIN
-                    UPDATE managed_channels SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-                END
+                CREATE TRIGGER IF NOT EXISTS update_managed_channels_timestamp
+                AFTER UPDATE ON managed_channels FOR EACH ROW
+                BEGIN UPDATE managed_channels SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id; END
             """)
             migrations_run += 1
             print("  ✅ Created table: managed_channels")
         except Exception as e:
             print(f"  ⚠️ Could not create managed_channels table: {e}")
+        conn.commit()
+    else:
+        # Add dispatcharr_logo_id if missing
+        add_columns_if_missing("managed_channels", [("dispatcharr_logo_id", "INTEGER")])
 
-    conn.commit()
+    # =========================================================================
+    # 5. DATA FIXES
+    # =========================================================================
 
-    # ==========================================================================
-    # Global Channel Lifecycle Settings (Settings table)
-    # ==========================================================================
-
-    cursor.execute("PRAGMA table_info(settings)")
-    settings_columns = {row[1] for row in cursor.fetchall()}
-
-    global_lifecycle_columns = [
-        ("channel_create_timing", "TEXT DEFAULT 'same_day'"),  # Global default: stream_available, same_day, day_before, 2_days_before, manual
-        ("channel_delete_timing", "TEXT DEFAULT 'same_day'"),  # Global default: stream_removed, same_day, day_after, 2_days_after, manual
-        ("include_final_events", "INTEGER DEFAULT 0"),  # Whether to include completed/final events from today: 0=exclude, 1=include
+    # Fix NCAA league logos (use NCAA.com sport banners instead of broken ESPN URLs)
+    ncaa_logo_fixes = [
+        ("ncaaf", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png"),
+        ("ncaam", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png"),
+        ("ncaaw", "https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png"),
     ]
-
-    for col_name, col_def in global_lifecycle_columns:
-        if col_name not in settings_columns:
-            try:
-                cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
-                migrations_run += 1
-                print(f"  ✅ Added column: settings.{col_name}")
-            except Exception as e:
-                print(f"  ⚠️ Could not add column {col_name}: {e}")
-
+    for league_code, logo_url in ncaa_logo_fixes:
+        try:
+            cursor.execute(
+                "UPDATE league_config SET logo_url = ? WHERE league_code = ? AND logo_url != ?",
+                (logo_url, league_code, logo_url)
+            )
+            if cursor.rowcount > 0:
+                print(f"  ✅ Fixed logo for {league_code}")
+        except Exception:
+            pass
     conn.commit()
+
+    if migrations_run > 0:
+        print(f"✅ Completed {migrations_run} migration(s)")
 
     return migrations_run
 

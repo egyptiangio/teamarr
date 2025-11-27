@@ -1,6 +1,7 @@
 -- TeamArr - Template-Based Architecture Database Schema
 -- SQLite Database Structure
--- Last Updated: November 22, 2025
+-- Last Updated: November 27, 2025
+-- Version: 2.0.0 (Event-based EPG + Channel Lifecycle)
 
 -- =============================================================================
 -- TEMPLATES TABLE
@@ -109,8 +110,15 @@ CREATE TABLE IF NOT EXISTS templates (
     idle_description_not_final TEXT DEFAULT 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}',
 
     -- Conditional Descriptions (Templates tab)
-    description_options JSON DEFAULT '[]'    -- Array of conditional description templates
+    description_options JSON DEFAULT '[]',   -- Array of conditional description templates
     -- Structure: [{"condition": "is_home", "template": "...", "priority": 50, "condition_value": "..."}]
+
+    -- Template Type (team or event)
+    template_type TEXT DEFAULT 'team' CHECK(template_type IN ('team', 'event')),
+
+    -- Event Template Specific Fields
+    channel_name TEXT,                       -- Channel name template for event templates
+    channel_logo_url TEXT                    -- Channel logo URL template for event templates
 );
 
 -- Index for faster lookups
@@ -230,6 +238,13 @@ CREATE TABLE IF NOT EXISTS settings (
     channel_create_timing TEXT DEFAULT 'same_day',   -- stream_available, same_day, day_before, 2_days_before, manual
     channel_delete_timing TEXT DEFAULT 'same_day',   -- stream_removed, same_day, day_after, 2_days_after, manual
 
+    -- Event-based EPG Settings
+    include_final_events INTEGER DEFAULT 0,          -- Include completed/final events from today: 0=exclude, 1=include
+
+    -- Time Format Settings
+    time_format TEXT DEFAULT '12h',                  -- '12h' or '24h'
+    show_timezone BOOLEAN DEFAULT 1,                 -- Show timezone abbreviation (EST, PST, etc.)
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -346,9 +361,27 @@ CREATE TABLE IF NOT EXISTS epg_history (
     team_ids JSON,                          -- Array of team IDs included in this EPG
 
     -- Generation Stats
-    generation_time_seconds REAL,          -- How long generation took
-    api_calls_made INTEGER,                -- Number of ESPN API calls
+    generation_time_seconds REAL,           -- How long generation took
+    api_calls_made INTEGER,                 -- Number of ESPN API calls
     cache_hits INTEGER,                     -- Number of cache hits
+
+    -- Team-based EPG Stats (Single Source of Truth)
+    team_based_channels INTEGER DEFAULT 0,
+    team_based_events INTEGER DEFAULT 0,
+    team_based_pregame INTEGER DEFAULT 0,
+    team_based_postgame INTEGER DEFAULT 0,
+    team_based_idle INTEGER DEFAULT 0,
+
+    -- Event-based EPG Stats
+    event_based_channels INTEGER DEFAULT 0,
+    event_based_events INTEGER DEFAULT 0,
+    event_based_pregame INTEGER DEFAULT 0,
+    event_based_postgame INTEGER DEFAULT 0,
+
+    -- Quality/Error Stats
+    unresolved_vars_count INTEGER DEFAULT 0,
+    coverage_gaps_count INTEGER DEFAULT 0,
+    warnings_json TEXT,                     -- JSON array of warning messages
 
     -- File Hash
     file_hash TEXT,                         -- SHA256 hash for change detection
@@ -582,14 +615,24 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     dispatcharr_group_id INTEGER NOT NULL UNIQUE,  -- Group ID from Dispatcharr
     dispatcharr_account_id INTEGER NOT NULL,       -- M3U Account ID (for refresh + UI)
     group_name TEXT NOT NULL,                      -- Exact group name (e.g., "USA | NFL Backup 🏈")
+    account_name TEXT,                             -- M3U account name (for UI display)
 
     -- League/Sport Assignment
     assigned_league TEXT NOT NULL,                 -- League code (e.g., "nfl", "epl", "nba")
     assigned_sport TEXT NOT NULL,                  -- Sport type (e.g., "football", "soccer")
 
+    -- Template Assignment
+    event_template_id INTEGER REFERENCES templates(id) ON DELETE SET NULL,
+
     -- Status
     enabled INTEGER DEFAULT 1,                     -- Is this group enabled for EPG generation?
     refresh_interval_minutes INTEGER DEFAULT 60,   -- How often to regenerate EPG
+
+    -- Channel Lifecycle Settings
+    channel_start INTEGER,                         -- Starting channel number for this group
+    channel_create_timing TEXT DEFAULT 'same_day', -- When to create: stream_available, same_day, day_before, 2_days_before, manual
+    channel_delete_timing TEXT DEFAULT 'same_day', -- When to delete: stream_removed, same_day, day_after, 2_days_after, manual
+    channel_group_id INTEGER,                      -- Dispatcharr channel group to create channels in
 
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated
@@ -630,6 +673,52 @@ CREATE TABLE IF NOT EXISTS team_aliases (
 
 CREATE INDEX IF NOT EXISTS idx_team_aliases_league ON team_aliases(league);
 CREATE INDEX IF NOT EXISTS idx_team_aliases_alias ON team_aliases(alias);
+
+-- =============================================================================
+-- MANAGED CHANNELS TABLE (Channel Lifecycle Management)
+-- Tracks channels created by Teamarr in Dispatcharr
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS managed_channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Foreign Keys
+    event_epg_group_id INTEGER NOT NULL REFERENCES event_epg_groups(id) ON DELETE CASCADE,
+
+    -- Dispatcharr IDs
+    dispatcharr_channel_id INTEGER NOT NULL UNIQUE,
+    dispatcharr_stream_id INTEGER NOT NULL,
+    dispatcharr_logo_id INTEGER,             -- For cleanup when channel is deleted
+
+    -- Channel Info
+    channel_number INTEGER NOT NULL,
+    channel_name TEXT NOT NULL,
+    tvg_id TEXT,
+
+    -- Event Info
+    espn_event_id TEXT,
+    event_date TEXT,                         -- Full UTC datetime (e.g., "2025-11-28T01:20Z")
+    home_team TEXT,
+    away_team TEXT,
+
+    -- Lifecycle
+    scheduled_delete_at TIMESTAMP,
+    deleted_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_managed_channels_group ON managed_channels(event_epg_group_id);
+CREATE INDEX IF NOT EXISTS idx_managed_channels_event ON managed_channels(espn_event_id);
+CREATE INDEX IF NOT EXISTS idx_managed_channels_delete ON managed_channels(scheduled_delete_at);
+
+-- Trigger for updated_at
+CREATE TRIGGER IF NOT EXISTS update_managed_channels_timestamp
+AFTER UPDATE ON managed_channels
+FOR EACH ROW
+BEGIN
+    UPDATE managed_channels SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
 
 -- =============================================================================
 -- END OF SCHEMA
