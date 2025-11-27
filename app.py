@@ -2871,39 +2871,28 @@ def api_event_epg_groups_update(group_id):
             # They will be recreated at new channel numbers on next EPG generation
             if channel_start_changed:
                 try:
-                    from database import get_managed_channels_for_group, mark_managed_channel_deleted
+                    from database import get_managed_channels_for_group
+                    from epg.channel_lifecycle import get_lifecycle_manager
+
                     channels = get_managed_channels_for_group(group_id)
                     deleted_count = 0
 
                     if channels:
-                        # Get Dispatcharr settings for API calls
-                        conn = get_connection()
-                        settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
-                        conn.close()
+                        lifecycle_mgr = get_lifecycle_manager()
+                        if lifecycle_mgr:
+                            for channel in channels:
+                                delete_result = lifecycle_mgr.delete_managed_channel(
+                                    channel,
+                                    reason='channel_start changed'
+                                )
+                                if delete_result.get('success'):
+                                    deleted_count += 1
+                                else:
+                                    app.logger.warning(f"Failed to delete channel {channel['channel_name']}: {delete_result.get('error')}")
 
-                        from api.dispatcharr_client import ChannelManager
-                        channel_mgr = ChannelManager(
-                            settings['dispatcharr_url'],
-                            settings.get('dispatcharr_username', ''),
-                            settings.get('dispatcharr_password', '')
-                        )
-
-                        for channel in channels:
-                            try:
-                                # Delete from Dispatcharr
-                                channel_mgr.delete_channel(channel['dispatcharr_channel_id'])
-                                # Also delete logo if present
-                                if channel.get('dispatcharr_logo_id'):
-                                    channel_mgr.delete_logo(channel['dispatcharr_logo_id'])
-                                # Mark as deleted in our DB
-                                mark_managed_channel_deleted(channel['id'])
-                                deleted_count += 1
-                            except Exception as e:
-                                app.logger.warning(f"Failed to delete channel {channel['channel_name']}: {e}")
-
-                        app.logger.info(f"Channel start changed for group {group_id}: deleted {deleted_count} channels (will recreate at {new_channel_start})")
-                        result['channels_deleted'] = deleted_count
-                        result['note'] = f'Deleted {deleted_count} channels. New channels will be created at {new_channel_start} on next EPG generation.'
+                            app.logger.info(f"Channel start changed for group {group_id}: deleted {deleted_count} channels (will recreate at {new_channel_start})")
+                            result['channels_deleted'] = deleted_count
+                            result['note'] = f'Deleted {deleted_count} channels. New channels will be created at {new_channel_start} on next EPG generation.'
 
                 except Exception as e:
                     app.logger.error(f"Error handling channel_start change: {e}")
@@ -2967,7 +2956,7 @@ def api_event_epg_groups_delete(group_id):
     - Group record is deleted
     - EPG will be cleaned up at next generation
     """
-    from database import get_managed_channels_for_group, mark_managed_channel_deleted
+    from database import get_managed_channels_for_group
     from epg.channel_lifecycle import get_lifecycle_manager
 
     try:
@@ -2979,7 +2968,7 @@ def api_event_epg_groups_delete(group_id):
         channels_deleted = 0
         channels_failed = 0
 
-        # Delete all associated managed channels IMMEDIATELY
+        # Delete all associated managed channels IMMEDIATELY using unified method
         managed_channels = get_managed_channels_for_group(group_id)
         if managed_channels:
             app.logger.info(f"Deleting {len(managed_channels)} managed channels for group '{group_name}'...")
@@ -2987,32 +2976,15 @@ def api_event_epg_groups_delete(group_id):
             lifecycle_mgr = get_lifecycle_manager()
             if lifecycle_mgr:
                 for channel in managed_channels:
-                    try:
-                        # Delete from Dispatcharr
-                        delete_result = lifecycle_mgr.channel_api.delete_channel(
-                            channel['dispatcharr_channel_id']
-                        )
-
-                        if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
-                            # Mark as deleted in database
-                            mark_managed_channel_deleted(channel['id'])
-
-                            # Clean up logo if present
-                            logo_id = channel.get('dispatcharr_logo_id')
-                            if logo_id:
-                                lifecycle_mgr.channel_api.delete_logo(logo_id)
-
-                            channels_deleted += 1
-                            app.logger.debug(f"Deleted channel '{channel['channel_name']}'")
-                        else:
-                            channels_failed += 1
-                            app.logger.warning(
-                                f"Failed to delete channel '{channel['channel_name']}': "
-                                f"{delete_result.get('error')}"
-                            )
-                    except Exception as e:
+                    delete_result = lifecycle_mgr.delete_managed_channel(
+                        channel,
+                        reason=f"group '{group_name}' deleted"
+                    )
+                    if delete_result.get('success'):
+                        channels_deleted += 1
+                    else:
                         channels_failed += 1
-                        app.logger.error(f"Error deleting channel '{channel['channel_name']}': {e}")
+                        app.logger.warning(f"Failed to delete channel '{channel['channel_name']}': {delete_result.get('error')}")
             else:
                 app.logger.warning("Could not get lifecycle manager - channels may be orphaned in Dispatcharr")
 
@@ -3658,13 +3630,13 @@ def api_channel_lifecycle_delete(channel_id):
     """
     Manually delete a managed channel.
 
-    This will:
+    Uses unified delete_managed_channel() which handles:
     1. Delete the channel from Dispatcharr
-    2. Delete associated logo from Dispatcharr (if not used by other channels)
+    2. Delete associated logo from Dispatcharr
     3. Mark it as deleted in local database
     """
     try:
-        from database import get_managed_channel, mark_managed_channel_deleted
+        from database import get_managed_channel
         from epg.channel_lifecycle import get_lifecycle_manager
 
         channel = get_managed_channel(channel_id)
@@ -3678,30 +3650,18 @@ def api_channel_lifecycle_delete(channel_id):
         if not lifecycle_mgr:
             return jsonify({'error': 'Dispatcharr not configured'}), 400
 
-        # Delete from Dispatcharr
-        result = lifecycle_mgr.channel_api.delete_channel(channel['dispatcharr_channel_id'])
+        # Use unified delete method
+        result = lifecycle_mgr.delete_managed_channel(channel, reason='manual deletion')
 
-        if result.get('success') or 'not found' in str(result.get('error', '')).lower():
-            # Mark as deleted locally
-            mark_managed_channel_deleted(channel_id)
-
-            # Clean up associated logo if present
-            logo_deleted = False
-            logo_id = channel.get('dispatcharr_logo_id')
-            if logo_id:
-                logo_result = lifecycle_mgr.channel_api.delete_logo(logo_id)
-                if logo_result.get('status') == 'deleted':
-                    logo_deleted = True
-                    app.logger.debug(f"Deleted logo {logo_id} for channel '{channel['channel_name']}'")
-
+        if result.get('success'):
             return jsonify({
                 'success': True,
                 'message': f"Deleted channel {channel['channel_number']} '{channel['channel_name']}'",
-                'logo_deleted': logo_deleted
+                'logo_deleted': result.get('logo_deleted', False)
             })
         else:
             return jsonify({
-                'error': f"Failed to delete from Dispatcharr: {result.get('error')}"
+                'error': f"Failed to delete: {result.get('error')}"
             }), 500
 
     except Exception as e:

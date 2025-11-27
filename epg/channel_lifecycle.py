@@ -332,6 +332,88 @@ class ChannelLifecycleManager:
         self.epg_data_id = epg_data_id
         self.timezone = timezone
 
+    def delete_managed_channel(
+        self,
+        channel: Dict,
+        reason: str = None
+    ) -> Dict[str, Any]:
+        """
+        SINGLE SOURCE OF TRUTH for deleting a managed channel.
+
+        Handles all aspects of channel deletion:
+        1. Delete channel from Dispatcharr
+        2. Delete associated logo from Dispatcharr (if present)
+        3. Mark channel as deleted in Teamarr database
+
+        Args:
+            channel: Managed channel dict (must have 'id', 'dispatcharr_channel_id',
+                    optionally 'dispatcharr_logo_id', 'channel_name')
+            reason: Optional reason for deletion (for logging)
+
+        Returns:
+            Dict with:
+            - success: bool
+            - channel_deleted: bool (Dispatcharr channel removed)
+            - logo_deleted: bool (logo removed if present)
+            - db_updated: bool (marked deleted in DB)
+            - error: str (if failed)
+        """
+        from database import mark_managed_channel_deleted
+
+        result = {
+            'success': False,
+            'channel_deleted': False,
+            'logo_deleted': False,
+            'db_updated': False,
+            'error': None
+        }
+
+        channel_id = channel.get('id')
+        dispatcharr_channel_id = channel.get('dispatcharr_channel_id')
+        channel_name = channel.get('channel_name', f'Channel {dispatcharr_channel_id}')
+        logo_id = channel.get('dispatcharr_logo_id')
+
+        if not dispatcharr_channel_id:
+            result['error'] = 'No dispatcharr_channel_id provided'
+            return result
+
+        try:
+            # Step 1: Delete channel from Dispatcharr
+            delete_result = self.channel_api.delete_channel(dispatcharr_channel_id)
+
+            # Consider success if deleted OR already not found
+            if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
+                result['channel_deleted'] = True
+
+                # Step 2: Delete logo if present
+                if logo_id:
+                    logo_result = self.channel_api.delete_logo(logo_id)
+                    if logo_result.get('status') == 'deleted' or logo_result.get('success'):
+                        result['logo_deleted'] = True
+                        logger.debug(f"Deleted logo {logo_id} for channel '{channel_name}'")
+
+                # Step 3: Mark as deleted in database
+                if channel_id:
+                    if mark_managed_channel_deleted(channel_id):
+                        result['db_updated'] = True
+
+                result['success'] = True
+
+                log_msg = f"Deleted channel '{channel_name}'"
+                if reason:
+                    log_msg += f" ({reason})"
+                logger.info(log_msg)
+
+            else:
+                result['error'] = delete_result.get('error', 'Unknown error')
+                logger.warning(f"Failed to delete channel '{channel_name}': {result['error']}")
+
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"Error deleting channel '{channel_name}': {e}")
+
+        return result
+
     def process_matched_streams(
         self,
         matched_streams: List[Dict],
@@ -548,10 +630,7 @@ class ChannelLifecycleManager:
         Returns:
             Dict with deleted and error counts
         """
-        from database import (
-            get_managed_channels_for_group,
-            mark_managed_channel_deleted
-        )
+        from database import get_managed_channels_for_group
 
         results = {
             'deleted': [],
@@ -570,32 +649,16 @@ class ChannelLifecycleManager:
 
         for channel in managed_channels:
             if channel['dispatcharr_stream_id'] not in current_ids_set:
-                # Stream no longer exists - delete channel
-                delete_result = self.channel_api.delete_channel(
-                    channel['dispatcharr_channel_id']
-                )
+                # Stream no longer exists - use unified delete method
+                delete_result = self.delete_managed_channel(channel, reason='stream removed')
 
-                if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
-                    # Mark as deleted in database
-                    mark_managed_channel_deleted(channel['id'])
-
-                    # Clean up associated logo if present
-                    logo_id = channel.get('dispatcharr_logo_id')
-                    if logo_id:
-                        logo_result = self.channel_api.delete_logo(logo_id)
-                        if logo_result.get('status') == 'deleted':
-                            logger.debug(f"Deleted logo {logo_id} for channel '{channel['channel_name']}'")
-
+                if delete_result.get('success'):
                     results['deleted'].append({
                         'channel_id': channel['dispatcharr_channel_id'],
                         'channel_number': channel['channel_number'],
                         'channel_name': channel['channel_name'],
-                        'logo_deleted': logo_id if logo_id else None
+                        'logo_deleted': delete_result.get('logo_deleted')
                     })
-                    logger.info(
-                        f"Deleted channel {channel['channel_number']} "
-                        f"'{channel['channel_name']}' - stream removed"
-                    )
                 else:
                     results['errors'].append({
                         'channel_id': channel['dispatcharr_channel_id'],
@@ -615,11 +678,7 @@ class ChannelLifecycleManager:
         Returns:
             Dict with 'deleted' and 'errors' lists
         """
-        from database import (
-            get_all_event_epg_groups,
-            get_managed_channels_for_group,
-            mark_managed_channel_deleted
-        )
+        from database import get_all_event_epg_groups, get_managed_channels_for_group
 
         results = {
             'deleted': [],
@@ -647,39 +706,23 @@ class ChannelLifecycleManager:
             logger.info(f"Cleaning up {len(channels)} channel(s) from disabled group '{group_name}'...")
 
             for channel in channels:
-                try:
-                    # Delete from Dispatcharr
-                    delete_result = self.channel_api.delete_channel(
-                        channel['dispatcharr_channel_id']
-                    )
+                # Use unified delete method
+                delete_result = self.delete_managed_channel(
+                    channel,
+                    reason=f"group '{group_name}' disabled"
+                )
 
-                    if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
-                        # Mark as deleted in database
-                        mark_managed_channel_deleted(channel['id'])
-
-                        # Clean up logo if present
-                        logo_id = channel.get('dispatcharr_logo_id')
-                        if logo_id:
-                            self.channel_api.delete_logo(logo_id)
-
-                        results['deleted'].append({
-                            'group_name': group_name,
-                            'channel_id': channel['dispatcharr_channel_id'],
-                            'channel_name': channel['channel_name']
-                        })
-                        logger.debug(f"Deleted channel '{channel['channel_name']}' (disabled group)")
-                    else:
-                        results['errors'].append({
-                            'group_name': group_name,
-                            'channel_id': channel['dispatcharr_channel_id'],
-                            'error': delete_result.get('error')
-                        })
-
-                except Exception as e:
+                if delete_result.get('success'):
+                    results['deleted'].append({
+                        'group_name': group_name,
+                        'channel_id': channel['dispatcharr_channel_id'],
+                        'channel_name': channel['channel_name']
+                    })
+                else:
                     results['errors'].append({
                         'group_name': group_name,
                         'channel_id': channel.get('dispatcharr_channel_id'),
-                        'error': str(e)
+                        'error': delete_result.get('error')
                     })
 
         if results['deleted']:
@@ -696,10 +739,7 @@ class ChannelLifecycleManager:
         Returns:
             Dict with deleted and error counts
         """
-        from database import (
-            get_channels_pending_deletion,
-            mark_managed_channel_deleted
-        )
+        from database import get_channels_pending_deletion
 
         results = {
             'deleted': [],
@@ -709,30 +749,16 @@ class ChannelLifecycleManager:
         pending = get_channels_pending_deletion()
 
         for channel in pending:
-            delete_result = self.channel_api.delete_channel(
-                channel['dispatcharr_channel_id']
-            )
+            # Use unified delete method
+            delete_result = self.delete_managed_channel(channel, reason='scheduled deletion')
 
-            if delete_result.get('success') or 'not found' in str(delete_result.get('error', '')).lower():
-                mark_managed_channel_deleted(channel['id'])
-
-                # Clean up associated logo if present
-                logo_id = channel.get('dispatcharr_logo_id')
-                if logo_id:
-                    logo_result = self.channel_api.delete_logo(logo_id)
-                    if logo_result.get('status') == 'deleted':
-                        logger.debug(f"Deleted logo {logo_id} for channel '{channel['channel_name']}'")
-
+            if delete_result.get('success'):
                 results['deleted'].append({
                     'channel_id': channel['dispatcharr_channel_id'],
                     'channel_number': channel['channel_number'],
                     'channel_name': channel['channel_name'],
-                    'logo_deleted': logo_id if logo_id else None
+                    'logo_deleted': delete_result.get('logo_deleted')
                 })
-                logger.info(
-                    f"Deleted channel {channel['channel_number']} "
-                    f"'{channel['channel_name']}' - scheduled deletion"
-                )
             else:
                 results['errors'].append({
                     'channel_id': channel['dispatcharr_channel_id'],
