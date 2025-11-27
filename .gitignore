@@ -27,6 +27,8 @@ app.log
 
 # Claude Code
 claude.md
+CLAUDE.md
+BOOTSTRAP_PROMPT.md
 REFACTOR_PLAN.md
 
 # Documentation/Integration notes
