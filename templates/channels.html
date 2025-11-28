@@ -61,9 +61,9 @@
             <div class="empty-icon">📺</div>
             <h3>No Managed Channels</h3>
             <p>Channels are created during EPG generation when streams match events.</p>
-            <a href="{{ url_for('epg_management') }}" class="btn btn-primary">
+            <button onclick="generateEPGFromChannelsPage()" id="generate-epg-btn" class="btn btn-primary">
                 Generate EPG
-            </a>
+            </button>
         </div>
     </div>
 
@@ -410,6 +410,87 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// EPG Generation from Channels page (stays on page, refreshes list on complete)
+function generateEPGFromChannelsPage() {
+    const btn = document.getElementById('generate-epg-btn');
+    if (!btn) return;
+
+    // Disable button during generation
+    const originalText = btn.textContent || btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+
+    // Create persistent notification for progress
+    let progressNotification = showNotification('Initializing EPG generation...', 'info', 0, 'Generating EPG');
+
+    // Listen to Server-Sent Events stream
+    const eventSource = new EventSource('/generate/stream');
+
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+
+        if (data.status === 'starting') {
+            updateProgressNotification(progressNotification, data.message, 0);
+        }
+        else if (data.status === 'progress') {
+            const name = data.team_name || data.group_name;
+            let progressText;
+            if (name && data.current !== undefined && data.total !== undefined) {
+                progressText = `Processing ${name} (${data.current}/${data.total})`;
+            } else {
+                progressText = data.message || 'Processing...';
+            }
+            updateProgressNotification(progressNotification, progressText, data.percent);
+        }
+        else if (data.status === 'finalizing') {
+            updateProgressNotification(progressNotification, data.message, 95);
+        }
+        else if (data.status === 'complete') {
+            eventSource.close();
+            closeNotification(progressNotification.querySelector('.notification-close'));
+            showNotification(data.message, 'success', 10000);
+
+            btn.disabled = false;
+            btn.textContent = originalText;
+
+            // Refresh channels list instead of reloading page
+            loadChannels();
+        }
+        else if (data.status === 'error') {
+            eventSource.close();
+            closeNotification(progressNotification.querySelector('.notification-close'));
+            showNotification('Error: ' + data.message, 'error', 10000);
+
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error('SSE Error:', error);
+        eventSource.close();
+        closeNotification(progressNotification.querySelector('.notification-close'));
+        showNotification('Connection error during EPG generation', 'error', 10000);
+
+        btn.disabled = false;
+        btn.textContent = originalText;
+    };
+}
+
+function updateProgressNotification(notification, message, percent) {
+    const messageEl = notification.querySelector('.notification-message');
+    if (messageEl) {
+        let html = message;
+        if (percent !== null) {
+            html += `<br><div style="margin-top: 0.5rem; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; height: 8px;">
+                <div style="background: var(--primary); height: 100%; width: ${percent}%; transition: width 0.3s;"></div>
+            </div>
+            <div style="margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">${percent}%</div>`;
+        }
+        messageEl.innerHTML = html;
+    }
 }
 
 // Load on page load

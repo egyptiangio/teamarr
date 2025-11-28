@@ -543,6 +543,17 @@ def create_template(data: Dict[str, Any]) -> int:
         # Serialize JSON fields to strings for database storage
         data = _serialize_template_json_fields(data.copy())
 
+        # Event templates don't have idle - clear those fields
+        if data.get('template_type') == 'event':
+            data['idle_enabled'] = False
+            data['idle_title'] = ''
+            data['idle_subtitle'] = ''
+            data['idle_description'] = ''
+            data['idle_art_url'] = ''
+            data['idle_conditional_enabled'] = False
+            data['idle_description_final'] = ''
+            data['idle_description_not_final'] = ''
+
         # Extract fields (all are optional except name)
         fields = [
             'name', 'template_type', 'sport', 'league',
@@ -582,6 +593,17 @@ def update_template(template_id: int, data: Dict[str, Any]) -> bool:
 
         # Serialize JSON fields to strings for database storage
         data = _serialize_template_json_fields(data.copy())
+
+        # Event templates don't have idle - clear those fields
+        if data.get('template_type') == 'event':
+            data['idle_enabled'] = False
+            data['idle_title'] = ''
+            data['idle_subtitle'] = ''
+            data['idle_description'] = ''
+            data['idle_art_url'] = ''
+            data['idle_conditional_enabled'] = False
+            data['idle_description_final'] = ''
+            data['idle_description_not_final'] = ''
 
         # Build UPDATE statement from provided fields
         fields = [k for k in data.keys() if k != 'id']

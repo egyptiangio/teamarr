@@ -1613,9 +1613,11 @@ function updateTemplateTypeDefaults() {
         return;
     }
 
-    // Shared defaults are the same for both team and event templates
-    // Only event-specific fields (like event_description) differ
-    // No need to swap values when switching template types
+    // For event templates, strip .next/.last suffixes from all template fields
+    // Event context is single-game, so suffixes don't apply
+    if (currentTemplateType === 'event') {
+        stripSuffixesFromTemplateFields();
+    }
 
     // Re-render variables sidebar with filtered variables
     initTemplateVariables();
@@ -1670,6 +1672,20 @@ function updateTemplateTypeDefaults() {
         // Remove top margin from Title & Subtitle since it's now first
         if (titleSubtitleSection) titleSubtitleSection.style.marginTop = '0';
     }
+}
+
+// Strip .next and .last suffixes from all template field values
+// Used for event templates where single-game context means no suffixes needed
+function stripSuffixesFromTemplateFields() {
+    const templateFields = document.querySelectorAll('.template-field');
+    templateFields.forEach(field => {
+        if (field.value) {
+            // Replace {var.next} and {var.last} with {var}
+            field.value = field.value
+                .replace(/\{([a-z_]+)\.next\}/g, '{$1}')
+                .replace(/\{([a-z_]+)\.last\}/g, '{$1}');
+        }
+    });
 }
 
 // Check if a variable is available for the current template type
