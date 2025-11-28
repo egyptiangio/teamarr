@@ -126,18 +126,31 @@ def generate_channel_name(
 def should_create_channel(
     event: Dict,
     create_timing: str,
-    timezone: str
+    timezone: str,
+    delete_timing: str = None,
+    sport: str = None,
+    settings: dict = None,
+    template: dict = None
 ) -> Tuple[bool, str]:
     """
-    Check if a channel should be created based on event date and timing setting.
+    Check if a channel should be created based on event date and timing settings.
 
-    This is the "earliest creation" check - channel won't be created before
-    the threshold date, even if the stream exists.
+    This checks both:
+    1. Earliest creation check - channel won't be created before the threshold date
+    2. Already-deleted check - channel won't be created if delete time has passed
+
+    The second check prevents the create-then-immediately-delete cycle that occurs
+    when a stream still exists but the event has already ended and passed the
+    delete threshold.
 
     Args:
         event: ESPN event data with 'date' field
         create_timing: One of 'stream_available', 'same_day', 'day_before', '2_days_before', 'manual'
         timezone: Timezone for date comparison
+        delete_timing: Optional delete timing to check if we're past the delete threshold
+        sport: Sport type for duration calculation (needed for delete time check)
+        settings: Optional settings dict with game_duration_{sport} values
+        template: Optional template dict with game_duration_mode and game_duration_override
 
     Returns:
         Tuple of (should_create: bool, reason: str)
@@ -150,7 +163,8 @@ def should_create_channel(
         return False, "Manual creation only"
 
     # stream_available means create immediately when stream exists
-    if create_timing == 'stream_available':
+    # BUT we still need to check if we're past the delete threshold
+    if create_timing == 'stream_available' and not delete_timing:
         return True, "Stream available - immediate creation"
 
     event_date_str = event.get('date')
@@ -168,9 +182,23 @@ def should_create_channel(
         event_local = event_dt.astimezone(tz)
         event_date = event_local.date()
 
-        # Get current date in same timezone
+        # Get current time in same timezone
         now = datetime.now(tz)
         today = now.date()
+
+        # First, check if we're PAST the delete threshold
+        # This prevents creating channels that would immediately be deleted
+        if delete_timing and delete_timing not in ('manual', 'stream_removed'):
+            delete_time = calculate_delete_time(event, delete_timing, timezone, sport, settings, template)
+            if delete_time:
+                # Convert delete_time to local timezone for comparison
+                delete_time_local = delete_time.astimezone(tz)
+                if now >= delete_time_local:
+                    return False, f"Past delete threshold ({delete_time_local.strftime('%m/%d %I:%M %p')})"
+
+        # For stream_available with delete_timing check passed, allow creation
+        if create_timing == 'stream_available':
+            return True, "Stream available - immediate creation"
 
         # Calculate threshold based on timing (earliest creation date)
         if create_timing == 'same_day' or create_timing == 'day_of':
@@ -652,7 +680,14 @@ class ChannelLifecycleManager:
                 continue
 
             # Check if we should create channel based on timing
-            should_create, reason = should_create_channel(event, create_timing, self.timezone)
+            # Also pass delete_timing to prevent creating channels that would immediately be deleted
+            should_create, reason = should_create_channel(
+                event, create_timing, self.timezone,
+                delete_timing=delete_timing,
+                sport=sport,
+                settings=self.settings,
+                template=template
+            )
             if not should_create:
                 results['skipped'].append({
                     'stream': stream['name'],
