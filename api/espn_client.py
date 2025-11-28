@@ -454,9 +454,9 @@ class ESPNClient:
 
                 # Status
                 'status': {
-                    'name': competition['status']['type']['name'],
-                    'state': competition['status']['type']['state'],
-                    'completed': competition['status']['type']['completed'],
+                    'name': competition['status']['type'].get('name', ''),
+                    'state': competition['status']['type'].get('state', 'pre'),
+                    'completed': competition['status']['type'].get('completed', False),
                     'detail': competition['status']['type'].get('detail'),
                 },
 

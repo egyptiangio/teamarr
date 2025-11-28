@@ -278,7 +278,7 @@ class EPGManager:
             List of EPG source dictionaries
         """
         response = self.auth.get("/api/epg/sources/")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             return []
 
         sources = response.json()
@@ -339,7 +339,7 @@ class EPGManager:
         """
         response = self.auth.post("/api/epg/import/", {"id": epg_id})
 
-        if not response:
+        if response is None:
             return {"success": False, "message": "Request failed - could not connect"}
 
         if response.status_code == 202:
@@ -430,7 +430,7 @@ class M3UManager:
     def list_m3u_accounts(self) -> List[Dict]:
         """List all M3U accounts."""
         response = self.auth.get("/api/m3u/accounts/")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             logger.error(f"Failed to list M3U accounts: {response.status_code if response else 'No response'}")
             return []
         return response.json()
@@ -446,7 +446,7 @@ class M3UManager:
             List of group dicts with id, name, m3u_accounts
         """
         response = self.auth.get("/api/channels/groups/")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             logger.error(f"Failed to list channel groups: {response.status_code if response else 'No response'}")
             return []
 
@@ -503,7 +503,7 @@ class M3UManager:
             params.append(f"m3u_account={account_id}")
 
         response = self.auth.get(f"/api/channels/streams/?{'&'.join(params)}")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             logger.error(f"Failed to list streams: {response.status_code if response else 'No response'}")
             return []
 
@@ -541,7 +541,7 @@ class M3UManager:
         """Trigger M3U refresh for an account (async, returns immediately)."""
         response = self.auth.post(f"/api/m3u/refresh/{account_id}/")
 
-        if not response:
+        if response is None:
             return {"success": False, "message": "Request failed"}
 
         if response.status_code in (200, 202):
@@ -551,7 +551,7 @@ class M3UManager:
     def get_account(self, account_id: int) -> Optional[Dict]:
         """Get a single M3U account by ID."""
         response = self.auth.get(f"/api/m3u/accounts/{account_id}/")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             return None
         return response.json()
 
@@ -704,7 +704,7 @@ class ChannelManager:
 
         while next_page:
             response = self.auth.get(next_page)
-            if not response or response.status_code != 200:
+            if response is None or response.status_code != 200:
                 logger.error(f"Failed to get {error_context}: {response.status_code if response else 'No response'}")
                 break
 
@@ -742,7 +742,7 @@ class ChannelManager:
         Returns:
             Human-readable error message
         """
-        if not response:
+        if response is None:
             return "Request failed - no response"
 
         try:
@@ -833,7 +833,7 @@ class ChannelManager:
 
         response = self.auth.post("/api/channels/channels/", payload)
 
-        if not response:
+        if response is None:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code in (200, 201):
@@ -858,7 +858,7 @@ class ChannelManager:
 
         response = self.auth.request("PATCH", f"/api/channels/channels/{channel_id}/", data)
 
-        if not response:
+        if response is None:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code == 200:
@@ -878,7 +878,7 @@ class ChannelManager:
         """
         response = self.auth.request("DELETE", f"/api/channels/channels/{channel_id}/")
 
-        if not response:
+        if response is None:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code in (200, 204):
@@ -968,7 +968,7 @@ class ChannelManager:
             {"epg_data_id": epg_data_id}
         )
 
-        if not response:
+        if response is None:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code == 200:
@@ -1054,7 +1054,9 @@ class ChannelManager:
         payload = {'name': name, 'url': url}
         response = self.auth.post("/api/channels/logos/", payload)
 
-        if not response:
+        # Note: Response objects with non-2xx status codes are falsy in boolean context
+        # so we must check explicitly for None
+        if response is None:
             return {"success": False, "error": "Request failed - no response", "status": "error"}
 
         if response.status_code in (200, 201):
@@ -1163,7 +1165,7 @@ class ChannelManager:
         # Delete the logo
         response = self.auth.request("DELETE", f"/api/channels/logos/{logo_id}/")
 
-        if not response:
+        if response is None:
             return {"success": False, "error": "Request failed - no response", "status": "error"}
 
         if response.status_code in (200, 204):
@@ -1219,7 +1221,7 @@ class ChannelManager:
             List of group dicts with id, name, m3u_account_count, channel_count
         """
         response = self.auth.get("/api/channels/groups/")
-        if not response or response.status_code != 200:
+        if response is None or response.status_code != 200:
             logger.error(f"Failed to get channel groups: {response.status_code if response else 'No response'}")
             return []
 
@@ -1251,7 +1253,7 @@ class ChannelManager:
         payload = {'name': name.strip()}
         response = self.auth.post("/api/channels/groups/", payload)
 
-        if not response:
+        if response is None:
             return {"success": False, "error": "Request failed - no response"}
 
         if response.status_code in (200, 201):
@@ -1293,7 +1295,7 @@ class ChannelManager:
         payload = {'name': name.strip()}
         response = self.auth.request("PATCH", f"/api/channels/groups/{group_id}/", payload)
 
-        if not response:
+        if response is None:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code == 200:
@@ -1315,7 +1317,7 @@ class ChannelManager:
         """
         response = self.auth.request("DELETE", f"/api/channels/groups/{group_id}/")
 
-        if not response:
+        if response is None:
             return {"success": False, "error": "Request failed - no response"}
 
         if response.status_code in (200, 204):

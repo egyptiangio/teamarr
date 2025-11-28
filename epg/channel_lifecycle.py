@@ -564,7 +564,7 @@ class ChannelLifecycleManager:
             logo_result = self.channel_api.upload_logo(logo_name, new_logo_url)
 
             if not logo_result.get('success'):
-                logger.warning(f"Failed to upload new logo for '{channel_name}': {logo_result.get('error')}")
+                logger.warning(f"Failed to upload logo for '{channel_name}': {logo_result.get('error')}")
                 return
 
             new_logo_id = logo_result.get('logo_id')
