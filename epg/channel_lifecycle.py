@@ -476,6 +476,90 @@ class ChannelLifecycleManager:
 
         return result
 
+    def _update_channel_logo_if_changed(
+        self,
+        existing: Dict,
+        event: Dict,
+        stream: Dict,
+        group: Dict,
+        template: Dict,
+        template_engine,
+        results: Dict
+    ) -> None:
+        """
+        Check if channel logo needs updating and update if changed.
+
+        Compares the resolved template logo URL with the current logo URL
+        in Dispatcharr. If different, uploads new logo and updates the channel.
+
+        Args:
+            existing: Existing managed channel record
+            event: ESPN event data
+            stream: Stream data
+            group: Event EPG group
+            template: Event template with channel_logo_url
+            template_engine: EventTemplateEngine instance
+            results: Results dict to append logo_updated entries
+        """
+        from database import update_managed_channel
+        from epg.event_template_engine import build_event_context
+
+        try:
+            # Resolve the template logo URL
+            logo_ctx = build_event_context(event, stream, group, self.timezone)
+            new_logo_url = template_engine.resolve(template['channel_logo_url'], logo_ctx)
+
+            if not new_logo_url:
+                return
+
+            # Get current logo URL from Dispatcharr
+            current_logo_id = existing.get('dispatcharr_logo_id')
+            current_logo_url = None
+
+            if current_logo_id:
+                current_logo = self.channel_api.get_logo(current_logo_id)
+                if current_logo:
+                    current_logo_url = current_logo.get('url')
+
+            # Compare URLs - if same, no update needed
+            if current_logo_url == new_logo_url:
+                return
+
+            # Upload new logo (or find existing by URL)
+            channel_name = existing.get('channel_name', 'Unknown')
+            logo_name = f"{channel_name} Logo"
+            logo_result = self.channel_api.upload_logo(logo_name, new_logo_url)
+
+            if not logo_result.get('success'):
+                logger.warning(f"Failed to upload new logo for '{channel_name}': {logo_result.get('error')}")
+                return
+
+            new_logo_id = logo_result.get('logo_id')
+
+            # Update channel in Dispatcharr with new logo
+            dispatcharr_channel_id = existing.get('dispatcharr_channel_id')
+            update_result = self.channel_api.update_channel(dispatcharr_channel_id, {'logo_id': new_logo_id})
+
+            if not update_result.get('success'):
+                logger.warning(f"Failed to update channel logo for '{channel_name}': {update_result.get('error')}")
+                return
+
+            # Update managed_channels record with new logo_id
+            update_managed_channel(existing['id'], {'dispatcharr_logo_id': new_logo_id})
+
+            results['logo_updated'].append({
+                'channel_name': channel_name,
+                'channel_id': dispatcharr_channel_id,
+                'old_logo_url': current_logo_url,
+                'new_logo_url': new_logo_url,
+                'new_logo_id': new_logo_id
+            })
+
+            logger.info(f"Updated logo for '{channel_name}': {logo_result.get('status')}")
+
+        except Exception as e:
+            logger.debug(f"Error updating logo for channel {existing.get('channel_name')}: {e}")
+
     def process_matched_streams(
         self,
         matched_streams: List[Dict],
@@ -511,7 +595,8 @@ class ChannelLifecycleManager:
             'created': [],
             'skipped': [],
             'errors': [],
-            'existing': []
+            'existing': [],
+            'logo_updated': []
         }
 
         # Get lifecycle settings from group, falling back to global settings
@@ -552,6 +637,13 @@ class ChannelLifecycleManager:
                     'channel_id': existing['dispatcharr_channel_id'],
                     'channel_number': existing['channel_number']
                 })
+
+                # Check if logo needs updating for existing channel
+                if template and template.get('channel_logo_url'):
+                    self._update_channel_logo_if_changed(
+                        existing, event, stream, group, template, template_engine, results
+                    )
+
                 continue
 
             # Check if we should create channel based on timing
@@ -938,7 +1030,6 @@ class ChannelLifecycleManager:
             update_managed_channel,
             get_template
         )
-        from api.espn_client import ESPNClient
 
         results = {
             'updated': [],
@@ -992,20 +1083,17 @@ class ChannelLifecycleManager:
                 )
             return results
 
-        # For timed deletion, we need event data to recalculate
-        # Channels without event data will keep their current schedule
-        espn = ESPNClient()
-
+        # For timed deletion, use stored event_date to recalculate delete time
+        # No need to call ESPN API - we already have the event date stored
         for channel in channels:
-            espn_event_id = channel.get('espn_event_id')
-            if not espn_event_id:
+            event_date = channel.get('event_date')
+            if not event_date:
                 continue
 
-            # Try to fetch current event data from ESPN
             try:
-                event = espn.get_event(espn_event_id)
-                if not event:
-                    continue
+                # Build minimal event dict from stored data
+                # calculate_delete_time only needs event['date']
+                event = {'date': event_date}
 
                 # Recalculate scheduled delete time (uses template duration if custom)
                 new_delete_at = calculate_delete_time(event, delete_timing, self.timezone, sport, self.settings, template)

@@ -1104,6 +1104,24 @@ class ChannelManager:
 
         return None
 
+    def get_logo(self, logo_id: int) -> Optional[Dict]:
+        """
+        Get logo details by ID.
+
+        Args:
+            logo_id: Dispatcharr logo ID
+
+        Returns:
+            Logo dict with id, name, url, etc. or None if not found
+        """
+        if not logo_id:
+            return None
+
+        response = self.auth.get(f"/api/channels/logos/{logo_id}/")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+
     def delete_logo(self, logo_id: int) -> Dict[str, Any]:
         """
         Delete a logo from Dispatcharr.
