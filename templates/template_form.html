@@ -874,6 +874,10 @@
 
                         <!-- Hidden counter for form submission -->
                         <input type="hidden" id="fallback-count" name="fallback_count" value="0">
+                        <!-- Hidden fields for JSON data (populated on submit) -->
+                        <input type="hidden" id="description_options_field" name="description_options" value="[]">
+                        <input type="hidden" id="flags_field" name="flags" value="{}">
+                        <input type="hidden" id="categories_field" name="categories" value="[]">
                     </fieldset>
 
                     <!-- Simple Description Field (Event templates - single description only) -->
@@ -882,7 +886,7 @@
 
                         <div class="form-group">
                             <label for="event_description">Program Description</label>
-                            <input type="text" name="event_description" id="event_description" class="template-field" placeholder="e.g., {away_team} vs {home_team} - {league} {sport}" value="{away_team} vs {home_team} - {league} {sport}">
+                            <input type="text" name="event_description" id="event_description" class="template-field" placeholder="e.g., {away_team} vs {home_team} - {league} {sport}" value="">
                             <div class="inline-preview">
                                 <small>Preview:</small>
                                 <span id="preview-event-description"></span>
@@ -2265,7 +2269,7 @@ function conditionsAddNew() {
         condition: '',
         condition_value: '',
         priority: 50,
-        template: '{team_name} faces {opponent}',
+        template: '',
         source: 'custom'
     });
     conditionsRender();
@@ -2294,12 +2298,27 @@ function initFallbackDescriptions() {
     conditions = allDescriptions.filter(desc => desc.priority !== 100);
 
     // If no fallbacks exist, add one default with a label
+    // Check template type to use appropriate default variables
+    const hiddenInput = document.querySelector('input[name="template_type"][type="hidden"]');
+    const radioInput = document.querySelector('input[name="template_type"]:checked');
+    const templateType = hiddenInput?.value || radioInput?.value || 'team';
+
     if (fallbacks.length === 0) {
-        fallbacks.push({
-            label: 'Default',
-            template: '{team_name} faces {opponent} at {venue}',
-            priority: 100
-        });
+        if (templateType === 'event') {
+            // Event templates use {away_team} and {home_team}
+            fallbacks.push({
+                label: 'Default',
+                template: '{away_team} vs {home_team} at {venue}',
+                priority: 100
+            });
+        } else {
+            // Team templates use {team_name} and {opponent}
+            fallbacks.push({
+                label: 'Default',
+                template: '{team_name} faces {opponent} at {venue}',
+                priority: 100
+            });
+        }
     }
 
     renderFallbacks();
@@ -2313,9 +2332,14 @@ function initEventDescription() {
     const templateType = hiddenInput?.value || radioInput?.value || 'team';
     const eventDescInput = document.getElementById('event_description');
 
-    if (templateType === 'event' && eventDescInput && fallbacks.length > 0) {
-        // Use the first fallback's template as the event description
-        eventDescInput.value = fallbacks[0].template || '';
+    if (templateType === 'event' && eventDescInput) {
+        if (fallbacks.length > 0) {
+            // Use the first fallback's template as the event description
+            eventDescInput.value = fallbacks[0].template || '';
+        } else {
+            // Default for event templates
+            eventDescInput.value = '{away_team} vs {home_team} at {venue}';
+        }
     }
 }
 
@@ -2396,7 +2420,7 @@ function addFallbackDescription() {
 
     fallbacks.push({
         label: label,
-        template: '{team_name} faces {opponent}',
+        template: '',
         priority: 100
     });
     renderFallbacks();
@@ -2546,7 +2570,10 @@ async function saveConditionToPreset(index) {
 // FORM SUBMISSION
 // ============================================================================
 document.getElementById('template-form').addEventListener('submit', function(e) {
-    const templateType = document.getElementById('template_type')?.value || 'team';
+    // Get template type - check hidden input first (existing template), then radio button (new template)
+    const hiddenInput = document.querySelector('input[name="template_type"][type="hidden"]');
+    const radioInput = document.querySelector('input[name="template_type"]:checked');
+    const templateType = hiddenInput?.value || radioInput?.value || 'team';
     let allDescriptions = [];
 
     if (templateType === 'event') {
@@ -2622,12 +2649,11 @@ document.getElementById('template-form').addEventListener('submit', function(e) 
 
     const descriptionsJson = JSON.stringify(allDescriptions);
 
-    // Create a hidden field for all descriptions (fallbacks + conditionals)
-    const hiddenDescField = document.createElement('input');
-    hiddenDescField.type = 'hidden';
-    hiddenDescField.name = 'description_options';
-    hiddenDescField.value = descriptionsJson;
-    this.appendChild(hiddenDescField);
+    // Update the existing hidden field for description_options
+    const hiddenDescField = document.getElementById('description_options_field');
+    if (hiddenDescField) {
+        hiddenDescField.value = descriptionsJson;
+    }
 
     // Build flags JSON from checkboxes
     const flags = {
@@ -2637,11 +2663,11 @@ document.getElementById('template-form').addEventListener('submit', function(e) 
     };
     const flagsJson = JSON.stringify(flags);
 
-    const hiddenFlagsField = document.createElement('input');
-    hiddenFlagsField.type = 'hidden';
-    hiddenFlagsField.name = 'flags';
-    hiddenFlagsField.value = flagsJson;
-    this.appendChild(hiddenFlagsField);
+    // Update existing hidden field for flags
+    const hiddenFlagsField = document.getElementById('flags_field');
+    if (hiddenFlagsField) {
+        hiddenFlagsField.value = flagsJson;
+    }
 
     // Build categories JSON from checkboxes and custom input
     const categories = [];
@@ -2658,11 +2684,11 @@ document.getElementById('template-form').addEventListener('submit', function(e) 
     }
     const categoriesJson = JSON.stringify(categories);
 
-    const hiddenCategoriesField = document.createElement('input');
-    hiddenCategoriesField.type = 'hidden';
-    hiddenCategoriesField.name = 'categories';
-    hiddenCategoriesField.value = categoriesJson;
-    this.appendChild(hiddenCategoriesField);
+    // Update existing hidden field for categories
+    const hiddenCategoriesField = document.getElementById('categories_field');
+    if (hiddenCategoriesField) {
+        hiddenCategoriesField.value = categoriesJson;
+    }
 });
 </script>
 {% endblock %}

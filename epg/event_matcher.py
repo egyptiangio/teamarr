@@ -346,7 +346,7 @@ class EventMatcher:
                 team_info = {
                     'id': team_data.get('id'),
                     'name': team_data.get('displayName') or team_data.get('name'),
-                    'abbreviation': team_data.get('abbreviation'),
+                    'abbrev': team_data.get('abbreviation'),  # Use 'abbrev' for consistency with template engine
                     'logo': team_data.get('logo'),
                     'color': team_data.get('color'),
                     'score': competitor.get('score'),

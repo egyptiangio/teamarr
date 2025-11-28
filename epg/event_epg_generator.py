@@ -281,9 +281,15 @@ class EventEPGGenerator:
         # Categories - from template with variable resolution (respects categories_apply_to)
         self._add_categories(programme, template, template_ctx, programme_type='game')
 
-        # Date
+        # Date - convert to user's timezone for correct local date
+        from zoneinfo import ZoneInfo
+        try:
+            user_tz = ZoneInfo(epg_timezone)
+            local_date = event_date.astimezone(user_tz)
+        except Exception:
+            local_date = event_date
         date_elem = ET.SubElement(programme, 'date')
-        date_elem.text = event_date.strftime('%Y%m%d')
+        date_elem.text = local_date.strftime('%Y%m%d')
 
         # Programme Icon/Art - from template only
         if template and template.get('program_art_url'):
