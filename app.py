@@ -2545,6 +2545,7 @@ def api_event_epg_dispatcharr_streams(group_id):
     Preview streams in a Dispatcharr group.
 
     Returns streams with team matching preview.
+    If the group is configured in our database, refreshes M3U first.
 
     Query params:
         limit: Max streams to return (default: 50)
@@ -2557,6 +2558,14 @@ def api_event_epg_dispatcharr_streams(group_id):
 
         limit = request.args.get('limit', 50, type=int)
         do_match = request.args.get('match', 'false').lower() == 'true'
+
+        # Check if group is configured in our database - if so, refresh M3U first
+        db_group = get_event_epg_group_by_dispatcharr_id(group_id)
+        if db_group and db_group.get('dispatcharr_account_id'):
+            app.logger.debug(f"Refreshing M3U account {db_group['dispatcharr_account_id']} before fetching streams")
+            refresh_result = manager.wait_for_refresh(db_group['dispatcharr_account_id'], timeout=120)
+            if not refresh_result.get('success'):
+                app.logger.warning(f"M3U refresh failed: {refresh_result.get('message')} - continuing with potentially stale data")
 
         # Get group info and streams
         result = manager.get_group_with_streams(group_id, stream_limit=limit)
