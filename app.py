@@ -2271,8 +2271,9 @@ def api_epg_stats_live():
         type: 'team' or 'event' (default: both)
     """
     import xml.etree.ElementTree as ET
-    from datetime import datetime
-    import pytz
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    from utils.time_format import format_time, get_time_settings
 
     try:
         # Get settings for timezone and EPG path
@@ -2281,7 +2282,9 @@ def api_epg_stats_live():
         conn.close()
 
         epg_path = settings.get('epg_output_path', './data/teamarr.xml')
-        user_tz = pytz.timezone(settings.get('default_timezone', 'America/Detroit'))
+        user_tz_name = settings.get('default_timezone', 'America/Detroit')
+        user_tz = ZoneInfo(user_tz_name)
+        time_fmt, show_tz = get_time_settings(settings)
         now = datetime.now(user_tz)
         today = now.date()
 
@@ -2315,9 +2318,8 @@ def api_epg_stats_live():
                 tz_sign = 1 if tz_str[0] == '+' else -1
                 tz_hours = int(tz_str[1:3])
                 tz_mins = int(tz_str[3:5])
-                from datetime import timedelta
                 tz_offset = timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_mins)
-                dt = dt.replace(tzinfo=pytz.FixedOffset(int(tz_offset.total_seconds() / 60)))
+                dt = dt.replace(tzinfo=timezone(tz_offset))
 
                 return dt.astimezone(user_tz)
             except Exception:
@@ -2359,7 +2361,7 @@ def api_epg_stats_live():
                 stats[stat_key]['games_today'] += 1
                 stats[stat_key]['today_events'].append({
                     'title': title,
-                    'start': start_time.strftime('%I:%M %p'),
+                    'start': format_time(start_time, time_fmt, show_tz),
                     'channel': programme.get('channel', '')
                 })
 
