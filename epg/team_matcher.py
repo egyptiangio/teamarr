@@ -1111,6 +1111,171 @@ class TeamMatcher:
 
         return result
 
+    def extract_teams_with_selective_regex(
+        self,
+        stream_name: str,
+        league: str,
+        teams_pattern: str = None,
+        teams_enabled: bool = False,
+        date_pattern: str = None,
+        date_enabled: bool = False,
+        time_pattern: str = None,
+        time_enabled: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Extract team matchup with selective custom regex per field.
+
+        Allows enabling custom regex for specific fields while falling back
+        to built-in extraction for others.
+
+        Args:
+            stream_name: Raw stream/channel name
+            league: League code for team resolution
+            teams_pattern: Custom regex with (?P<team1>...) and (?P<team2>...) groups
+            teams_enabled: Whether to use custom teams pattern
+            date_pattern: Custom regex for date extraction
+            date_enabled: Whether to use custom date pattern
+            time_pattern: Custom regex for time extraction
+            time_enabled: Whether to use custom time pattern
+
+        Returns:
+            Dict with same structure as extract_teams()
+        """
+        # If custom teams pattern is enabled, use custom extraction for teams
+        if teams_enabled and teams_pattern:
+            result = self._extract_teams_custom(stream_name, league, teams_pattern)
+            if not result.get('matched'):
+                return result
+        else:
+            # Use built-in team extraction
+            result = self.extract_teams(stream_name, league)
+            if not result.get('matched'):
+                return result
+
+        # Now handle date/time - override with custom if enabled, otherwise keep defaults
+        if date_enabled and date_pattern:
+            try:
+                date_match = re.search(date_pattern, stream_name, re.IGNORECASE)
+                if date_match:
+                    try:
+                        date_text = date_match.group('date')
+                    except (IndexError, re.error):
+                        date_text = date_match.group(1) if date_match.groups() else date_match.group(0)
+                    if date_text:
+                        result['game_date'] = extract_date_from_text(date_text.strip())
+                    else:
+                        result['game_date'] = None
+                else:
+                    result['game_date'] = None
+            except re.error as e:
+                logger.warning(f"Invalid custom date pattern: {e}")
+                # Fall back to default
+                result['game_date'] = extract_date_from_text(stream_name)
+
+        if time_enabled and time_pattern:
+            try:
+                time_match = re.search(time_pattern, stream_name, re.IGNORECASE)
+                if time_match:
+                    try:
+                        time_text = time_match.group('time')
+                    except (IndexError, re.error):
+                        time_text = time_match.group(1) if time_match.groups() else time_match.group(0)
+                    if time_text:
+                        result['game_time'] = extract_time_from_text(time_text.strip())
+                    else:
+                        result['game_time'] = None
+                else:
+                    result['game_time'] = None
+            except re.error as e:
+                logger.warning(f"Invalid custom time pattern: {e}")
+                # Fall back to default
+                result['game_time'] = extract_time_from_text(stream_name)
+
+        return result
+
+    def _extract_teams_custom(
+        self,
+        stream_name: str,
+        league: str,
+        teams_pattern: str
+    ) -> Dict[str, Any]:
+        """
+        Extract teams using custom regex pattern only.
+
+        Helper method for extract_teams_with_selective_regex.
+        """
+        result = {
+            'matched': False,
+            'stream_name': stream_name,
+            'league': league,
+            'game_date': extract_date_from_text(stream_name),
+            'game_time': extract_time_from_text(stream_name)
+        }
+
+        try:
+            teams_match = re.search(teams_pattern, stream_name, re.IGNORECASE)
+            if not teams_match:
+                result['reason'] = 'Teams pattern did not match stream name'
+                return result
+        except re.error as e:
+            result['reason'] = f'Invalid teams pattern: {e}'
+            return result
+
+        # Extract team1 and team2 from named groups
+        try:
+            team1_text = teams_match.group('team1')
+            if not team1_text or not team1_text.strip():
+                result['reason'] = 'team1 group matched but captured empty text'
+                return result
+            team1_text = team1_text.strip()
+        except IndexError:
+            result['reason'] = 'Pattern missing required (?P<team1>...) group'
+            return result
+
+        try:
+            team2_text = teams_match.group('team2')
+            if not team2_text or not team2_text.strip():
+                result['reason'] = 'team2 group matched but captured empty text'
+                return result
+            team2_text = team2_text.strip()
+        except IndexError:
+            result['reason'] = 'Pattern missing required (?P<team2>...) group'
+            return result
+
+        result['raw_away'] = team1_text
+        result['raw_home'] = team2_text
+
+        # Get teams for this league
+        teams = self._get_teams_for_league(league)
+        if not teams:
+            result['reason'] = f'No team data available for league: {league}'
+            return result
+
+        # Resolve team names to ESPN IDs
+        away_team = self._find_team(team1_text, league, teams)
+        home_team = self._find_team(team2_text, league, teams)
+
+        if not away_team:
+            result['reason'] = f'Team not found in ESPN database: {team1_text}'
+            result['unmatched_team'] = team1_text
+            return result
+
+        if not home_team:
+            result['reason'] = f'Team not found in ESPN database: {team2_text}'
+            result['unmatched_team'] = team2_text
+            return result
+
+        # Both teams found
+        result['matched'] = True
+        result['away_team_id'] = away_team.get('id')
+        result['away_team_name'] = away_team.get('name')
+        result['away_team_abbrev'] = away_team.get('abbreviation', '')
+        result['home_team_id'] = home_team.get('id')
+        result['home_team_name'] = home_team.get('name')
+        result['home_team_abbrev'] = home_team.get('abbreviation', '')
+
+        return result
+
     def clear_cache(self, league: str = None) -> None:
         """
         Clear the team cache.

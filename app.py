@@ -190,9 +190,14 @@ def refresh_event_group_core(group, m3u_manager):
             app.logger.debug(f"Skipping built-in filter (skip_builtin_filter enabled)")
         else:
             # Apply built-in filter (must have vs/@/at indicator)
+            # Only use exclude_regex if enabled
+            exclude_regex = None
+            if bool(group.get('stream_exclude_regex_enabled')) and group.get('stream_exclude_regex'):
+                exclude_regex = group['stream_exclude_regex']
+
             filter_result = filter_game_streams(
                 all_streams,
-                exclude_regex=group.get('stream_exclude_regex')
+                exclude_regex=exclude_regex
             )
             streams = filter_result['game_streams']
             filtered_count = len(filter_result['filtered_streams'])
@@ -207,21 +212,28 @@ def refresh_event_group_core(group, m3u_manager):
         matched_count = 0
         matched_streams = []
 
-        # Check if custom regex is enabled for this group
-        use_custom_regex = group.get('custom_regex_enabled')
-        use_combined_regex = use_custom_regex and group.get('custom_regex_teams')
-        use_legacy_regex = use_custom_regex and group.get('custom_regex') and not use_combined_regex
+        # Check if any individual custom regex fields are enabled
+        teams_enabled = bool(group.get('custom_regex_teams_enabled'))
+        date_enabled = bool(group.get('custom_regex_date_enabled'))
+        time_enabled = bool(group.get('custom_regex_time_enabled'))
+        any_custom_enabled = teams_enabled or date_enabled or time_enabled
+
+        # Legacy support: check old global enable flag
+        use_legacy_regex = bool(group.get('custom_regex_enabled')) and group.get('custom_regex') and not any_custom_enabled
 
         for stream in streams:
             try:
-                # Use custom regex if enabled, otherwise use built-in matching
-                if use_combined_regex:
-                    team_result = team_matcher.extract_teams_with_combined_regex(
+                # Use selective regex if any individual field is enabled
+                if any_custom_enabled:
+                    team_result = team_matcher.extract_teams_with_selective_regex(
                         stream['name'],
                         group['assigned_league'],
-                        group['custom_regex_teams'],
-                        group.get('custom_regex_date'),
-                        group.get('custom_regex_time')
+                        teams_pattern=group.get('custom_regex_teams'),
+                        teams_enabled=teams_enabled,
+                        date_pattern=group.get('custom_regex_date'),
+                        date_enabled=date_enabled,
+                        time_pattern=group.get('custom_regex_time'),
+                        time_enabled=time_enabled
                     )
                 elif use_legacy_regex:
                     team_result = team_matcher.extract_teams_with_regex(
@@ -2689,6 +2701,7 @@ def api_event_epg_dispatcharr_streams(group_id):
             return jsonify({'error': 'Group not found'}), 404
 
         streams = result['streams']
+        filtered_count = 0
 
         # If matching requested, add team extraction preview
         if do_match:
@@ -2703,6 +2716,7 @@ def api_event_epg_dispatcharr_streams(group_id):
             if league:
                 from epg.team_matcher import create_matcher
                 from epg.event_matcher import create_event_matcher
+                from utils.stream_filter import has_game_indicator
 
                 # Fetch settings to get include_final_events and lookahead preferences
                 conn = get_connection()
@@ -2714,10 +2728,43 @@ def api_event_epg_dispatcharr_streams(group_id):
                 team_matcher = create_matcher()
                 event_matcher = create_event_matcher(lookahead_days=lookahead_days)
 
+                # Get filtering settings from db_group if configured
+                skip_builtin_filter = bool(db_group.get('skip_builtin_filter', 0)) if db_group else False
+                exclude_regex = None
+                if db_group and bool(db_group.get('stream_exclude_regex_enabled')) and db_group.get('stream_exclude_regex'):
+                    try:
+                        import re
+                        exclude_regex = re.compile(db_group['stream_exclude_regex'], re.IGNORECASE)
+                    except re.error:
+                        pass
+
                 for stream in streams:
                     try:
+                        stream_name = stream['name']
+
+                        # Check if stream is filtered/excluded
+                        is_filtered = False
+                        filter_reason = None
+
+                        if not skip_builtin_filter and not has_game_indicator(stream_name):
+                            is_filtered = True
+                            filter_reason = 'No game indicator (vs, @, at)'
+                        elif exclude_regex and exclude_regex.search(stream_name):
+                            is_filtered = True
+                            filter_reason = 'Matched exclusion pattern'
+
+                        if is_filtered:
+                            filtered_count += 1
+                            stream['team_match'] = {
+                                'matched': False,
+                                'filtered': True,
+                                'reason': filter_reason
+                            }
+                            stream['event_match'] = {'found': False, 'filtered': True}
+                            continue
+
                         # Extract teams from stream name
-                        team_result = team_matcher.extract_teams(stream['name'], league)
+                        team_result = team_matcher.extract_teams(stream_name, league)
                         stream['team_match'] = team_result
 
                         # If teams matched, try to find ESPN event
@@ -2730,12 +2777,28 @@ def api_event_epg_dispatcharr_streams(group_id):
                                 game_time=team_result.get('game_time'),
                                 include_final_events=include_final_events
                             )
-                            stream['event_match'] = {
+
+                            # Build event match response with status info
+                            event_match_data = {
                                 'found': event_result['found'],
                                 'event_id': event_result.get('event_id'),
                                 'event_name': event_result.get('event', {}).get('name') if event_result['found'] else None,
                                 'event_date': event_result.get('event_date')
                             }
+
+                            # Add reason for not found, with better messages
+                            if not event_result['found']:
+                                reason = event_result.get('reason', 'No event found')
+                                # Provide clearer messages for common scenarios
+                                if reason == 'Game completed (excluded)':
+                                    event_match_data['is_final'] = True
+                                    event_match_data['reason'] = 'Event is final'
+                                elif reason == 'No game found between teams':
+                                    event_match_data['reason'] = f'No event in lookahead range ({lookahead_days} days)'
+                                else:
+                                    event_match_data['reason'] = reason
+
+                            stream['event_match'] = event_match_data
                         else:
                             stream['event_match'] = {'found': False, 'reason': team_result.get('reason')}
 
@@ -2749,7 +2812,8 @@ def api_event_epg_dispatcharr_streams(group_id):
         return jsonify({
             'group': result['group'],
             'streams': streams,
-            'total_streams': result['total_streams']
+            'total_streams': result['total_streams'],
+            'filtered_count': filtered_count
         })
 
     except Exception as e:
@@ -3011,10 +3075,15 @@ def api_event_epg_groups_create():
             channel_group_id=data.get('channel_group_id'),
             custom_regex=data.get('custom_regex'),
             custom_regex_enabled=bool(data.get('custom_regex_enabled')),
-            custom_regex_team1=data.get('custom_regex_team1'),
-            custom_regex_team2=data.get('custom_regex_team2'),
+            custom_regex_teams=data.get('custom_regex_teams'),
+            custom_regex_teams_enabled=bool(data.get('custom_regex_teams_enabled')),
             custom_regex_date=data.get('custom_regex_date'),
-            custom_regex_time=data.get('custom_regex_time')
+            custom_regex_date_enabled=bool(data.get('custom_regex_date_enabled')),
+            custom_regex_time=data.get('custom_regex_time'),
+            custom_regex_time_enabled=bool(data.get('custom_regex_time_enabled')),
+            stream_exclude_regex=data.get('stream_exclude_regex'),
+            stream_exclude_regex_enabled=bool(data.get('stream_exclude_regex_enabled')),
+            skip_builtin_filter=bool(data.get('skip_builtin_filter'))
         )
 
         app.logger.info(f"Created event EPG group: {data['group_name']} (ID: {group_id})")

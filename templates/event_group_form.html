@@ -150,65 +150,99 @@
             </div>
         </div>
 
-        <!-- Stream Filtering Section -->
-        <div class="form-section">
-            <h2>Stream Filtering</h2>
-            <p class="section-description">Streams are automatically filtered to only include game streams (those with vs, @, or at). Use the options below to customize filtering.</p>
+        <!-- Stream Filtering Section (Collapsible) -->
+        <div class="form-section collapsible-section">
+            <h2 class="collapsible-header" onclick="toggleSection('stream-filtering')">
+                <span class="collapse-arrow" id="stream-filtering-arrow">▶</span>
+                Stream Filtering
+            </h2>
+            <div id="stream-filtering-content" class="collapsible-content" style="display: none;">
+                <p class="section-description">Streams are automatically filtered to only include game streams (those with vs, @, or at). Customize below.</p>
 
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="skip_builtin_filter" name="skip_builtin_filter"
-                           {% if group and group.skip_builtin_filter %}checked{% endif %}>
-                    <span>Skip built-in game detection</span>
-                </label>
-                <small class="form-help">Disable automatic filtering. Use when custom regex handles all matching or stream names don't use standard separators.</small>
-            </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="skip_builtin_filter" name="skip_builtin_filter"
+                               {% if group and group.skip_builtin_filter %}checked{% endif %}>
+                        <span>Skip built-in game detection</span>
+                    </label>
+                    <small class="form-help">Disable automatic filtering when stream names don't use standard separators (vs, @, at).</small>
+                </div>
 
-            <div class="form-group">
-                <label for="stream_exclude_regex">Exclusion Pattern <span class="optional">(optional)</span></label>
-                <input type="text" id="stream_exclude_regex" name="stream_exclude_regex" class="form-control mono regex-input"
-                       placeholder="e.g., \(ES\)|\(ALT\)|All.?Star"
-                       value="{{ group.stream_exclude_regex if group else '' }}">
-                <small class="form-help">Regex pattern to exclude streams that match.</small>
+                <div class="form-group regex-field-group">
+                    <div class="regex-field-header">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="stream_exclude_regex_enabled" name="stream_exclude_regex_enabled"
+                                   {% if group and group.stream_exclude_regex_enabled %}checked{% endif %}
+                                   onchange="toggleRegexField('stream_exclude_regex')">
+                            <span>Exclusion Pattern</span>
+                        </label>
+                    </div>
+                    <input type="text" id="stream_exclude_regex" name="stream_exclude_regex"
+                           class="form-control mono regex-input {% if not group or not group.stream_exclude_regex_enabled %}disabled-field{% endif %}"
+                           placeholder="e.g., \(ES\)|\(ALT\)|All.?Star"
+                           value="{{ group.stream_exclude_regex if group else '' }}"
+                           {% if not group or not group.stream_exclude_regex_enabled %}disabled{% endif %}>
+                </div>
             </div>
         </div>
 
-        <!-- Custom Regex Section -->
-        <div class="form-section">
-            <h2>Custom Team Matching</h2>
-            <p class="section-description">Override the built-in team matching with custom regex patterns. Only use this if automatic matching isn't working for your stream names.</p>
+        <!-- Custom Regex Section (Collapsible) -->
+        <div class="form-section collapsible-section">
+            <h2 class="collapsible-header" onclick="toggleSection('custom-regex')">
+                <span class="collapse-arrow" id="custom-regex-arrow">▶</span>
+                Custom Team Matching
+            </h2>
+            <div id="custom-regex-content" class="collapsible-content" style="display: none;">
+                <p class="section-description">Override built-in matching with custom regex patterns. Enable individual fields as needed.</p>
 
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="custom_regex_enabled" name="custom_regex_enabled"
-                           {% if group and group.custom_regex_enabled %}checked{% endif %}
-                           onchange="toggleRegexFields()">
-                    <span>Enable custom regex matching</span>
-                </label>
-            </div>
-
-            <div id="regex-fields" style="display: {% if group and group.custom_regex_enabled %}block{% else %}none{% endif %};">
                 <div class="regex-builder-section">
-                    <div class="form-group">
-                        <label for="custom_regex_teams">Teams Pattern <span class="required">*</span></label>
-                        <input type="text" id="custom_regex_teams" name="custom_regex_teams" class="form-control mono regex-input"
+                    <div class="form-group regex-field-group">
+                        <div class="regex-field-header">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="custom_regex_teams_enabled" name="custom_regex_teams_enabled"
+                                       {% if group and group.custom_regex_teams_enabled %}checked{% endif %}
+                                       onchange="toggleRegexField('custom_regex_teams')">
+                                <span>Teams Pattern</span>
+                            </label>
+                        </div>
+                        <input type="text" id="custom_regex_teams" name="custom_regex_teams"
+                               class="form-control mono regex-input {% if not group or not group.custom_regex_teams_enabled %}disabled-field{% endif %}"
                                placeholder="(?P<team1>...)(?P<team2>...)"
-                               value="{{ group.custom_regex_teams if group else '' }}">
+                               value="{{ group.custom_regex_teams if group else '' }}"
+                               {% if not group or not group.custom_regex_teams_enabled %}disabled{% endif %}>
                     </div>
 
                     <div class="form-row">
-                        <div class="form-group">
-                            <label for="custom_regex_date">Date Pattern <span class="optional">(optional)</span></label>
-                            <input type="text" id="custom_regex_date" name="custom_regex_date" class="form-control mono regex-input"
+                        <div class="form-group regex-field-group">
+                            <div class="regex-field-header">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="custom_regex_date_enabled" name="custom_regex_date_enabled"
+                                           {% if group and group.custom_regex_date_enabled %}checked{% endif %}
+                                           onchange="toggleRegexField('custom_regex_date')">
+                                    <span>Date Pattern</span>
+                                </label>
+                            </div>
+                            <input type="text" id="custom_regex_date" name="custom_regex_date"
+                                   class="form-control mono regex-input {% if not group or not group.custom_regex_date_enabled %}disabled-field{% endif %}"
                                    placeholder="(?P<date>...)"
-                                   value="{{ group.custom_regex_date if group else '' }}">
+                                   value="{{ group.custom_regex_date if group else '' }}"
+                                   {% if not group or not group.custom_regex_date_enabled %}disabled{% endif %}>
                         </div>
 
-                        <div class="form-group">
-                            <label for="custom_regex_time">Time Pattern <span class="optional">(optional)</span></label>
-                            <input type="text" id="custom_regex_time" name="custom_regex_time" class="form-control mono regex-input"
+                        <div class="form-group regex-field-group">
+                            <div class="regex-field-header">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="custom_regex_time_enabled" name="custom_regex_time_enabled"
+                                           {% if group and group.custom_regex_time_enabled %}checked{% endif %}
+                                           onchange="toggleRegexField('custom_regex_time')">
+                                    <span>Time Pattern</span>
+                                </label>
+                            </div>
+                            <input type="text" id="custom_regex_time" name="custom_regex_time"
+                                   class="form-control mono regex-input {% if not group or not group.custom_regex_time_enabled %}disabled-field{% endif %}"
                                    placeholder="(?P<time>...)"
-                                   value="{{ group.custom_regex_time if group else '' }}">
+                                   value="{{ group.custom_regex_time if group else '' }}"
+                                   {% if not group or not group.custom_regex_time_enabled %}disabled{% endif %}>
                         </div>
                     </div>
 
@@ -399,10 +433,30 @@ async function createGroupInline() {
     }
 }
 
-function toggleRegexFields() {
-    const enabled = document.getElementById('custom_regex_enabled').checked;
-    const fieldsDiv = document.getElementById('regex-fields');
-    fieldsDiv.style.display = enabled ? 'block' : 'none';
+function toggleSection(sectionId) {
+    const content = document.getElementById(sectionId + '-content');
+    const arrow = document.getElementById(sectionId + '-arrow');
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        arrow.textContent = '▼';
+    } else {
+        content.style.display = 'none';
+        arrow.textContent = '▶';
+    }
+}
+
+function toggleRegexField(fieldId) {
+    const checkbox = document.getElementById(fieldId + '_enabled');
+    const input = document.getElementById(fieldId);
+
+    if (checkbox.checked) {
+        input.disabled = false;
+        input.classList.remove('disabled-field');
+    } else {
+        input.disabled = true;
+        input.classList.add('disabled-field');
+    }
 }
 
 // ============================================================================
@@ -610,12 +664,22 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
     const formData = new FormData(this);
     const data = {};
 
+    // Checkbox fields that need boolean handling
+    const checkboxFields = [
+        'skip_builtin_filter',
+        'stream_exclude_regex_enabled',
+        'custom_regex_teams_enabled',
+        'custom_regex_date_enabled',
+        'custom_regex_time_enabled',
+        'custom_regex_enabled'  // Legacy - keep for backwards compat
+    ];
+
     formData.forEach((value, key) => {
         if (value !== '' && value !== null) {
             // Convert numeric fields
             if (['channel_start', 'channel_group_id', 'stream_profile_id', 'event_template_id', 'dispatcharr_group_id', 'dispatcharr_account_id'].includes(key)) {
                 data[key] = value ? parseInt(value) : null;
-            } else if (key === 'custom_regex_enabled' || key === 'skip_builtin_filter') {
+            } else if (checkboxFields.includes(key)) {
                 data[key] = true;
             } else {
                 data[key] = value;
@@ -623,13 +687,12 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
         }
     });
 
-    // Handle unchecked checkboxes
-    if (!formData.has('custom_regex_enabled')) {
-        data['custom_regex_enabled'] = false;
-    }
-    if (!formData.has('skip_builtin_filter')) {
-        data['skip_builtin_filter'] = false;
-    }
+    // Handle unchecked checkboxes - set to false
+    checkboxFields.forEach(field => {
+        if (!formData.has(field)) {
+            data[field] = false;
+        }
+    });
 
     {% if mode == 'edit' %}
     const url = '/api/event-epg/groups/{{ group.id }}';
@@ -810,12 +873,47 @@ select.form-control {
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 1rem;
-    margin-top: 1rem;
 }
 
 .regex-input {
     background: var(--bg-primary) !important;
     border: 1px solid var(--border) !important;
+}
+
+/* Collapsible sections */
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.collapsible-header:hover {
+    color: var(--primary);
+}
+
+.collapse-arrow {
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+}
+
+.collapsible-content {
+    margin-top: 1rem;
+}
+
+/* Regex field with enable checkbox */
+.regex-field-group {
+    margin-bottom: 0.75rem;
+}
+
+.regex-field-header {
+    margin-bottom: 0.25rem;
+}
+
+.disabled-field {
+    opacity: 0.5;
+    background: var(--bg-tertiary) !important;
 }
 
 .test-results-list {

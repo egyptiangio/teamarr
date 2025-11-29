@@ -661,7 +661,7 @@ async function testMatchGroup(groupId, groupName) {
         contentEl.style.display = 'block';
 
         if (response.ok) {
-            renderPreviewStreams(data.streams, data.total_streams);
+            renderPreviewStreams(data.streams, data.total_streams, data.filtered_count || 0);
         } else {
             document.getElementById('preview-streams-body').innerHTML =
                 `<tr><td colspan="4" class="text-danger">Error: ${data.error}</td></tr>`;
@@ -674,7 +674,7 @@ async function testMatchGroup(groupId, groupName) {
     }
 }
 
-function renderPreviewStreams(streams, totalCount) {
+function renderPreviewStreams(streams, totalCount, filteredCount) {
     const tbody = document.getElementById('preview-streams-body');
     const totalEl = document.getElementById('preview-total');
     const matchedEl = document.getElementById('preview-matched');
@@ -682,6 +682,7 @@ function renderPreviewStreams(streams, totalCount) {
 
     let matchedCount = 0;
     let unmatchedCount = 0;
+    let filteredDisplayCount = 0;
 
     tbody.innerHTML = '';
 
@@ -689,39 +690,69 @@ function renderPreviewStreams(streams, totalCount) {
         const teamMatch = stream.team_match || {};
         const eventMatch = stream.event_match || {};
 
-        if (eventMatch.found) matchedCount++;
-        else unmatchedCount++;
+        // Count stats
+        if (teamMatch.filtered || eventMatch.filtered) {
+            filteredDisplayCount++;
+        } else if (eventMatch.found) {
+            matchedCount++;
+        } else {
+            unmatchedCount++;
+        }
+
+        // Build team match display
+        let teamHtml = '';
+        if (teamMatch.filtered) {
+            teamHtml = `<span class="text-muted" style="font-style: italic;">Filtered</span>`;
+        } else if (teamMatch.matched) {
+            teamHtml = `<span class="text-success">${escapeHtml(teamMatch.away_team_name?.split(' ').pop() || '?')} @ ${escapeHtml(teamMatch.home_team_name?.split(' ').pop() || '?')}</span>`;
+        } else {
+            teamHtml = `<span class="text-muted">—</span>`;
+        }
 
         // Build status display
         let statusHtml = '';
-        if (eventMatch.found) {
+        if (teamMatch.filtered) {
+            // Stream was filtered out
+            const reason = teamMatch.reason || 'Filtered';
+            statusHtml = `<span class="text-muted" style="font-style: italic;">${escapeHtml(reason)}</span>`;
+        } else if (eventMatch.found) {
             statusHtml = `<span class="text-success">✓ Matched</span>`;
+        } else if (eventMatch.is_final) {
+            // Event found but is final
+            statusHtml = `<span class="text-danger" style="font-weight: 600;">Event is final</span>`;
         } else if (!teamMatch.matched) {
             // Team parsing failed
             statusHtml = `<span class="text-warning">Teams not parsed</span>`;
         } else {
-            // Teams parsed but no event
+            // Teams parsed but no event found
             const reason = eventMatch.reason || 'No event found';
             statusHtml = `<span class="text-danger">${escapeHtml(reason)}</span>`;
         }
 
+        // Style filtered rows differently
+        const rowStyle = (teamMatch.filtered || eventMatch.filtered)
+            ? 'opacity: 0.6; background: var(--bg-tertiary);'
+            : '';
+
         const row = document.createElement('tr');
+        row.style.cssText = rowStyle;
         row.innerHTML = `
             <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(stream.name)}">
                 ${escapeHtml(stream.name)}
             </td>
-            <td>
-                ${teamMatch.matched
-                    ? `<span class="text-success">${escapeHtml(teamMatch.away_team_name?.split(' ').pop() || '?')} @ ${escapeHtml(teamMatch.home_team_name?.split(' ').pop() || '?')}</span>`
-                    : `<span class="text-muted">—</span>`
-                }
-            </td>
+            <td>${teamHtml}</td>
             <td>${statusHtml}</td>
         `;
         tbody.appendChild(row);
     });
 
-    totalEl.textContent = `${totalCount} streams (showing ${streams.length})`;
+    // Update summary stats
+    let totalText = `${totalCount} streams`;
+    if (filteredCount > 0 || filteredDisplayCount > 0) {
+        const filterNum = filteredCount || filteredDisplayCount;
+        totalText += ` (${filterNum} filtered)`;
+    }
+    totalEl.textContent = totalText;
     matchedEl.textContent = `${matchedCount} matched`;
     unmatchedEl.textContent = `${unmatchedCount} unmatched`;
 }

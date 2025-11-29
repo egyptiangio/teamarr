@@ -302,14 +302,18 @@ def run_migrations(conn):
             ("account_name", "TEXT"),
             ("channel_group_id", "INTEGER"),
             ("stream_profile_id", "INTEGER"),
-            ("custom_regex", "TEXT"),
-            ("custom_regex_enabled", "INTEGER DEFAULT 0"),
+            ("custom_regex", "TEXT"),  # Deprecated - legacy single regex
+            ("custom_regex_enabled", "INTEGER DEFAULT 0"),  # Deprecated - use individual enables
             ("custom_regex_team1", "TEXT"),  # Deprecated - use custom_regex_teams
             ("custom_regex_team2", "TEXT"),  # Deprecated - use custom_regex_teams
             ("custom_regex_teams", "TEXT"),  # Combined pattern with (?P<team1>...) and (?P<team2>...)
+            ("custom_regex_teams_enabled", "INTEGER DEFAULT 0"),  # Enable custom teams regex
             ("custom_regex_date", "TEXT"),
+            ("custom_regex_date_enabled", "INTEGER DEFAULT 0"),  # Enable custom date regex
             ("custom_regex_time", "TEXT"),
+            ("custom_regex_time_enabled", "INTEGER DEFAULT 0"),  # Enable custom time regex
             ("stream_exclude_regex", "TEXT"),  # User regex to exclude streams from matching
+            ("stream_exclude_regex_enabled", "INTEGER DEFAULT 0"),  # Enable exclusion regex
             ("skip_builtin_filter", "INTEGER DEFAULT 0"),  # Skip built-in game indicator filter
         ]
         add_columns_if_missing("event_epg_groups", event_group_columns)
@@ -1060,9 +1064,14 @@ def create_event_epg_group(
     custom_regex: str = None,
     custom_regex_enabled: bool = False,
     custom_regex_teams: str = None,
+    custom_regex_teams_enabled: bool = False,
     custom_regex_date: str = None,
+    custom_regex_date_enabled: bool = False,
     custom_regex_time: str = None,
-    stream_exclude_regex: str = None
+    custom_regex_time_enabled: bool = False,
+    stream_exclude_regex: str = None,
+    stream_exclude_regex_enabled: bool = False,
+    skip_builtin_filter: bool = False
 ) -> int:
     """
     Create a new event EPG group.
@@ -1074,11 +1083,16 @@ def create_event_epg_group(
         channel_group_id: Dispatcharr channel group ID to assign created channels to
         stream_profile_id: Dispatcharr stream profile ID to assign to created channels
         custom_regex: Legacy single regex pattern (deprecated)
-        custom_regex_enabled: Whether to use custom regex instead of built-in matching
+        custom_regex_enabled: Legacy flag (deprecated - use individual enables)
         custom_regex_teams: Combined regex with (?P<team1>...) and (?P<team2>...) groups
+        custom_regex_teams_enabled: Enable custom teams regex
         custom_regex_date: Optional regex pattern to extract game date
+        custom_regex_date_enabled: Enable custom date regex
         custom_regex_time: Optional regex pattern to extract game time
+        custom_regex_time_enabled: Enable custom time regex
         stream_exclude_regex: Optional regex to exclude streams from matching
+        stream_exclude_regex_enabled: Enable exclusion regex
+        skip_builtin_filter: Skip built-in game indicator filter
 
     Returns:
         ID of created group
@@ -1096,9 +1110,12 @@ def create_event_epg_group(
              assigned_league, assigned_sport, enabled, refresh_interval_minutes,
              event_template_id, account_name, channel_start, channel_group_id,
              stream_profile_id, custom_regex, custom_regex_enabled,
-             custom_regex_teams, custom_regex_date, custom_regex_time,
-             stream_exclude_regex)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             custom_regex_teams, custom_regex_teams_enabled,
+             custom_regex_date, custom_regex_date_enabled,
+             custom_regex_time, custom_regex_time_enabled,
+             stream_exclude_regex, stream_exclude_regex_enabled,
+             skip_builtin_filter)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
@@ -1107,8 +1124,11 @@ def create_event_epg_group(
                 event_template_id, account_name, channel_start,
                 channel_group_id, stream_profile_id, custom_regex,
                 1 if custom_regex_enabled else 0,
-                custom_regex_teams, custom_regex_date, custom_regex_time,
-                stream_exclude_regex
+                custom_regex_teams, 1 if custom_regex_teams_enabled else 0,
+                custom_regex_date, 1 if custom_regex_date_enabled else 0,
+                custom_regex_time, 1 if custom_regex_time_enabled else 0,
+                stream_exclude_regex, 1 if stream_exclude_regex_enabled else 0,
+                1 if skip_builtin_filter else 0
             )
         )
         conn.commit()
