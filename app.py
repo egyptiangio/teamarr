@@ -1659,6 +1659,63 @@ def event_groups_import():
     return render_template('event_groups_import.html', event_templates=event_templates)
 
 
+@app.route('/event-groups/<int:group_id>/edit')
+def event_group_edit(group_id):
+    """Edit an existing event group"""
+    group = get_event_epg_group(group_id)
+    if not group:
+        flash('Event group not found', 'error')
+        return redirect(url_for('event_groups_list'))
+
+    # Get event templates
+    conn = get_connection()
+    cursor = conn.cursor()
+    templates = cursor.execute("""
+        SELECT id, name FROM templates WHERE template_type = 'event' ORDER BY name
+    """).fetchall()
+    conn.close()
+
+    event_templates = [dict(row) for row in templates]
+
+    return render_template('event_group_form.html',
+                          mode='edit',
+                          group=group,
+                          event_templates=event_templates)
+
+
+@app.route('/event-groups/add')
+def event_group_add():
+    """Add a new event group (from import flow)"""
+    # Get parameters from query string (passed from import page)
+    dispatcharr_group_id = request.args.get('dispatcharr_group_id', type=int)
+    dispatcharr_account_id = request.args.get('dispatcharr_account_id', type=int)
+    group_name = request.args.get('group_name', '')
+    account_name = request.args.get('account_name', '')
+
+    if not dispatcharr_group_id or not dispatcharr_account_id:
+        flash('Missing required parameters', 'error')
+        return redirect(url_for('event_groups_import'))
+
+    # Get event templates
+    conn = get_connection()
+    cursor = conn.cursor()
+    templates = cursor.execute("""
+        SELECT id, name FROM templates WHERE template_type = 'event' ORDER BY name
+    """).fetchall()
+    conn.close()
+
+    event_templates = [dict(row) for row in templates]
+
+    return render_template('event_group_form.html',
+                          mode='add',
+                          group=None,
+                          dispatcharr_group_id=dispatcharr_group_id,
+                          dispatcharr_account_id=dispatcharr_account_id,
+                          group_name=group_name,
+                          account_name=account_name,
+                          event_templates=event_templates)
+
+
 # =============================================================================
 # SETTINGS
 # =============================================================================
@@ -2764,6 +2821,91 @@ def api_dispatcharr_channel_groups_create():
 
     except Exception as e:
         app.logger.error(f"Error creating channel group: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dispatcharr/stream-profiles', methods=['GET'])
+def api_dispatcharr_stream_profiles():
+    """
+    Get all stream profiles from Dispatcharr.
+
+    Query params:
+        active_only: If 'true', only return active profiles
+    """
+    try:
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+        conn.close()
+
+        if not settings.get('dispatcharr_url'):
+            return jsonify({'error': 'Dispatcharr not configured'}), 400
+
+        channel_mgr = ChannelManager(
+            settings['dispatcharr_url'],
+            settings['dispatcharr_username'],
+            settings['dispatcharr_password']
+        )
+
+        active_only = request.args.get('active_only', 'false').lower() == 'true'
+        profiles = channel_mgr.get_stream_profiles(active_only=active_only)
+
+        return jsonify({
+            'success': True,
+            'profiles': profiles
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error fetching stream profiles: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dispatcharr/stream-profiles', methods=['POST'])
+def api_dispatcharr_stream_profiles_create():
+    """
+    Create a new stream profile in Dispatcharr.
+
+    Body:
+        name: str (required) - Profile name
+        command: str (optional) - Command to execute
+        parameters: str (optional) - Command-line parameters
+    """
+    try:
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+        conn.close()
+
+        if not settings.get('dispatcharr_url'):
+            return jsonify({'error': 'Dispatcharr not configured'}), 400
+
+        data = request.get_json()
+        if not data or not data.get('name'):
+            return jsonify({'error': 'Profile name is required'}), 400
+
+        channel_mgr = ChannelManager(
+            settings['dispatcharr_url'],
+            settings['dispatcharr_username'],
+            settings['dispatcharr_password']
+        )
+
+        result = channel_mgr.create_stream_profile(
+            name=data['name'],
+            command=data.get('command', ''),
+            parameters=data.get('parameters', ''),
+            is_active=data.get('is_active', True)
+        )
+
+        if result.get('success'):
+            app.logger.info(f"Created stream profile: {data['name']} (ID: {result.get('profile_id')})")
+            return jsonify({
+                'success': True,
+                'profile_id': result.get('profile_id'),
+                'profile': result.get('profile')
+            }), 201
+        else:
+            return jsonify({'error': result.get('error', 'Failed to create profile')}), 400
+
+    except Exception as e:
+        app.logger.error(f"Error creating stream profile: {e}")
         return jsonify({'error': str(e)}), 500
 
 

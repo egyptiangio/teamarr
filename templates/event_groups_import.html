@@ -141,6 +141,11 @@
     background: var(--bg-tertiary);
 }
 
+.group-card.clickable:hover {
+    border-color: var(--primary);
+    cursor: pointer;
+}
+
 .group-card.enabled {
     opacity: 0.7;
     cursor: default;
@@ -152,18 +157,6 @@
     align-items: flex-start;
     gap: 0.5rem;
     margin-bottom: 0.375rem;
-}
-
-.group-checkbox {
-    margin-top: 0.125rem;
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.group-card.enabled .group-checkbox {
-    cursor: not-allowed;
 }
 
 .group-info {
@@ -214,23 +207,6 @@
 .group-actions .btn-sm {
     padding: 0.1875rem 0.5rem;
     font-size: 0.6875rem;
-}
-
-.import-actions {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-primary);
-    border-top: 2px solid var(--border);
-    padding: 1rem 2rem;
-    margin: 2rem -1.5rem 0 -1.5rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.selection-count {
-    color: var(--text-secondary);
-    font-weight: 600;
 }
 
 .empty-state {
@@ -451,139 +427,6 @@
 
             <div id="groups-grid" class="groups-grid"></div>
         </div>
-
-        <!-- Import Actions (Sticky Footer) -->
-        <div id="import-actions" class="import-actions" style="display: none;">
-            <div class="selection-count">
-                <span id="selected-count">0</span> group(s) selected
-            </div>
-            <div>
-                <a href="{{ url_for('event_groups_list') }}" class="btn btn-secondary">Cancel</a>
-                <button type="button" class="btn btn-success" onclick="showConfigureModal()" id="import-btn" disabled>
-                    📺 Configure & Enable
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Configure Groups Modal -->
-<div id="configure-modal" class="modal-overlay" onclick="closeConfigureModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <div class="modal-header">
-            <h2>Configure Event Groups</h2>
-            <button class="modal-close" onclick="closeConfigureModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
-                Configure <strong id="configure-count">0</strong> group(s) for event-based EPG generation.
-            </p>
-
-            <div class="form-group">
-                <label for="config-sport">Sport *</label>
-                <select id="config-sport" class="form-control" onchange="updateLeagueOptions()" required>
-                    <option value="">Select sport...</option>
-                    <option value="football">Football</option>
-                    <option value="basketball">Basketball</option>
-                    <option value="baseball">Baseball</option>
-                    <option value="hockey">Hockey</option>
-                    <option value="soccer">Soccer</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="config-league">League *</label>
-                <select id="config-league" class="form-control" required>
-                    <option value="">Select sport first...</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="config-template">Event Template</label>
-                <select id="config-template" class="form-control">
-                    <option value="">Select a template...</option>
-                    {% for template in event_templates %}
-                    <option value="{{ template.id }}">{{ template.name }}</option>
-                    {% endfor %}
-                </select>
-                <small class="form-help">Required for EPG generation. Only event-type templates are shown.</small>
-            </div>
-
-            <hr style="border-color: var(--border); margin: 1rem 0;">
-            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Channel Number and Group</h4>
-
-            <div class="form-group">
-                <label for="config-channel-start">Channel Start Number</label>
-                <input type="number" id="config-channel-start" class="form-control" placeholder="Auto-calculated if empty" min="1">
-                <small class="form-help">First channel number for created channels. Leave empty to auto-assign next available range.</small>
-            </div>
-
-            <div class="form-group">
-                <label for="config-channel-group">Channel Group</label>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
-                    <input type="text" id="config-group-filter" class="form-control" placeholder="Filter groups..." style="flex: 1;" oninput="filterChannelGroups()">
-                    <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">➕ New</button>
-                </div>
-                <div id="create-group-form" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <input type="text" id="new-group-name" class="form-control" placeholder="New group name..." style="flex: 1;">
-                        <button type="button" class="btn btn-sm btn-success" onclick="createGroupInline()">Create</button>
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">✕</button>
-                    </div>
-                    <div id="create-group-status" style="margin-top: 0.25rem; font-size: 0.75rem;"></div>
-                </div>
-                <select id="config-channel-group" class="form-control" size="4" style="height: auto;">
-                    <option value="">Loading groups...</option>
-                </select>
-                <small class="form-help">Dispatcharr group to assign created channels to. Only non-M3U groups shown.</small>
-            </div>
-
-            <hr style="border-color: var(--border); margin: 1rem 0;">
-            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Custom Team Matching (Advanced)</h4>
-
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" id="config-regex-enabled" onchange="toggleRegexFields()">
-                    <span>Use custom regex for team extraction</span>
-                </label>
-                <small class="form-help">Override built-in matching with your own regex pattern.</small>
-            </div>
-
-            <div id="config-regex-fields" style="display: none;">
-                <div class="form-group">
-                    <label for="config-regex-team1">Team 1 Pattern <span style="color: var(--danger);">*</span></label>
-                    <input type="text" id="config-regex-team1" class="form-control"
-                           placeholder="^([A-Z]{2,3})"
-                           style="font-family: monospace;">
-                    <small class="form-help">Regex to extract the first team. Use a capture group <code>(...)</code> for the team name.</small>
-                </div>
-                <div class="form-group">
-                    <label for="config-regex-team2">Team 2 Pattern <span style="color: var(--danger);">*</span></label>
-                    <input type="text" id="config-regex-team2" class="form-control"
-                           placeholder="[@vs]+\s*([A-Z]{2,3})"
-                           style="font-family: monospace;">
-                    <small class="form-help">Regex to extract the second team. Use a capture group <code>(...)</code> for the team name.</small>
-                </div>
-                <div class="form-group">
-                    <label for="config-regex-date">Date Pattern <span style="color: var(--text-muted);">(optional)</span></label>
-                    <input type="text" id="config-regex-date" class="form-control"
-                           placeholder="(\d{1,2}/\d{1,2})"
-                           style="font-family: monospace;">
-                    <small class="form-help">Regex to extract game date (e.g., 11/29, Nov 29).</small>
-                </div>
-                <div class="form-group">
-                    <label for="config-regex-time">Time Pattern <span style="color: var(--text-muted);">(optional)</span></label>
-                    <input type="text" id="config-regex-time" class="form-control"
-                           placeholder="(\d{1,2}:\d{2}\s*(?:AM|PM)?)"
-                           style="font-family: monospace;">
-                    <small class="form-help">Regex to extract game time (e.g., 7:05PM, 19:05).</small>
-                </div>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeConfigureModal()">Cancel</button>
-            <button class="btn btn-success" onclick="enableSelectedGroups()">Enable Group</button>
-        </div>
     </div>
 </div>
 
@@ -622,48 +465,14 @@
 <script>
 let accounts = [];
 let groups = [];
-let leagues = [];
-let selectedGroups = new Set();
 let enabledGroupIds = new Set();
 let currentAccount = null;
-let channelGroups = [];  // Dispatcharr channel groups for assignment
-let nextChannelRange = 1001;  // Next available channel range (fallback)
 
 // Load data on page load
 document.addEventListener('DOMContentLoaded', async function() {
-    await loadLeagues();
     await loadAccounts();
     await loadEnabledGroups();
-    await loadChannelGroups();
-    await loadNextChannelRange();
 });
-
-async function loadNextChannelRange() {
-    try {
-        const response = await fetch('/api/channel-lifecycle/next-channel-range');
-        const data = await response.json();
-        if (response.ok && data.next_channel_range) {
-            nextChannelRange = data.next_channel_range;
-            // Update placeholder to show the default
-            const input = document.getElementById('config-channel-start');
-            if (input) {
-                input.placeholder = `Default: ${nextChannelRange}`;
-            }
-        }
-    } catch (error) {
-        console.error('Failed to load next channel range:', error);
-    }
-}
-
-async function loadLeagues() {
-    try {
-        const response = await fetch('/api/leagues');
-        const data = await response.json();
-        leagues = data.leagues || [];
-    } catch (error) {
-        console.error('Failed to load leagues:', error);
-    }
-}
 
 async function loadEnabledGroups() {
     try {
@@ -779,7 +588,6 @@ function renderGroups() {
     document.getElementById('account-title').textContent = currentAccount.name;
     document.getElementById('groups-count').textContent = `${groups.length} groups`;
     document.getElementById('groups-container').style.display = 'block';
-    document.getElementById('import-actions').style.display = 'flex';
 
     if (groups.length === 0) {
         grid.innerHTML = `
@@ -793,20 +601,18 @@ function renderGroups() {
 
     groups.forEach(group => {
         const isEnabled = enabledGroupIds.has(group.id);
-        const isSelected = selectedGroups.has(group.id);
 
         const card = document.createElement('div');
         card.className = 'group-card';
-        if (isEnabled) card.classList.add('enabled');
-        if (isSelected && !isEnabled) card.classList.add('selected');
+        if (isEnabled) {
+            card.classList.add('enabled');
+        } else {
+            card.classList.add('clickable');
+        }
         card.dataset.groupId = group.id;
 
         card.innerHTML = `
             <div class="group-header">
-                <input type="checkbox" class="group-checkbox"
-                       ${isSelected ? 'checked' : ''}
-                       ${isEnabled ? 'disabled' : ''}
-                       onclick="event.stopPropagation(); toggleGroup(${group.id})">
                 <div class="group-info">
                     <div class="group-name">
                         ${escapeHtml(group.name)}
@@ -821,276 +627,41 @@ function renderGroups() {
             </div>
             <div class="group-actions">
                 <button onclick="event.stopPropagation(); previewGroup(${group.id}, '${escapeHtml(group.name)}')" class="btn btn-sm btn-secondary">
-                    👁 Preview Streams
+                    Preview
                 </button>
+                ${!isEnabled ? `<button onclick="event.stopPropagation(); importGroup(${group.id}, '${escapeHtml(group.name).replace(/'/g, "\\'")}')" class="btn btn-sm btn-success">
+                    Import
+                </button>` : ''}
             </div>
         `;
 
+        // Click anywhere on the card to import (if not enabled)
         if (!isEnabled) {
             card.onclick = function(e) {
-                if (e.target.type !== 'checkbox' && !e.target.closest('button')) {
-                    const checkbox = this.querySelector('.group-checkbox');
-                    checkbox.checked = !checkbox.checked;
-                    toggleGroup(group.id);
+                if (!e.target.closest('button')) {
+                    importGroup(group.id, group.name);
                 }
             };
         }
 
         grid.appendChild(card);
     });
+}
 
-    updateSelectionCount();
+function importGroup(groupId, groupName) {
+    const params = new URLSearchParams({
+        dispatcharr_group_id: groupId,
+        dispatcharr_account_id: currentAccount.id,
+        group_name: groupName,
+        account_name: currentAccount.name
+    });
+    window.location.href = '/event-groups/add?' + params.toString();
 }
 
 function filterGroups() {
     // Debounce search
     clearTimeout(window.searchTimeout);
     window.searchTimeout = setTimeout(loadGroups, 300);
-}
-
-function toggleGroup(groupId) {
-    const card = document.querySelector(`[data-group-id="${groupId}"]`);
-    if (card?.classList.contains('enabled')) return;
-
-    if (selectedGroups.has(groupId)) {
-        selectedGroups.delete(groupId);
-        card?.classList.remove('selected');
-    } else {
-        selectedGroups.add(groupId);
-        card?.classList.add('selected');
-    }
-
-    updateSelectionCount();
-}
-
-function updateSelectionCount() {
-    const count = selectedGroups.size;
-    document.getElementById('selected-count').textContent = count;
-    document.getElementById('import-btn').disabled = count === 0;
-}
-
-// Configure Modal
-function showConfigureModal() {
-    if (selectedGroups.size === 0) return;
-
-    document.getElementById('configure-count').textContent = selectedGroups.size;
-    document.getElementById('config-sport').value = '';
-    document.getElementById('config-league').innerHTML = '<option value="">Select sport first...</option>';
-    document.getElementById('config-template').value = '';
-    document.getElementById('configure-modal').classList.add('active');
-}
-
-function closeConfigureModal(event) {
-    if (event && event.target !== event.currentTarget) return;
-    document.getElementById('configure-modal').classList.remove('active');
-}
-
-function updateLeagueOptions() {
-    const sport = document.getElementById('config-sport').value;
-    const leagueSelect = document.getElementById('config-league');
-
-    leagueSelect.innerHTML = '<option value="">Select league...</option>';
-
-    if (!sport) return;
-
-    const filteredLeagues = leagues.filter(l => l.sport === sport);
-    filteredLeagues.forEach(league => {
-        const option = document.createElement('option');
-        option.value = league.code;
-        option.textContent = league.name;
-        leagueSelect.appendChild(option);
-    });
-}
-
-// Channel Groups Management
-async function loadChannelGroups() {
-    try {
-        const response = await fetch('/api/dispatcharr/channel-groups?exclude_m3u=true');
-        const data = await response.json();
-
-        if (response.ok) {
-            channelGroups = data.groups || [];
-            renderChannelGroupSelect();
-        } else {
-            console.error('Failed to load channel groups:', data.error);
-            channelGroups = [];
-            renderChannelGroupSelect();
-        }
-    } catch (error) {
-        console.error('Failed to load channel groups:', error);
-        channelGroups = [];
-        renderChannelGroupSelect();
-    }
-}
-
-function renderChannelGroupSelect(filter = '') {
-    const select = document.getElementById('config-channel-group');
-    if (!select) return;
-
-    select.innerHTML = '<option value="">(No group - channels will be ungrouped)</option>';
-
-    const filterLower = filter.toLowerCase();
-    const filtered = channelGroups.filter(g =>
-        !filter || g.name.toLowerCase().includes(filterLower)
-    );
-
-    filtered.forEach(group => {
-        const option = document.createElement('option');
-        option.value = group.id;
-        option.textContent = `${group.name} (${group.channel_count || 0} channels)`;
-        select.appendChild(option);
-    });
-}
-
-function filterChannelGroups() {
-    const filter = document.getElementById('config-group-filter').value;
-    renderChannelGroupSelect(filter);
-}
-
-function toggleCreateGroupForm() {
-    const form = document.getElementById('create-group-form');
-    const isVisible = form.style.display !== 'none';
-    form.style.display = isVisible ? 'none' : 'block';
-    if (!isVisible) {
-        document.getElementById('new-group-name').value = '';
-        document.getElementById('create-group-status').innerHTML = '';
-        document.getElementById('new-group-name').focus();
-    }
-}
-
-async function createGroupInline() {
-    const groupName = document.getElementById('new-group-name').value.trim();
-    const statusDiv = document.getElementById('create-group-status');
-
-    if (!groupName) {
-        statusDiv.innerHTML = '<span style="color: var(--danger);">Group name is required</span>';
-        return;
-    }
-
-    statusDiv.innerHTML = '<span style="color: var(--text-muted);">Creating...</span>';
-
-    try {
-        const response = await fetch('/api/dispatcharr/channel-groups', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: groupName })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-            statusDiv.innerHTML = '<span style="color: var(--success);">✓ Created!</span>';
-
-            // Reload groups and select the new one
-            await loadChannelGroups();
-            const select = document.getElementById('config-channel-group');
-            const newOption = Array.from(select.options).find(opt => opt.value == data.group_id);
-            if (newOption) {
-                newOption.selected = true;
-            }
-
-            // Hide form after short delay
-            setTimeout(() => {
-                toggleCreateGroupForm();
-            }, 500);
-        } else {
-            statusDiv.innerHTML = `<span style="color: var(--danger);">${data.error || 'Failed to create group'}</span>`;
-        }
-    } catch (error) {
-        statusDiv.innerHTML = `<span style="color: var(--danger);">Error: ${error.message}</span>`;
-    }
-}
-
-function toggleRegexFields() {
-    const enabled = document.getElementById('config-regex-enabled').checked;
-    const fieldsDiv = document.getElementById('config-regex-fields');
-    fieldsDiv.style.display = enabled ? 'block' : 'none';
-}
-
-async function enableSelectedGroups() {
-    const sport = document.getElementById('config-sport').value;
-    const league = document.getElementById('config-league').value;
-    const templateId = document.getElementById('config-template').value;
-    const channelStart = document.getElementById('config-channel-start').value;
-    const channelGroupId = document.getElementById('config-channel-group').value;
-    const regexEnabled = document.getElementById('config-regex-enabled').checked;
-    const regexTeam1 = document.getElementById('config-regex-team1').value.trim();
-    const regexTeam2 = document.getElementById('config-regex-team2').value.trim();
-    const regexDate = document.getElementById('config-regex-date').value.trim();
-    const regexTime = document.getElementById('config-regex-time').value.trim();
-
-    if (!sport || !league) {
-        alert('Please select sport and league');
-        return;
-    }
-
-    // Validate required regex fields when enabled
-    if (regexEnabled && (!regexTeam1 || !regexTeam2)) {
-        alert('Team 1 and Team 2 patterns are required when custom regex is enabled');
-        return;
-    }
-
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const groupId of selectedGroups) {
-        const group = groups.find(g => g.id === groupId);
-        if (!group) continue;
-
-        const payload = {
-            dispatcharr_group_id: groupId,
-            dispatcharr_account_id: currentAccount.id,
-            group_name: group.name,
-            assigned_sport: sport,
-            assigned_league: league,
-            account_name: currentAccount.name
-        };
-
-        if (templateId) {
-            payload.event_template_id = parseInt(templateId);
-        }
-
-        if (channelStart) {
-            payload.channel_start = parseInt(channelStart);
-        }
-
-        if (channelGroupId) {
-            payload.channel_group_id = parseInt(channelGroupId);
-        }
-
-        if (regexEnabled && regexTeam1 && regexTeam2) {
-            payload.custom_regex_enabled = 1;
-            payload.custom_regex_team1 = regexTeam1;
-            payload.custom_regex_team2 = regexTeam2;
-            if (regexDate) payload.custom_regex_date = regexDate;
-            if (regexTime) payload.custom_regex_time = regexTime;
-        }
-
-        try {
-            const response = await fetch('/api/event-epg/groups', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                successCount++;
-            } else {
-                errorCount++;
-            }
-        } catch (error) {
-            errorCount++;
-        }
-    }
-
-    closeConfigureModal();
-
-    if (successCount > 0) {
-        alert(`✅ Successfully enabled ${successCount} group(s)!${errorCount > 0 ? `\n⚠️ ${errorCount} group(s) failed.` : ''}`);
-        window.location.href = '{{ url_for("event_groups_list") }}';
-    } else {
-        alert(`❌ Failed to enable groups`);
-    }
 }
 
 // Preview Modal

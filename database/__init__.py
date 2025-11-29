@@ -299,6 +299,7 @@ def run_migrations(conn):
             ("channel_delete_timing", "TEXT DEFAULT 'same_day'"),
             ("account_name", "TEXT"),
             ("channel_group_id", "INTEGER"),
+            ("stream_profile_id", "INTEGER"),
             ("custom_regex", "TEXT"),
             ("custom_regex_enabled", "INTEGER DEFAULT 0"),
             ("custom_regex_team1", "TEXT"),
@@ -1050,6 +1051,7 @@ def create_event_epg_group(
     account_name: str = None,
     channel_start: int = None,
     channel_group_id: int = None,
+    stream_profile_id: int = None,
     custom_regex: str = None,
     custom_regex_enabled: bool = False,
     custom_regex_team1: str = None,
@@ -1065,6 +1067,7 @@ def create_event_epg_group(
         account_name: Optional M3U account name for display purposes
         channel_start: Starting channel number for auto-created channels
         channel_group_id: Dispatcharr channel group ID to assign created channels to
+        stream_profile_id: Dispatcharr stream profile ID to assign to created channels
         custom_regex: Legacy single regex pattern (deprecated, use separate fields)
         custom_regex_enabled: Whether to use custom regex instead of built-in matching
         custom_regex_team1: Regex pattern to extract first team name
@@ -1087,16 +1090,16 @@ def create_event_epg_group(
             (dispatcharr_group_id, dispatcharr_account_id, group_name,
              assigned_league, assigned_sport, enabled, refresh_interval_minutes,
              event_template_id, account_name, channel_start, channel_group_id,
-             custom_regex, custom_regex_enabled,
+             stream_profile_id, custom_regex, custom_regex_enabled,
              custom_regex_team1, custom_regex_team2, custom_regex_date, custom_regex_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
                 assigned_league.lower(), assigned_sport.lower(),
                 1 if enabled else 0, refresh_interval_minutes,
                 event_template_id, account_name, channel_start,
-                channel_group_id, custom_regex,
+                channel_group_id, stream_profile_id, custom_regex,
                 1 if custom_regex_enabled else 0,
                 custom_regex_team1, custom_regex_team2, custom_regex_date, custom_regex_time
             )

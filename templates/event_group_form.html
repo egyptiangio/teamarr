@@ -1,0 +1,835 @@
+{% extends "base.html" %}
+
+{% block title %}{% if mode == 'add' %}Add{% else %}Edit{% endif %} Event Group - Teamarr{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <div style="margin-bottom: 0.75rem;">
+            {% if mode == 'add' %}
+            <a href="{{ url_for('event_groups_import') }}" class="btn btn-sm btn-secondary">&larr; Back to Import</a>
+            {% else %}
+            <a href="{{ url_for('event_groups_list') }}" class="btn btn-sm btn-secondary">&larr; Back to Event Groups</a>
+            {% endif %}
+        </div>
+        <h1>{% if mode == 'add' %}Add Event Group{% else %}Edit Event Group{% endif %}</h1>
+        {% if mode == 'edit' %}
+            <p class="page-subtitle">{{ group.group_name }}</p>
+        {% endif %}
+    </div>
+
+    <form id="event-group-form" method="POST">
+        <!-- Group Info Section -->
+        <div class="form-section">
+            {% if mode == 'edit' %}
+                <!-- Read-only group info for edit mode -->
+                <div class="group-info-display">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="background: var(--primary); color: white; width: 48px; height: 48px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600;">
+                            {{ group.assigned_league[:3].upper() }}
+                        </div>
+                        <div>
+                            <h3 style="margin: 0;">{{ group.group_name }}</h3>
+                            <p class="text-muted" style="margin: 0.25rem 0 0 0;">
+                                {{ group.assigned_sport | title }} &bull; {{ group.assigned_league.upper() }}
+                                {% if group.account_name %}&bull; {{ group.account_name }}{% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden fields for edit mode -->
+                <input type="hidden" name="group_id" value="{{ group.id }}">
+            {% else %}
+                <!-- Add mode: sport/league selection -->
+                <input type="hidden" name="dispatcharr_group_id" value="{{ dispatcharr_group_id }}">
+                <input type="hidden" name="dispatcharr_account_id" value="{{ dispatcharr_account_id }}">
+                <input type="hidden" name="group_name" value="{{ group_name }}">
+                <input type="hidden" name="account_name" value="{{ account_name }}">
+
+                <div class="group-info-display">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="background: var(--bg-tertiary); border: 2px dashed var(--border); width: 48px; height: 48px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <span style="color: var(--text-muted);">?</span>
+                        </div>
+                        <div>
+                            <h3 style="margin: 0;">{{ group_name }}</h3>
+                            <p class="text-muted" style="margin: 0.25rem 0 0 0;">
+                                {% if account_name %}{{ account_name }}{% else %}New event group{% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="assigned_sport">Sport <span class="required">*</span></label>
+                        <select id="assigned_sport" name="assigned_sport" class="form-control" onchange="updateLeagueOptions()" required>
+                            <option value="">Select sport...</option>
+                            <option value="football">Football</option>
+                            <option value="basketball">Basketball</option>
+                            <option value="baseball">Baseball</option>
+                            <option value="hockey">Hockey</option>
+                            <option value="soccer">Soccer</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="assigned_league">League <span class="required">*</span></label>
+                        <select id="assigned_league" name="assigned_league" class="form-control" required>
+                            <option value="">Select sport first...</option>
+                        </select>
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="event_template_id">Event Template <span class="required">*</span></label>
+                <select id="event_template_id" name="event_template_id" class="form-control" required>
+                    <option value="" disabled>Select a template...</option>
+                    {% for template in event_templates %}
+                    <option value="{{ template.id }}" {% if group and group.event_template_id == template.id %}selected{% endif %}>
+                        {{ template.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <small class="form-help">Required. Controls EPG title, description, and channel naming.</small>
+            </div>
+        </div>
+
+        <!-- Channel Settings Section -->
+        <div class="form-section">
+            <h2>Channel Settings</h2>
+
+            <div class="form-group">
+                <label for="channel_start">Channel Start Number</label>
+                <input type="number" id="channel_start" name="channel_start" class="form-control"
+                       placeholder="Auto-calculated if empty" min="1"
+                       value="{{ group.channel_start if group and group.channel_start else '' }}">
+                <small class="form-help">First channel number for created channels. Leave empty to auto-assign next available range.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="channel_group_id">Channel Group</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                    <input type="text" id="group-filter" class="form-control" placeholder="Filter groups..." style="flex: 1;" oninput="filterChannelGroups()">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">+ New</button>
+                </div>
+                <div id="create-group-form" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="new-group-name" class="form-control" placeholder="New group name..." style="flex: 1;">
+                        <button type="button" class="btn btn-sm btn-success" onclick="createGroupInline()">Create</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateGroupForm()">Cancel</button>
+                    </div>
+                    <div id="create-group-status" style="margin-top: 0.25rem; font-size: 0.75rem;"></div>
+                </div>
+                <select id="channel_group_id" name="channel_group_id" class="form-control" size="5" style="height: auto;">
+                    <option value="">Loading groups...</option>
+                </select>
+                <small class="form-help">Dispatcharr group to assign created channels to. Only non-M3U groups shown.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="stream_profile_id">Stream Profile</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                    <input type="text" id="profile-filter" class="form-control" placeholder="Filter profiles..." style="flex: 1;" oninput="filterStreamProfiles()">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateProfileForm()">+ New</button>
+                </div>
+                <div id="create-profile-form" style="display: none; margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="new-profile-name" class="form-control" placeholder="New profile name..." style="flex: 1;">
+                        <button type="button" class="btn btn-sm btn-success" onclick="createProfileInline()">Create</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleCreateProfileForm()">Cancel</button>
+                    </div>
+                    <div id="create-profile-status" style="margin-top: 0.25rem; font-size: 0.75rem;"></div>
+                </div>
+                <select id="stream_profile_id" name="stream_profile_id" class="form-control" size="4" style="height: auto;">
+                    <option value="">Loading profiles...</option>
+                </select>
+                <small class="form-help">Stream profile to use for created channels. Defines how streams are processed.</small>
+            </div>
+        </div>
+
+        <!-- Custom Regex Section -->
+        <div class="form-section">
+            <h2>Custom Team Matching</h2>
+            <p class="section-description">Override the built-in team matching with custom regex patterns. Only use this if automatic matching isn't working for your stream names.</p>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="custom_regex_enabled" name="custom_regex_enabled"
+                           {% if group and group.custom_regex_enabled %}checked{% endif %}
+                           onchange="toggleRegexFields()">
+                    <span>Enable custom regex matching</span>
+                </label>
+            </div>
+
+            <div id="regex-fields" style="display: {% if group and group.custom_regex_enabled %}block{% else %}none{% endif %};">
+                <div class="regex-builder-section">
+                    <div class="form-group">
+                        <label for="custom_regex_team1">Team 1 Pattern <span class="required">*</span></label>
+                        <input type="text" id="custom_regex_team1" name="custom_regex_team1" class="form-control mono"
+                               placeholder="^([A-Z]{2,3})"
+                               value="{{ group.custom_regex_team1 if group else '' }}">
+                        <small class="form-help">Regex to extract the first team. Use a capture group <code>(...)</code> for the team name.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="custom_regex_team2">Team 2 Pattern <span class="required">*</span></label>
+                        <input type="text" id="custom_regex_team2" name="custom_regex_team2" class="form-control mono"
+                               placeholder="[@vs]+\s*([A-Z]{2,3})"
+                               value="{{ group.custom_regex_team2 if group else '' }}">
+                        <small class="form-help">Regex to extract the second team. Use a capture group <code>(...)</code> for the team name.</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="custom_regex_date">Date Pattern <span class="optional">(optional)</span></label>
+                            <input type="text" id="custom_regex_date" name="custom_regex_date" class="form-control mono"
+                                   placeholder="(\d{1,2}/\d{1,2})"
+                                   value="{{ group.custom_regex_date if group else '' }}">
+                            <small class="form-help">Extract game date (e.g., 11/29)</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="custom_regex_time">Time Pattern <span class="optional">(optional)</span></label>
+                            <input type="text" id="custom_regex_time" name="custom_regex_time" class="form-control mono"
+                                   placeholder="(\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                                   value="{{ group.custom_regex_time if group else '' }}">
+                            <small class="form-help">Extract game time (e.g., 7:05PM)</small>
+                        </div>
+                    </div>
+
+                    {% if mode == 'edit' %}
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="testRegexPatterns()" id="test-regex-btn">
+                            Test Patterns
+                        </button>
+                        <div id="regex-test-results" style="margin-top: 0.75rem;"></div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                {% if mode == 'add' %}Add Event Group{% else %}Save Changes{% endif %}
+            </button>
+            <a href="{{ url_for('event_groups_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+// Channel groups data
+let channelGroups = [];
+let allChannelGroups = [];
+
+// Stream profiles data
+let streamProfiles = [];
+let allStreamProfiles = [];
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await Promise.all([loadChannelGroups(), loadStreamProfiles()]);
+    {% if mode == 'edit' and group.channel_group_id %}
+    document.getElementById('channel_group_id').value = '{{ group.channel_group_id }}';
+    {% endif %}
+    {% if mode == 'edit' and group.stream_profile_id %}
+    document.getElementById('stream_profile_id').value = '{{ group.stream_profile_id }}';
+    {% endif %}
+});
+
+// League options by sport
+const leaguesBySport = {
+    'football': [
+        { value: 'nfl', label: 'NFL' },
+        { value: 'ncaaf', label: 'NCAA Football (FBS)' },
+        { value: 'xfl', label: 'XFL' },
+        { value: 'cfl', label: 'CFL' }
+    ],
+    'basketball': [
+        { value: 'nba', label: 'NBA' },
+        { value: 'wnba', label: 'WNBA' },
+        { value: 'ncaam', label: 'NCAA Men\'s Basketball' },
+        { value: 'ncaaw', label: 'NCAA Women\'s Basketball' }
+    ],
+    'baseball': [
+        { value: 'mlb', label: 'MLB' }
+    ],
+    'hockey': [
+        { value: 'nhl', label: 'NHL' }
+    ],
+    'soccer': [
+        { value: 'epl', label: 'English Premier League' },
+        { value: 'mls', label: 'MLS' },
+        { value: 'liga', label: 'La Liga' },
+        { value: 'bundesliga', label: 'Bundesliga' },
+        { value: 'seriea', label: 'Serie A' },
+        { value: 'ligue1', label: 'Ligue 1' },
+        { value: 'ucl', label: 'UEFA Champions League' }
+    ]
+};
+
+function updateLeagueOptions() {
+    const sport = document.getElementById('assigned_sport').value;
+    const leagueSelect = document.getElementById('assigned_league');
+
+    leagueSelect.innerHTML = '<option value="">Select league...</option>';
+
+    if (sport && leaguesBySport[sport]) {
+        leaguesBySport[sport].forEach(league => {
+            const option = document.createElement('option');
+            option.value = league.value;
+            option.textContent = league.label;
+            leagueSelect.appendChild(option);
+        });
+    }
+}
+
+async function loadChannelGroups() {
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups');
+        const data = await response.json();
+
+        if (data.success) {
+            allChannelGroups = data.groups || [];
+            channelGroups = [...allChannelGroups];
+            renderChannelGroups();
+        }
+    } catch (error) {
+        console.error('Error loading channel groups:', error);
+    }
+}
+
+function renderChannelGroups() {
+    const select = document.getElementById('channel_group_id');
+    const currentValue = select.value;
+
+    select.innerHTML = '<option value="">(No group - channels won\'t be assigned)</option>';
+
+    channelGroups.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = group.name;
+        select.appendChild(option);
+    });
+
+    if (currentValue) {
+        select.value = currentValue;
+    }
+}
+
+function filterChannelGroups() {
+    const filter = document.getElementById('group-filter').value.toLowerCase();
+
+    if (!filter) {
+        channelGroups = [...allChannelGroups];
+    } else {
+        channelGroups = allChannelGroups.filter(g =>
+            g.name.toLowerCase().includes(filter)
+        );
+    }
+
+    renderChannelGroups();
+}
+
+function toggleCreateGroupForm() {
+    const form = document.getElementById('create-group-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    if (form.style.display === 'block') {
+        document.getElementById('new-group-name').focus();
+    }
+}
+
+async function createGroupInline() {
+    const name = document.getElementById('new-group-name').value.trim();
+    const statusDiv = document.getElementById('create-group-status');
+
+    if (!name) {
+        statusDiv.innerHTML = '<span style="color: var(--danger);">Please enter a group name</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color: var(--text-muted);">Creating...</span>';
+
+    try {
+        const response = await fetch('/api/dispatcharr/channel-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            statusDiv.innerHTML = '<span style="color: var(--success);">Created!</span>';
+            document.getElementById('new-group-name').value = '';
+
+            // Reload groups and select the new one
+            await loadChannelGroups();
+            document.getElementById('channel_group_id').value = data.group.id;
+
+            setTimeout(() => {
+                toggleCreateGroupForm();
+            }, 500);
+        } else {
+            statusDiv.innerHTML = `<span style="color: var(--danger);">${data.error || 'Failed to create group'}</span>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: var(--danger);">Error: ${error.message}</span>`;
+    }
+}
+
+function toggleRegexFields() {
+    const enabled = document.getElementById('custom_regex_enabled').checked;
+    const fieldsDiv = document.getElementById('regex-fields');
+    fieldsDiv.style.display = enabled ? 'block' : 'none';
+}
+
+// ============================================================================
+// Stream Profiles
+// ============================================================================
+
+async function loadStreamProfiles() {
+    try {
+        const response = await fetch('/api/dispatcharr/stream-profiles');
+        const data = await response.json();
+
+        if (data.success) {
+            allStreamProfiles = data.profiles || [];
+            streamProfiles = [...allStreamProfiles];
+            renderStreamProfiles();
+        }
+    } catch (error) {
+        console.error('Error loading stream profiles:', error);
+    }
+}
+
+function renderStreamProfiles() {
+    const select = document.getElementById('stream_profile_id');
+    const currentValue = select.value;
+
+    select.innerHTML = '<option value="">(Default - no specific profile)</option>';
+
+    streamProfiles.forEach(profile => {
+        const option = document.createElement('option');
+        option.value = profile.id;
+        const activeIndicator = profile.is_active ? '' : ' (inactive)';
+        option.textContent = profile.name + activeIndicator;
+        select.appendChild(option);
+    });
+
+    if (currentValue) {
+        select.value = currentValue;
+    }
+}
+
+function filterStreamProfiles() {
+    const filter = document.getElementById('profile-filter').value.toLowerCase();
+
+    if (!filter) {
+        streamProfiles = [...allStreamProfiles];
+    } else {
+        streamProfiles = allStreamProfiles.filter(p =>
+            p.name.toLowerCase().includes(filter)
+        );
+    }
+
+    renderStreamProfiles();
+}
+
+function toggleCreateProfileForm() {
+    const form = document.getElementById('create-profile-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    if (form.style.display === 'block') {
+        document.getElementById('new-profile-name').focus();
+    }
+}
+
+async function createProfileInline() {
+    const name = document.getElementById('new-profile-name').value.trim();
+    const statusDiv = document.getElementById('create-profile-status');
+
+    if (!name) {
+        statusDiv.innerHTML = '<span style="color: var(--danger);">Please enter a profile name</span>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<span style="color: var(--text-muted);">Creating...</span>';
+
+    try {
+        const response = await fetch('/api/dispatcharr/stream-profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            statusDiv.innerHTML = '<span style="color: var(--success);">Created!</span>';
+            document.getElementById('new-profile-name').value = '';
+
+            // Reload profiles and select the new one
+            await loadStreamProfiles();
+            document.getElementById('stream_profile_id').value = data.profile.id;
+
+            setTimeout(() => {
+                toggleCreateProfileForm();
+            }, 500);
+        } else {
+            statusDiv.innerHTML = `<span style="color: var(--danger);">${data.error || 'Failed to create profile'}</span>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: var(--danger);">Error: ${error.message}</span>`;
+    }
+}
+
+{% if mode == 'edit' %}
+async function testRegexPatterns() {
+    const team1Pattern = document.getElementById('custom_regex_team1').value.trim();
+    const team2Pattern = document.getElementById('custom_regex_team2').value.trim();
+    const datePattern = document.getElementById('custom_regex_date').value.trim();
+    const timePattern = document.getElementById('custom_regex_time').value.trim();
+    const resultsDiv = document.getElementById('regex-test-results');
+    const testBtn = document.getElementById('test-regex-btn');
+
+    if (!team1Pattern || !team2Pattern) {
+        resultsDiv.innerHTML = '<span style="color: var(--warning);">Team 1 and Team 2 patterns are required.</span>';
+        return;
+    }
+
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing...';
+    resultsDiv.innerHTML = '<span style="color: var(--text-muted);">Testing patterns against streams...</span>';
+
+    try {
+        const response = await fetch('/api/event-epg/groups/{{ group.id }}/test-regex', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                team1_pattern: team1Pattern,
+                team2_pattern: team2Pattern,
+                date_pattern: datePattern || null,
+                time_pattern: timePattern || null
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            resultsDiv.innerHTML = `<span style="color: var(--danger);">Error: ${escapeHtml(data.error)}</span>`;
+            return;
+        }
+
+        let html = '';
+        const matched = data.matched || 0;
+        const total = data.tested || 0;
+        const percentage = total > 0 ? Math.round((matched / total) * 100) : 0;
+
+        html = `<div style="margin-bottom: 0.5rem;">
+            <strong>${matched}/${total}</strong> streams matched (${percentage}%)
+        </div>`;
+
+        if (data.results && data.results.length > 0) {
+            html += '<div class="test-results-list">';
+            data.results.forEach(result => {
+                const icon = result.matched ? '✓' : '✗';
+                const color = result.matched ? 'var(--success)' : 'var(--danger)';
+                html += `<div class="test-result-item">
+                    <div style="color: ${color}; display: flex; align-items: center; gap: 0.25rem;">
+                        <span>${icon}</span>
+                        <div class="stream-name-scroll">
+                            <code>${escapeHtml(result.stream_name)}</code>
+                        </div>
+                    </div>`;
+                if (result.matched) {
+                    html += `<div class="test-result-detail">
+                        ${escapeHtml(result.raw_team1)} → ${escapeHtml(result.resolved_team1)}<br>
+                        ${escapeHtml(result.raw_team2)} → ${escapeHtml(result.resolved_team2)}`;
+                    if (result.game_date || result.game_time) {
+                        html += `<br>Date/Time: ${result.game_date || '-'} ${result.game_time || '-'}`;
+                    }
+                    html += '</div>';
+                } else if (result.error) {
+                    html += `<div class="test-result-detail" style="color: var(--danger);">${escapeHtml(result.error)}</div>`;
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+
+        resultsDiv.innerHTML = html;
+    } catch (error) {
+        resultsDiv.innerHTML = `<span style="color: var(--danger);">Error: ${escapeHtml(error.message)}</span>`;
+    } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test Patterns';
+    }
+}
+{% endif %}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Form submission
+document.getElementById('event-group-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+    const data = {};
+
+    formData.forEach((value, key) => {
+        if (value !== '' && value !== null) {
+            // Convert numeric fields
+            if (['channel_start', 'channel_group_id', 'stream_profile_id', 'event_template_id', 'dispatcharr_group_id', 'dispatcharr_account_id'].includes(key)) {
+                data[key] = value ? parseInt(value) : null;
+            } else if (key === 'custom_regex_enabled') {
+                data[key] = true;
+            } else {
+                data[key] = value;
+            }
+        }
+    });
+
+    // Handle unchecked checkbox
+    if (!formData.has('custom_regex_enabled')) {
+        data['custom_regex_enabled'] = false;
+    }
+
+    {% if mode == 'edit' %}
+    const url = '/api/event-epg/groups/{{ group.id }}';
+    const method = 'PATCH';
+    {% else %}
+    const url = '/api/event-epg/groups';
+    const method = 'POST';
+    {% endif %}
+
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            window.location.href = '{{ url_for("event_groups_list") }}';
+        } else {
+            alert('Error: ' + (result.error || 'Failed to save'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+</script>
+
+<style>
+.form-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.page-header {
+    margin-bottom: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.form-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.form-section h2 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.section-description {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0 0 1.25rem 0;
+}
+
+.group-info-display {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.form-group {
+    margin-bottom: 1.25rem;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.required {
+    color: var(--danger);
+}
+
+.optional {
+    color: var(--text-muted);
+    font-weight: normal;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-control.mono {
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+select.form-control {
+    padding-right: 2rem;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.form-help code {
+    background: var(--bg-tertiary);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    padding-top: 0.5rem;
+}
+
+.regex-builder-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.test-results-list {
+    font-size: 0.75rem;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+}
+
+.test-result-item {
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.test-result-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.stream-name-scroll {
+    overflow-x: auto;
+    white-space: nowrap;
+    flex: 1;
+    padding: 2px 0;
+}
+
+.stream-name-scroll code {
+    font-size: 0.7rem;
+}
+
+.test-result-detail {
+    margin-left: 1rem;
+    margin-top: 0.25rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}

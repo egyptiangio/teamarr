@@ -797,7 +797,8 @@ class ChannelManager:
         stream_ids: List[int] = None,
         tvg_id: str = None,
         channel_group_id: int = None,
-        logo_id: int = None
+        logo_id: int = None,
+        stream_profile_id: int = None
     ) -> Dict[str, Any]:
         """
         Create a new channel in Dispatcharr.
@@ -809,6 +810,7 @@ class ChannelManager:
             tvg_id: TVG ID for XMLTV EPG matching
             channel_group_id: Optional group to assign channel to
             logo_id: Optional logo ID
+            stream_profile_id: Optional stream profile ID
 
         Returns:
             Result dict with:
@@ -830,6 +832,9 @@ class ChannelManager:
 
         if logo_id:
             payload['logo_id'] = logo_id
+
+        if stream_profile_id:
+            payload['stream_profile_id'] = stream_profile_id
 
         response = self.auth.post("/api/channels/channels/", payload)
 
@@ -1334,5 +1339,142 @@ class ChannelManager:
                 return {"success": False, "error": "Cannot delete group with existing channels"}
         except Exception:
             pass
+
+        return {"success": False, "error": self._parse_api_error(response)}
+
+    # ========================================================================
+    # Stream Profiles Management
+    # ========================================================================
+
+    def get_stream_profiles(self, active_only: bool = False) -> List[Dict]:
+        """
+        Get all stream profiles from Dispatcharr.
+
+        Stream profiles define how streams are processed (e.g., with yt-dlp, streamlink).
+
+        Args:
+            active_only: If True, only return active profiles
+
+        Returns:
+            List of profile dicts with id, name, command, parameters, is_active
+        """
+        response = self.auth.get("/api/core/streamprofiles/")
+        if response is None or response.status_code != 200:
+            logger.error(f"Failed to get stream profiles: {response.status_code if response else 'No response'}")
+            return []
+
+        profiles = response.json()
+
+        if active_only:
+            profiles = [p for p in profiles if p.get('is_active', True)]
+
+        return profiles
+
+    def get_stream_profile(self, profile_id: int) -> Optional[Dict]:
+        """
+        Get a single stream profile by ID.
+
+        Args:
+            profile_id: Dispatcharr profile ID
+
+        Returns:
+            Profile dict or None if not found
+        """
+        response = self.auth.get(f"/api/core/streamprofiles/{profile_id}/")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+
+    def create_stream_profile(
+        self,
+        name: str,
+        command: str = "",
+        parameters: str = "",
+        is_active: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Create a new stream profile in Dispatcharr.
+
+        Args:
+            name: Profile name (e.g., "IPTV Direct")
+            command: Command to execute (e.g., "streamlink", "yt-dlp")
+            parameters: Command-line parameters with placeholders
+            is_active: Whether the profile is active
+
+        Returns:
+            Result dict with:
+            - success: bool
+            - profile: dict (created profile data) if successful
+            - profile_id: int if successful
+            - error: str if failed
+        """
+        if not name or not name.strip():
+            return {"success": False, "error": "Profile name is required"}
+
+        payload = {
+            'name': name.strip(),
+            'command': command,
+            'parameters': parameters,
+            'is_active': is_active
+        }
+
+        response = self.auth.post("/api/core/streamprofiles/", payload)
+
+        if response is None:
+            return {"success": False, "error": "Request failed - no response"}
+
+        if response.status_code in (200, 201):
+            profile_data = response.json()
+            return {
+                "success": True,
+                "profile": profile_data,
+                "profile_id": profile_data.get('id')
+            }
+
+        return {"success": False, "error": self._parse_api_error(response)}
+
+    def update_stream_profile(self, profile_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update a stream profile.
+
+        Args:
+            profile_id: Dispatcharr profile ID
+            data: Fields to update (name, command, parameters, is_active)
+
+        Returns:
+            Result dict with success, profile, or error
+        """
+        response = self.auth.request("PATCH", f"/api/core/streamprofiles/{profile_id}/", data)
+
+        if response is None:
+            return {"success": False, "error": self._parse_api_error(response)}
+
+        if response.status_code == 200:
+            return {"success": True, "profile": response.json()}
+
+        return {"success": False, "error": self._parse_api_error(response)}
+
+    def delete_stream_profile(self, profile_id: int) -> Dict[str, Any]:
+        """
+        Delete a stream profile from Dispatcharr.
+
+        Note: Cannot delete locked profiles.
+
+        Args:
+            profile_id: Dispatcharr profile ID
+
+        Returns:
+            Result dict with success or error
+        """
+        response = self.auth.request("DELETE", f"/api/core/streamprofiles/{profile_id}/")
+
+        if response is None:
+            return {"success": False, "error": "Request failed - no response"}
+
+        if response.status_code in (200, 204):
+            return {"success": True}
+
+        if response.status_code == 404:
+            return {"success": False, "error": "Profile not found"}
 
         return {"success": False, "error": self._parse_api_error(response)}

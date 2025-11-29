@@ -593,6 +593,75 @@ class ChannelLifecycleManager:
         except Exception as e:
             logger.debug(f"Error updating logo for channel {existing.get('channel_name')}: {e}")
 
+    def _sync_channel_settings(
+        self,
+        existing: Dict,
+        group: Dict,
+        results: Dict
+    ) -> None:
+        """
+        Sync channel settings (channel_group_id, stream_profile_id) from group to channel.
+
+        If group settings differ from the channel's current settings in Dispatcharr,
+        update the channel to match the group configuration.
+
+        Args:
+            existing: Existing managed channel record
+            group: Event EPG group configuration
+            results: Results dict to append updates
+        """
+        try:
+            dispatcharr_channel_id = existing['dispatcharr_channel_id']
+            channel_name = existing.get('channel_name', 'Unknown')
+
+            # Get current channel data from Dispatcharr
+            current_channel = self.channel_api.get_channel(dispatcharr_channel_id)
+            if not current_channel:
+                logger.debug(f"Could not fetch channel {dispatcharr_channel_id} for settings sync")
+                return
+
+            # Build update payload if there are differences
+            update_data = {}
+
+            # Check channel_group_id
+            group_channel_group_id = group.get('channel_group_id')
+            current_channel_group_id = current_channel.get('channel_group_id')
+            if group_channel_group_id != current_channel_group_id:
+                update_data['channel_group_id'] = group_channel_group_id
+
+            # Check stream_profile_id
+            group_stream_profile_id = group.get('stream_profile_id')
+            current_stream_profile_id = current_channel.get('stream_profile_id')
+            if group_stream_profile_id != current_stream_profile_id:
+                update_data['stream_profile_id'] = group_stream_profile_id
+
+            if not update_data:
+                return  # No changes needed
+
+            # Update channel in Dispatcharr
+            update_result = self.channel_api.update_channel(dispatcharr_channel_id, update_data)
+
+            if update_result.get('success'):
+                changes = ', '.join(f"{k}={v}" for k, v in update_data.items())
+                logger.info(f"Synced settings for '{channel_name}': {changes}")
+
+                # Track in results
+                if 'settings_updated' not in results:
+                    results['settings_updated'] = []
+                results['settings_updated'].append({
+                    'channel_name': channel_name,
+                    'channel_id': dispatcharr_channel_id,
+                    'changes': update_data
+                })
+            else:
+                logger.warning(
+                    f"Failed to sync settings for '{channel_name}': "
+                    f"{update_result.get('error')}"
+                )
+
+        except Exception as e:
+            logger.debug(f"Error syncing settings for channel {existing.get('channel_name')}: {e}")
+
     def process_matched_streams(
         self,
         matched_streams: List[Dict],
@@ -636,6 +705,7 @@ class ChannelLifecycleManager:
         global_settings = get_global_lifecycle_settings()
         channel_start = group.get('channel_start')
         channel_group_id = group.get('channel_group_id')  # Dispatcharr channel group
+        stream_profile_id = group.get('stream_profile_id')  # Dispatcharr stream profile
         create_timing = group.get('channel_create_timing') or global_settings['channel_create_timing']
         delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
@@ -670,6 +740,9 @@ class ChannelLifecycleManager:
                     'channel_id': existing['dispatcharr_channel_id'],
                     'channel_number': existing['channel_number']
                 })
+
+                # Sync channel settings (group, profile) if they've changed
+                self._sync_channel_settings(existing, group, results)
 
                 # Check if logo needs updating for existing channel
                 if template and template.get('channel_logo_url'):
@@ -742,7 +815,8 @@ class ChannelLifecycleManager:
                 stream_ids=[stream['id']],
                 tvg_id=tvg_id,
                 channel_group_id=channel_group_id,
-                logo_id=logo_id
+                logo_id=logo_id,
+                stream_profile_id=stream_profile_id
             )
 
             if not create_result.get('success'):
