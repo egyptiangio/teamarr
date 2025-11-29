@@ -175,13 +175,17 @@
                             </td>
                             <td class="text-center">{{ group.stream_count or 0 }}</td>
                             <td>
+                                {% if group.stream_count and group.stream_count > 0 %}
                                 <div class="match-rate-container">
                                     <div class="match-rate-bar">
                                         <div class="match-rate-fill {% if match_rate >= 80 %}rate-good{% elif match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
                                              style="width: {{ match_rate }}%;"></div>
                                     </div>
-                                    <span class="match-rate-text">{{ group.matched_count or 0 }}/{{ group.stream_count or 0 }} ({{ match_rate }}%)</span>
+                                    <span class="match-rate-text">{{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)</span>
                                 </div>
+                                {% else %}
+                                <span class="text-muted" style="font-style: italic;">No active streams</span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 <label class="toggle-switch">

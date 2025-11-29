@@ -152,7 +152,7 @@
                                 <td class="text-center">{{ entry.num_programmes }}</td>
                                 <td class="text-center">
                                     {% if entry.generation_time_seconds %}
-                                        {{ "%.2f"|format(entry.generation_time_seconds) }}s
+                                        {{ entry.generation_time_seconds|round|int }}s
                                     {% else %}
                                         -
                                     {% endif %}

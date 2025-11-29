@@ -186,7 +186,7 @@
                         <input type="text" id="stream_exclude_regex" name="stream_exclude_regex"
                                class="form-control mono regex-input {% if not group or not group.stream_exclude_regex_enabled %}disabled-field{% endif %}"
                                placeholder="e.g., \(ES\)|\(ALT\)|All.?Star"
-                               value="{{ group.stream_exclude_regex if group else '' }}"
+                               value="{{ group.stream_exclude_regex if group and group.stream_exclude_regex else '' }}"
                                {% if not group or not group.stream_exclude_regex_enabled %}disabled{% endif %}>
                     </div>
                 </div>
@@ -208,7 +208,7 @@
                         <input type="text" id="custom_regex_teams" name="custom_regex_teams"
                                class="form-control mono regex-input {% if not group or not group.custom_regex_teams_enabled %}disabled-field{% endif %}"
                                placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
-                               value="{{ group.custom_regex_teams if group else '' }}"
+                               value="{{ group.custom_regex_teams if group and group.custom_regex_teams else '' }}"
                                {% if not group or not group.custom_regex_teams_enabled %}disabled{% endif %}>
                     </div>
 
@@ -225,7 +225,7 @@
                             <input type="text" id="custom_regex_date" name="custom_regex_date"
                                    class="form-control mono regex-input {% if not group or not group.custom_regex_date_enabled %}disabled-field{% endif %}"
                                    placeholder="(?P<date>\d{1,2}/\d{1,2})"
-                                   value="{{ group.custom_regex_date if group else '' }}"
+                                   value="{{ group.custom_regex_date if group and group.custom_regex_date else '' }}"
                                    {% if not group or not group.custom_regex_date_enabled %}disabled{% endif %}>
                         </div>
 
@@ -241,7 +241,7 @@
                             <input type="text" id="custom_regex_time" name="custom_regex_time"
                                    class="form-control mono regex-input {% if not group or not group.custom_regex_time_enabled %}disabled-field{% endif %}"
                                    placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
-                                   value="{{ group.custom_regex_time if group else '' }}"
+                                   value="{{ group.custom_regex_time if group and group.custom_regex_time else '' }}"
                                    {% if not group or not group.custom_regex_time_enabled %}disabled{% endif %}>
                         </div>
                     </div>
