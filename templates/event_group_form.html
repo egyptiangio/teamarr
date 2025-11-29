@@ -168,29 +168,24 @@
                 <div class="regex-builder-section">
                     <div class="form-group">
                         <label for="custom_regex_teams">Teams Pattern <span class="required">*</span></label>
-                        <input type="text" id="custom_regex_teams" name="custom_regex_teams" class="form-control mono"
-                               placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
+                        <input type="text" id="custom_regex_teams" name="custom_regex_teams" class="form-control mono regex-input"
+                               placeholder="(?P<team1>...)(?P<team2>...)"
                                value="{{ group.custom_regex_teams if group else '' }}">
-                        <small class="form-help">
-                            Regex to extract both teams. Must include named groups <code>(?P&lt;team1&gt;...)</code> and <code>(?P&lt;team2&gt;...)</code>
-                        </small>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label for="custom_regex_date">Date Pattern <span class="optional">(optional)</span></label>
-                            <input type="text" id="custom_regex_date" name="custom_regex_date" class="form-control mono"
-                                   placeholder="(?P<date>\d{1,2}/\d{1,2})"
+                            <input type="text" id="custom_regex_date" name="custom_regex_date" class="form-control mono regex-input"
+                                   placeholder="(?P<date>...)"
                                    value="{{ group.custom_regex_date if group else '' }}">
-                            <small class="form-help">Extract game date. Use <code>(?P&lt;date&gt;...)</code> group.</small>
                         </div>
 
                         <div class="form-group">
                             <label for="custom_regex_time">Time Pattern <span class="optional">(optional)</span></label>
-                            <input type="text" id="custom_regex_time" name="custom_regex_time" class="form-control mono"
-                                   placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                            <input type="text" id="custom_regex_time" name="custom_regex_time" class="form-control mono regex-input"
+                                   placeholder="(?P<time>...)"
                                    value="{{ group.custom_regex_time if group else '' }}">
-                            <small class="form-help">Extract game time. Use <code>(?P&lt;time&gt;...)</code> group.</small>
                         </div>
                     </div>
 
@@ -790,6 +785,11 @@ select.form-control {
     border-radius: 6px;
     padding: 1rem;
     margin-top: 1rem;
+}
+
+.regex-input {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border) !important;
 }
 
 .test-results-list {
