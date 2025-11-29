@@ -186,18 +186,17 @@ def refresh_event_group_core(group, m3u_manager):
 
         # Check if custom regex is enabled for this group
         use_custom_regex = group.get('custom_regex_enabled')
-        use_separate_regex = use_custom_regex and group.get('custom_regex_team1')
-        use_legacy_regex = use_custom_regex and group.get('custom_regex') and not use_separate_regex
+        use_combined_regex = use_custom_regex and group.get('custom_regex_teams')
+        use_legacy_regex = use_custom_regex and group.get('custom_regex') and not use_combined_regex
 
         for stream in streams:
             try:
                 # Use custom regex if enabled, otherwise use built-in matching
-                if use_separate_regex:
-                    team_result = team_matcher.extract_teams_with_separate_regex(
+                if use_combined_regex:
+                    team_result = team_matcher.extract_teams_with_combined_regex(
                         stream['name'],
                         group['assigned_league'],
-                        group['custom_regex_team1'],
-                        group['custom_regex_team2'],
+                        group['custom_regex_teams'],
                         group.get('custom_regex_date'),
                         group.get('custom_regex_time')
                     )
@@ -3248,27 +3247,27 @@ def api_event_epg_test_regex(group_id):
         limit = min(data.get('limit', 5), 20)  # Cap at 20
 
         # Determine which mode we're using
-        team1_pattern = data.get('team1_pattern', '').strip()
-        team2_pattern = data.get('team2_pattern', '').strip()
+        teams_pattern = data.get('teams_pattern', '').strip()
         date_pattern = data.get('date_pattern', '').strip() or None
         time_pattern = data.get('time_pattern', '').strip() or None
         legacy_regex = data.get('regex', '').strip()
 
-        use_separate = bool(team1_pattern or team2_pattern)
-        use_legacy = bool(legacy_regex) and not use_separate
+        use_combined = bool(teams_pattern)
+        use_legacy = bool(legacy_regex) and not use_combined
 
-        if not use_separate and not use_legacy:
-            return jsonify({'error': 'Either team1_pattern/team2_pattern or legacy regex is required'}), 400
+        if not use_combined and not use_legacy:
+            return jsonify({'error': 'teams_pattern is required'}), 400
 
         # Validate patterns
-        if use_separate:
-            if not team1_pattern:
-                return jsonify({'error': 'team1_pattern is required'}), 400
-            if not team2_pattern:
-                return jsonify({'error': 'team2_pattern is required'}), 400
+        if use_combined:
+            # Combined pattern must have team1 and team2 named groups
+            if '(?P<team1>' not in teams_pattern or '(?P<team2>' not in teams_pattern:
+                return jsonify({
+                    'error': 'teams_pattern must contain named groups: (?P<team1>...) and (?P<team2>...)'
+                }), 400
 
             # Validate all provided patterns
-            for name, pattern in [('team1_pattern', team1_pattern), ('team2_pattern', team2_pattern),
+            for name, pattern in [('teams_pattern', teams_pattern),
                                   ('date_pattern', date_pattern), ('time_pattern', time_pattern)]:
                 if pattern:
                     try:
@@ -3312,9 +3311,9 @@ def api_event_epg_test_regex(group_id):
         for stream in streams:
             stream_name = stream.get('name', '')
 
-            if use_separate:
-                test_result = team_matcher.extract_teams_with_separate_regex(
-                    stream_name, league, team1_pattern, team2_pattern, date_pattern, time_pattern
+            if use_combined:
+                test_result = team_matcher.extract_teams_with_combined_regex(
+                    stream_name, league, teams_pattern, date_pattern, time_pattern
                 )
             else:
                 test_result = team_matcher.extract_teams_with_regex(stream_name, legacy_regex, league)
@@ -3336,7 +3335,7 @@ def api_event_epg_test_regex(group_id):
 
         return jsonify({
             'success': True,
-            'mode': 'separate' if use_separate else 'legacy',
+            'mode': 'combined' if use_combined else 'legacy',
             'league': league,
             'tested': len(results),
             'matched': matched_count,

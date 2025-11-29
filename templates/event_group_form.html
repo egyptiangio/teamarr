@@ -167,36 +167,30 @@
             <div id="regex-fields" style="display: {% if group and group.custom_regex_enabled %}block{% else %}none{% endif %};">
                 <div class="regex-builder-section">
                     <div class="form-group">
-                        <label for="custom_regex_team1">Team 1 Pattern <span class="required">*</span></label>
-                        <input type="text" id="custom_regex_team1" name="custom_regex_team1" class="form-control mono"
-                               placeholder="^([A-Z]{2,3})"
-                               value="{{ group.custom_regex_team1 if group else '' }}">
-                        <small class="form-help">Regex to extract the first team. Use a capture group <code>(...)</code> for the team name.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="custom_regex_team2">Team 2 Pattern <span class="required">*</span></label>
-                        <input type="text" id="custom_regex_team2" name="custom_regex_team2" class="form-control mono"
-                               placeholder="[@vs]+\s*([A-Z]{2,3})"
-                               value="{{ group.custom_regex_team2 if group else '' }}">
-                        <small class="form-help">Regex to extract the second team. Use a capture group <code>(...)</code> for the team name.</small>
+                        <label for="custom_regex_teams">Teams Pattern <span class="required">*</span></label>
+                        <input type="text" id="custom_regex_teams" name="custom_regex_teams" class="form-control mono"
+                               placeholder="(?P<team1>[A-Z]{2,3})\s*[@vs]+\s*(?P<team2>[A-Z]{2,3})"
+                               value="{{ group.custom_regex_teams if group else '' }}">
+                        <small class="form-help">
+                            Regex to extract both teams. Must include named groups <code>(?P&lt;team1&gt;...)</code> and <code>(?P&lt;team2&gt;...)</code>
+                        </small>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label for="custom_regex_date">Date Pattern <span class="optional">(optional)</span></label>
                             <input type="text" id="custom_regex_date" name="custom_regex_date" class="form-control mono"
-                                   placeholder="(\d{1,2}/\d{1,2})"
+                                   placeholder="(?P<date>\d{1,2}/\d{1,2})"
                                    value="{{ group.custom_regex_date if group else '' }}">
-                            <small class="form-help">Extract game date (e.g., 11/29)</small>
+                            <small class="form-help">Extract game date. Use <code>(?P&lt;date&gt;...)</code> group.</small>
                         </div>
 
                         <div class="form-group">
                             <label for="custom_regex_time">Time Pattern <span class="optional">(optional)</span></label>
                             <input type="text" id="custom_regex_time" name="custom_regex_time" class="form-control mono"
-                                   placeholder="(\d{1,2}:\d{2}\s*(?:AM|PM)?)"
+                                   placeholder="(?P<time>\d{1,2}:\d{2}\s*(?:AM|PM)?)"
                                    value="{{ group.custom_regex_time if group else '' }}">
-                            <small class="form-help">Extract game time (e.g., 7:05PM)</small>
+                            <small class="form-help">Extract game time. Use <code>(?P&lt;time&gt;...)</code> group.</small>
                         </div>
                     </div>
 
@@ -498,15 +492,20 @@ async function createProfileInline() {
 
 {% if mode == 'edit' %}
 async function testRegexPatterns() {
-    const team1Pattern = document.getElementById('custom_regex_team1').value.trim();
-    const team2Pattern = document.getElementById('custom_regex_team2').value.trim();
+    const teamsPattern = document.getElementById('custom_regex_teams').value.trim();
     const datePattern = document.getElementById('custom_regex_date').value.trim();
     const timePattern = document.getElementById('custom_regex_time').value.trim();
     const resultsDiv = document.getElementById('regex-test-results');
     const testBtn = document.getElementById('test-regex-btn');
 
-    if (!team1Pattern || !team2Pattern) {
-        resultsDiv.innerHTML = '<span style="color: var(--warning);">Team 1 and Team 2 patterns are required.</span>';
+    if (!teamsPattern) {
+        resultsDiv.innerHTML = '<span style="color: var(--warning);">Teams pattern is required.</span>';
+        return;
+    }
+
+    // Validate that pattern has required named groups
+    if (!teamsPattern.includes('(?P<team1>') || !teamsPattern.includes('(?P<team2>')) {
+        resultsDiv.innerHTML = '<span style="color: var(--warning);">Pattern must include (?P&lt;team1&gt;...) and (?P&lt;team2&gt;...) groups.</span>';
         return;
     }
 
@@ -519,8 +518,7 @@ async function testRegexPatterns() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                team1_pattern: team1Pattern,
-                team2_pattern: team2Pattern,
+                teams_pattern: teamsPattern,
                 date_pattern: datePattern || null,
                 time_pattern: timePattern || null
             })

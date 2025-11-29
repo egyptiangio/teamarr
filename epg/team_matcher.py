@@ -982,26 +982,24 @@ class TeamMatcher:
 
         return result
 
-    def extract_teams_with_separate_regex(
+    def extract_teams_with_combined_regex(
         self,
         stream_name: str,
         league: str,
-        team1_pattern: str,
-        team2_pattern: str,
+        teams_pattern: str,
         date_pattern: str = None,
         time_pattern: str = None
     ) -> Dict[str, Any]:
         """
-        Extract team matchup using separate regex patterns for each field.
+        Extract team matchup using a combined regex pattern with named groups.
 
-        Each pattern should be a simple regex that captures the desired text.
-        The first capture group (or entire match if no group) is used.
+        The teams pattern must include named groups (?P<team1>...) and (?P<team2>...).
+        Date and time patterns should use (?P<date>...) and (?P<time>...) if provided.
 
         Args:
             stream_name: Raw stream/channel name
             league: League code for team resolution
-            team1_pattern: Regex to extract first team (required)
-            team2_pattern: Regex to extract second team (required)
+            teams_pattern: Regex with (?P<team1>...) and (?P<team2>...) groups (required)
             date_pattern: Regex to extract game date (optional)
             time_pattern: Regex to extract game time (optional)
 
@@ -1016,37 +1014,35 @@ class TeamMatcher:
             'game_time': None
         }
 
-        def extract_with_pattern(pattern: str, name: str) -> tuple:
-            """Apply pattern and return (extracted_text, error_msg)"""
-            if not pattern:
-                return (None, None)
-            try:
-                match = re.search(pattern, stream_name, re.IGNORECASE)
-                if not match:
-                    return (None, f'{name} pattern did not match')
-                # Use first capture group if available, otherwise full match
-                if match.groups():
-                    return (match.group(1).strip(), None)
-                return (match.group(0).strip(), None)
-            except re.error as e:
-                return (None, f'Invalid {name} pattern: {e}')
-
-        # Extract team1 (required)
-        team1_text, err = extract_with_pattern(team1_pattern, 'team1')
-        if err:
-            result['reason'] = err
-            return result
-        if not team1_text:
-            result['reason'] = 'Team 1 pattern matched but captured empty text'
+        # Apply teams pattern
+        try:
+            teams_match = re.search(teams_pattern, stream_name, re.IGNORECASE)
+            if not teams_match:
+                result['reason'] = 'Teams pattern did not match stream name'
+                return result
+        except re.error as e:
+            result['reason'] = f'Invalid teams pattern: {e}'
             return result
 
-        # Extract team2 (required)
-        team2_text, err = extract_with_pattern(team2_pattern, 'team2')
-        if err:
-            result['reason'] = err
+        # Extract team1 and team2 from named groups
+        try:
+            team1_text = teams_match.group('team1')
+            if not team1_text or not team1_text.strip():
+                result['reason'] = 'team1 group matched but captured empty text'
+                return result
+            team1_text = team1_text.strip()
+        except IndexError:
+            result['reason'] = 'Pattern missing required (?P<team1>...) group'
             return result
-        if not team2_text:
-            result['reason'] = 'Team 2 pattern matched but captured empty text'
+
+        try:
+            team2_text = teams_match.group('team2')
+            if not team2_text or not team2_text.strip():
+                result['reason'] = 'team2 group matched but captured empty text'
+                return result
+            team2_text = team2_text.strip()
+        except IndexError:
+            result['reason'] = 'Pattern missing required (?P<team2>...) group'
             return result
 
         result['raw_away'] = team1_text
@@ -1054,21 +1050,35 @@ class TeamMatcher:
 
         # Extract optional date
         if date_pattern:
-            date_text, err = extract_with_pattern(date_pattern, 'date')
-            if err:
-                result['reason'] = err
+            try:
+                date_match = re.search(date_pattern, stream_name, re.IGNORECASE)
+                if date_match:
+                    # Try named group first, then first capture group, then full match
+                    try:
+                        date_text = date_match.group('date')
+                    except IndexError:
+                        date_text = date_match.group(1) if date_match.groups() else date_match.group(0)
+                    if date_text:
+                        result['game_date'] = extract_date_from_text(date_text.strip())
+            except re.error as e:
+                result['reason'] = f'Invalid date pattern: {e}'
                 return result
-            if date_text:
-                result['game_date'] = extract_date_from_text(date_text)
 
         # Extract optional time
         if time_pattern:
-            time_text, err = extract_with_pattern(time_pattern, 'time')
-            if err:
-                result['reason'] = err
+            try:
+                time_match = re.search(time_pattern, stream_name, re.IGNORECASE)
+                if time_match:
+                    # Try named group first, then first capture group, then full match
+                    try:
+                        time_text = time_match.group('time')
+                    except IndexError:
+                        time_text = time_match.group(1) if time_match.groups() else time_match.group(0)
+                    if time_text:
+                        result['game_time'] = extract_time_from_text(time_text.strip())
+            except re.error as e:
+                result['reason'] = f'Invalid time pattern: {e}'
                 return result
-            if time_text:
-                result['game_time'] = extract_time_from_text(time_text)
 
         # Get teams for this league
         teams = self._get_teams_for_league(league)

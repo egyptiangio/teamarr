@@ -302,8 +302,9 @@ def run_migrations(conn):
             ("stream_profile_id", "INTEGER"),
             ("custom_regex", "TEXT"),
             ("custom_regex_enabled", "INTEGER DEFAULT 0"),
-            ("custom_regex_team1", "TEXT"),
-            ("custom_regex_team2", "TEXT"),
+            ("custom_regex_team1", "TEXT"),  # Deprecated - use custom_regex_teams
+            ("custom_regex_team2", "TEXT"),  # Deprecated - use custom_regex_teams
+            ("custom_regex_teams", "TEXT"),  # Combined pattern with (?P<team1>...) and (?P<team2>...)
             ("custom_regex_date", "TEXT"),
             ("custom_regex_time", "TEXT"),
         ]
@@ -1054,8 +1055,7 @@ def create_event_epg_group(
     stream_profile_id: int = None,
     custom_regex: str = None,
     custom_regex_enabled: bool = False,
-    custom_regex_team1: str = None,
-    custom_regex_team2: str = None,
+    custom_regex_teams: str = None,
     custom_regex_date: str = None,
     custom_regex_time: str = None
 ) -> int:
@@ -1068,10 +1068,9 @@ def create_event_epg_group(
         channel_start: Starting channel number for auto-created channels
         channel_group_id: Dispatcharr channel group ID to assign created channels to
         stream_profile_id: Dispatcharr stream profile ID to assign to created channels
-        custom_regex: Legacy single regex pattern (deprecated, use separate fields)
+        custom_regex: Legacy single regex pattern (deprecated)
         custom_regex_enabled: Whether to use custom regex instead of built-in matching
-        custom_regex_team1: Regex pattern to extract first team name
-        custom_regex_team2: Regex pattern to extract second team name
+        custom_regex_teams: Combined regex with (?P<team1>...) and (?P<team2>...) groups
         custom_regex_date: Optional regex pattern to extract game date
         custom_regex_time: Optional regex pattern to extract game time
 
@@ -1091,8 +1090,8 @@ def create_event_epg_group(
              assigned_league, assigned_sport, enabled, refresh_interval_minutes,
              event_template_id, account_name, channel_start, channel_group_id,
              stream_profile_id, custom_regex, custom_regex_enabled,
-             custom_regex_team1, custom_regex_team2, custom_regex_date, custom_regex_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             custom_regex_teams, custom_regex_date, custom_regex_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
@@ -1101,7 +1100,7 @@ def create_event_epg_group(
                 event_template_id, account_name, channel_start,
                 channel_group_id, stream_profile_id, custom_regex,
                 1 if custom_regex_enabled else 0,
-                custom_regex_team1, custom_regex_team2, custom_regex_date, custom_regex_time
+                custom_regex_teams, custom_regex_date, custom_regex_time
             )
         )
         conn.commit()
