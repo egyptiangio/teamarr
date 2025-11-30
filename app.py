@@ -4892,8 +4892,8 @@ def api_channel_lifecycle_list():
                 # Get logo URL if logo_id is present
                 logo_id = channel.get('dispatcharr_logo_id')
                 if logo_id and dispatcharr_url:
-                    # Construct logo URL (Dispatcharr serves logos at /api/channels/logos/<id>/)
-                    channel['logo_url'] = f"{dispatcharr_url}/api/channels/logos/{logo_id}/"
+                    # Construct logo URL (Dispatcharr serves cached images at /api/channels/logos/<id>/cache/)
+                    channel['logo_url'] = f"{dispatcharr_url}/api/channels/logos/{logo_id}/cache/"
                 else:
                     channel['logo_url'] = None
 
