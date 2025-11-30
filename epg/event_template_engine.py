@@ -304,6 +304,15 @@ class EventTemplateEngine:
         odds = event.get('odds', {}) or {}
         variables['odds_spread'] = str(odds.get('spread', '')) if odds.get('spread') else ''
         variables['odds_over_under'] = str(odds.get('over_under', '')) if odds.get('over_under') else ''
+        variables['odds_provider'] = odds.get('provider', '') or ''
+        variables['odds_details'] = str(odds.get('spread', '')) if odds.get('spread') else ''  # Same as spread
+
+        # Moneyline - for event-based, use home as primary perspective
+        home_ml = odds.get('home_moneyline')
+        away_ml = odds.get('away_moneyline')
+        variables['odds_moneyline'] = str(home_ml) if home_ml else ''
+        variables['odds_opponent_moneyline'] = str(away_ml) if away_ml else ''
+        variables['odds_opponent_spread'] = ''  # Not available in current data extraction
 
         # =====================================================================
         # WEATHER (outdoor venues)
