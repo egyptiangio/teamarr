@@ -375,9 +375,11 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False):
         matched_streams = []
         filtered_outside_lookahead = 0
         filtered_final = 0
+        results = []
 
-        with ThreadPoolExecutor(max_workers=min(len(streams), 10)) as executor:
-            results = list(executor.map(match_single_stream, streams))
+        if streams:  # Only use ThreadPoolExecutor if there are streams to process
+            with ThreadPoolExecutor(max_workers=min(len(streams), 10)) as executor:
+                results = list(executor.map(match_single_stream, streams))
 
         # Process results
         for result in results:
@@ -3386,6 +3388,10 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
         """Generator function for SSE stream"""
         progress_queue = queue.Queue()
 
+        # Capture request args before entering thread (request context not available in thread)
+        limit = request.args.get('limit', 50, type=int)
+        league = request.args.get('league')
+
         def send_progress(status, message, **extra):
             """Send a progress update"""
             data = {'status': status, 'message': message}
@@ -3394,6 +3400,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
 
         def run_preview():
             """Run preview in background thread"""
+            nonlocal league  # Allow modification of league from outer scope
             try:
                 # Step 1: Check credentials
                 send_progress('progress', 'Connecting to Dispatcharr...', percent=5)
@@ -3401,9 +3408,6 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                 if not manager:
                     send_progress('error', 'Dispatcharr credentials not configured')
                     return
-
-                limit = request.args.get('limit', 50, type=int)
-                league = request.args.get('league')
 
                 # Step 2: Check if we need to refresh M3U
                 db_group = get_event_epg_group_by_dispatcharr_id(group_id)
