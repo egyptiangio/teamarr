@@ -614,12 +614,13 @@ class EPGOrchestrator:
             epg_start_datetime
         )
 
-        # Parse extended events (for context only - look back 30 days for last game info)
+        # Parse extended events (for context only - look 30 days back AND 30 days forward)
+        # This provides last_game info (past) and next_game info (future) for filler templates
         epg_tz = ZoneInfo(epg_timezone)
         context_cutoff = datetime.now(epg_tz) - timedelta(days=30)
         extended_events = self.espn.parse_schedule_events(
             extended_schedule_data,
-            days_ahead=30,
+            days_ahead=60,  # 30 days back + 30 days forward from context_cutoff
             cutoff_past_datetime=context_cutoff
         ) if extended_schedule_data else []
 
