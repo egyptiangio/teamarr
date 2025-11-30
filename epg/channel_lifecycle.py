@@ -145,8 +145,9 @@ def should_create_channel(
 
     Args:
         event: ESPN event data with 'date' field
-        create_timing: One of 'stream_available', 'same_day', 'day_before', '2_days_before', 'manual'
-        timezone: Timezone for date comparison
+        create_timing: One of 'stream_available', 'same_day', 'day_before', '2_days_before',
+                      '3_days_before', '1_week_before', 'manual'
+        timezone: Timezone for date comparison (user's local timezone)
         delete_timing: Optional delete timing to check if we're past the delete threshold
         sport: Sport type for duration calculation (needed for delete time check)
         settings: Optional settings dict with game_duration_{sport} values
@@ -207,6 +208,10 @@ def should_create_channel(
             threshold_date = event_date - timedelta(days=1)
         elif create_timing == '2_days_before':
             threshold_date = event_date - timedelta(days=2)
+        elif create_timing == '3_days_before':
+            threshold_date = event_date - timedelta(days=3)
+        elif create_timing == '1_week_before':
+            threshold_date = event_date - timedelta(days=7)
         else:
             # Default to same day
             threshold_date = event_date
@@ -309,14 +314,15 @@ def calculate_delete_time(
 
     Args:
         event: ESPN event data with 'date' field
-        delete_timing: One of 'stream_removed', 'same_day', 'day_after', '2_days_after', 'manual'
-        timezone: Timezone for date calculation
+        delete_timing: One of 'stream_removed', 'same_day', 'day_after', '2_days_after',
+                      '3_days_after', '1_week_after', 'manual'
+        timezone: Timezone for date calculation (user's local timezone)
         sport: Sport type for duration calculation (e.g., 'basketball', 'football')
         settings: Optional settings dict with game_duration_{sport} values
         template: Optional template dict with game_duration_mode and game_duration_override
 
     Returns:
-        Datetime when channel should be deleted (at 23:59), or None for 'manual'/'stream_removed'
+        Datetime when channel should be deleted (at 23:59 local time), or None for 'manual'/'stream_removed'
     """
     # Normalize legacy values
     delete_timing = normalize_delete_timing(delete_timing)
@@ -357,6 +363,12 @@ def calculate_delete_time(
         elif delete_timing == '2_days_after':
             # Delete at end of 2 days after the event ends
             delete_date = event_end_date + timedelta(days=2)
+        elif delete_timing == '3_days_after':
+            # Delete at end of 3 days after the event ends
+            delete_date = event_end_date + timedelta(days=3)
+        elif delete_timing == '1_week_after':
+            # Delete at end of 1 week after the event ends
+            delete_date = event_end_date + timedelta(days=7)
         else:
             return None
 
@@ -858,14 +870,14 @@ class ChannelLifecycleManager:
             'logo_updated': []
         }
 
-        # Get lifecycle settings from group, falling back to global settings
+        # Get lifecycle settings - always use global settings (no per-group overrides)
         global_settings = get_global_lifecycle_settings()
         channel_start = group.get('channel_start')
         channel_group_id = group.get('channel_group_id')  # Dispatcharr channel group
         stream_profile_id = group.get('stream_profile_id')  # Dispatcharr stream profile
         channel_profile_id = group.get('channel_profile_id')  # Dispatcharr channel profile
-        create_timing = group.get('channel_create_timing') or global_settings['channel_create_timing']
-        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
+        create_timing = global_settings['channel_create_timing']
+        delete_timing = global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         # Auto-assign channel_start if not set (using get_next_channel_number triggers auto-assign)
@@ -1089,9 +1101,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        # Get delete timing from group or global settings
+        # Get delete timing - always use global settings (no per-group overrides)
         global_settings = get_global_lifecycle_settings()
-        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
+        delete_timing = global_settings['channel_delete_timing']
         if delete_timing != 'stream_removed':
             return results
 
@@ -1248,9 +1260,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        # Get delete timing from group or global settings
+        # Get delete timing - always use global settings (no per-group overrides)
         global_settings = get_global_lifecycle_settings()
-        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
+        delete_timing = global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         # Get template for duration calculation
@@ -1335,9 +1347,9 @@ class ChannelLifecycleManager:
             'errors': []
         }
 
-        # Get delete timing from group or global settings
+        # Get delete timing - always use global settings (no per-group overrides)
         global_settings = get_global_lifecycle_settings()
-        delete_timing = group.get('channel_delete_timing') or global_settings['channel_delete_timing']
+        delete_timing = global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
 
         # Get template for duration calculation

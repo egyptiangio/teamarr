@@ -65,12 +65,7 @@
                     <div class="form-group">
                         <label for="assigned_sport">Sport <span class="required">*</span></label>
                         <select id="assigned_sport" name="assigned_sport" class="form-control" onchange="updateLeagueOptions()" required>
-                            <option value="">Select sport...</option>
-                            <option value="football">Football</option>
-                            <option value="basketball">Basketball</option>
-                            <option value="baseball">Baseball</option>
-                            <option value="hockey">Hockey</option>
-                            <option value="soccer">Soccer</option>
+                            <option value="">Loading sports...</option>
                         </select>
                     </div>
 
@@ -282,7 +277,7 @@ let channelProfiles = [];
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async function() {
-    await Promise.all([loadChannelGroups(), loadStreamProfiles(), loadChannelProfiles()]);
+    await Promise.all([loadLeagues(), loadChannelGroups(), loadStreamProfiles(), loadChannelProfiles()]);
     {% if mode == 'edit' and group.channel_group_id %}
     document.getElementById('channel_group_id').value = '{{ group.channel_group_id }}';
     {% endif %}
@@ -294,36 +289,45 @@ document.addEventListener('DOMContentLoaded', async function() {
     {% endif %}
 });
 
-// League options by sport
-const leaguesBySport = {
-    'football': [
-        { value: 'nfl', label: 'NFL' },
-        { value: 'ncaaf', label: 'NCAA Football (FBS)' },
-        { value: 'xfl', label: 'XFL' },
-        { value: 'cfl', label: 'CFL' }
-    ],
-    'basketball': [
-        { value: 'nba', label: 'NBA' },
-        { value: 'wnba', label: 'WNBA' },
-        { value: 'ncaam', label: 'NCAA Men\'s Basketball' },
-        { value: 'ncaaw', label: 'NCAA Women\'s Basketball' }
-    ],
-    'baseball': [
-        { value: 'mlb', label: 'MLB' }
-    ],
-    'hockey': [
-        { value: 'nhl', label: 'NHL' }
-    ],
-    'soccer': [
-        { value: 'epl', label: 'English Premier League' },
-        { value: 'mls', label: 'MLS' },
-        { value: 'liga', label: 'La Liga' },
-        { value: 'bundesliga', label: 'Bundesliga' },
-        { value: 'seriea', label: 'Serie A' },
-        { value: 'ligue1', label: 'Ligue 1' },
-        { value: 'ucl', label: 'UEFA Champions League' }
-    ]
-};
+// League options loaded from database
+let leaguesBySport = {};
+
+async function loadLeagues() {
+    try {
+        const response = await fetch('/api/leagues');
+        const data = await response.json();
+
+        if (data.leagues) {
+            // Group leagues by sport
+            leaguesBySport = {};
+            data.leagues.forEach(league => {
+                if (!leaguesBySport[league.sport]) {
+                    leaguesBySport[league.sport] = [];
+                }
+                leaguesBySport[league.sport].push({
+                    value: league.code,
+                    label: league.name
+                });
+            });
+
+            // Update sport dropdown with available sports
+            const sportSelect = document.getElementById('assigned_sport');
+            if (sportSelect) {
+                const currentValue = sportSelect.value;
+                sportSelect.innerHTML = '<option value="">Select sport...</option>';
+                Object.keys(leaguesBySport).sort().forEach(sport => {
+                    const option = document.createElement('option');
+                    option.value = sport;
+                    option.textContent = sport.charAt(0).toUpperCase() + sport.slice(1);
+                    sportSelect.appendChild(option);
+                });
+                if (currentValue) sportSelect.value = currentValue;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading leagues:', error);
+    }
+}
 
 function updateLeagueOptions() {
     const sport = document.getElementById('assigned_sport').value;

@@ -15,7 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Convert Flask flash messages to notifications
     convertFlashMessages();
 
-    // Save visible notifications when navigating away
+    // Check for in-progress EPG generation and resume polling if needed
+    checkForInProgressGeneration();
+
+    // Save regular notifications when navigating away (for persistence)
     window.addEventListener('beforeunload', saveVisibleNotifications);
 });
 
@@ -207,7 +210,12 @@ function convertFlashMessages() {
     flashMessages.style.display = 'none';
 }
 
-// EPG Generation with Progress Tracking
+// EPG Generation with Polling-based Progress Tracking
+// Uses polling instead of SSE so progress persists across page navigation
+
+let generationPollingInterval = null;
+let generationProgressNotification = null;
+
 function generateEPGWithProgress(buttonId = 'generate-epg-btn', returnTo = null) {
     const btn = document.getElementById(buttonId);
     if (!btn) {
@@ -220,79 +228,126 @@ function generateEPGWithProgress(buttonId = 'generate-epg-btn', returnTo = null)
     btn.disabled = true;
     btn.textContent = '⏳ Generating...';
 
-    // Create persistent notification for progress
-    let progressNotification = showNotification('Initializing EPG generation...', 'info', 0, 'Generating EPG');
+    // Create progress notification
+    generationProgressNotification = showNotification('Initializing EPG generation...', 'info', 0, 'Generating EPG');
 
-    // Listen to Server-Sent Events stream
-    const eventSource = new EventSource('/generate/stream');
+    // Start generation by hitting the SSE endpoint once (it starts the background thread)
+    // Then immediately switch to polling for updates
+    fetch('/generate/stream').then(() => {
+        // SSE connection opened, generation started
+        // Now close it and switch to polling
+    }).catch(() => {
+        // If fetch fails, that's okay - we'll poll anyway
+    });
 
-    eventSource.onmessage = function(event) {
-        const data = JSON.parse(event.data);
+    // Start polling for status updates (500ms interval)
+    startGenerationPolling(btn, originalText);
+}
 
-        if (data.status === 'starting') {
-            updateProgressNotification(progressNotification, data.message, 0, null);
-        }
-        else if (data.status === 'progress') {
-            // Team progress uses team_name, event groups use group_name
+function startGenerationPolling(btn = null, originalText = null) {
+    // Clear any existing polling
+    if (generationPollingInterval) {
+        clearInterval(generationPollingInterval);
+    }
+
+    generationPollingInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/api/generation/status');
+            const data = await response.json();
+
+            if (!data.in_progress) {
+                // Generation finished
+                stopGenerationPolling();
+
+                if (generationProgressNotification) {
+                    closeNotification(generationProgressNotification.querySelector('.notification-close'));
+                    generationProgressNotification = null;
+                }
+
+                // Check if it was success or error
+                if (data.status === 'complete') {
+                    showNotification(data.message || 'EPG generation complete!', 'success', 10000);
+                    // Reload page to show updated stats
+                    setTimeout(() => window.location.reload(), 2000);
+                } else if (data.status === 'error') {
+                    showNotification('Error: ' + (data.message || 'Unknown error'), 'error', 10000);
+                }
+
+                // Re-enable button if we have a reference
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText || 'Generate EPG';
+                }
+                return;
+            }
+
+            // Update progress notification
+            if (!generationProgressNotification) {
+                generationProgressNotification = showNotification('Processing...', 'info', 0, 'Generating EPG');
+            }
+
+            // Build progress text
             let progressText;
-            const name = data.team_name || data.group_name;
-            if (name && data.current !== undefined && data.total !== undefined) {
-                progressText = `Processing ${name} (${data.current}/${data.total})`;
+            const extra = data.extra || {};
+            const name = extra.team_name || extra.group_name;
+            if (name && extra.current !== undefined && extra.total !== undefined) {
+                progressText = `Processing ${name} (${extra.current}/${extra.total})`;
             } else {
                 progressText = data.message || 'Processing...';
             }
-            updateProgressNotification(progressNotification, progressText, data.percent, name);
+
+            updateProgressNotification(generationProgressNotification, progressText, data.percent, name);
+
+        } catch (error) {
+            console.error('Polling error:', error);
+            // Don't stop polling on network errors - generation might still be running
         }
-        else if (data.status === 'finalizing') {
-            updateProgressNotification(progressNotification, data.message, 95, null);
+    }, 500); // Poll every 500ms
+}
+
+function stopGenerationPolling() {
+    if (generationPollingInterval) {
+        clearInterval(generationPollingInterval);
+        generationPollingInterval = null;
+    }
+}
+
+async function checkForInProgressGeneration() {
+    try {
+        const response = await fetch('/api/generation/status');
+        const data = await response.json();
+
+        if (data.in_progress) {
+            // Generation is in progress - show notification and start polling
+            console.log('Resuming in-progress generation tracking');
+
+            // Build initial progress text
+            let progressText;
+            const extra = data.extra || {};
+            const name = extra.team_name || extra.group_name;
+            if (name && extra.current !== undefined && extra.total !== undefined) {
+                progressText = `Processing ${name} (${extra.current}/${extra.total})`;
+            } else {
+                progressText = data.message || 'Processing...';
+            }
+
+            // Create progress notification
+            generationProgressNotification = showNotification(progressText, 'info', 0, 'Generating EPG');
+            updateProgressNotification(generationProgressNotification, progressText, data.percent, name);
+
+            // Disable generate button if it exists
+            const btn = document.getElementById('generate-epg-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Generating...';
+            }
+
+            // Start polling
+            startGenerationPolling(btn, btn ? (btn.dataset.originalText || 'Generate EPG') : null);
         }
-        else if (data.status === 'complete') {
-            // Close SSE connection
-            eventSource.close();
-
-            // Close progress notification
-            closeNotification(progressNotification.querySelector('.notification-close'));
-
-            // Show success notification
-            showNotification(data.message, 'success', 10000);
-
-            // Re-enable button
-            btn.disabled = false;
-            btn.textContent = originalText;
-
-            // Reload page to show updated stats
-            setTimeout(() => window.location.reload(), 2000);
-        }
-        else if (data.status === 'error') {
-            // Close SSE connection
-            eventSource.close();
-
-            // Close progress notification
-            closeNotification(progressNotification.querySelector('.notification-close'));
-
-            // Show error notification
-            showNotification('Error: ' + data.message, 'error', 10000);
-
-            // Re-enable button
-            btn.disabled = false;
-            btn.textContent = originalText;
-        }
-    };
-
-    eventSource.onerror = function(error) {
-        console.error('SSE Error:', error);
-        eventSource.close();
-
-        // Close progress notification
-        closeNotification(progressNotification.querySelector('.notification-close'));
-
-        // Show error
-        showNotification('Connection error during EPG generation', 'error', 10000);
-
-        // Re-enable button
-        btn.disabled = false;
-        btn.textContent = originalText;
-    };
+    } catch (error) {
+        console.error('Error checking generation status:', error);
+    }
 }
 
 function updateProgressNotification(notification, message, percent, teamName) {

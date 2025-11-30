@@ -40,6 +40,16 @@ from config import VERSION
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Global generation status for polling-based progress notifications
+# This allows progress to persist across page navigation
+generation_status = {
+    'in_progress': False,
+    'status': 'idle',
+    'message': '',
+    'percent': 0,
+    'extra': {}  # For team_name, group_name, current, total, etc.
+}
+
 # Setup logging system
 log_level = os.environ.get('LOG_LEVEL', 'DEBUG').upper()
 setup_logging(app, log_level)
@@ -2058,13 +2068,24 @@ def generate_epg_stream():
 
     This is the PRIMARY endpoint for EPG generation from the UI.
     Uses generate_all_epg() as the single source of truth for all EPG logic.
+
+    Also updates global generation_status for polling-based clients.
     """
     import threading
     import queue
 
+    global generation_status
+
     def generate():
         """Generator function for SSE stream"""
         progress_queue = queue.Queue()
+
+        def update_global_status(status, message, percent=None, **extra):
+            """Update global status for polling clients"""
+            generation_status['status'] = status
+            generation_status['message'] = message
+            generation_status['percent'] = percent if percent is not None else generation_status['percent']
+            generation_status['extra'] = extra
 
         def progress_callback(status, message, percent=None, **extra):
             """High-level progress callback - puts updates in queue for SSE"""
@@ -2076,18 +2097,23 @@ def generate_epg_stream():
                 data['percent'] = percent
             data.update(extra)
             progress_queue.put(data)
+            # Also update global status for polling
+            update_global_status(status, message, percent, **extra)
 
         def team_progress_callback(current, total, team_name, message):
             """Per-team progress callback - scales to 10-45% range"""
             base_percent = 10 + int((current / total) * 35) if total > 0 else 10
-            progress_queue.put({
+            data = {
                 'status': 'progress',
                 'current': current,
                 'total': total,
                 'team_name': team_name,
                 'message': message,
                 'percent': base_percent
-            })
+            }
+            progress_queue.put(data)
+            # Also update global status for polling
+            update_global_status('progress', message, base_percent, current=current, total=total, team_name=team_name)
 
         # Container for result from background thread
         result_container = {'result': None, 'done': False}
@@ -2103,9 +2129,18 @@ def generate_epg_stream():
             except Exception as e:
                 result_container['result'] = {'success': False, 'error': str(e)}
                 progress_queue.put({'status': 'error', 'message': str(e)})
+                update_global_status('error', str(e))
             finally:
                 result_container['done'] = True
+                generation_status['in_progress'] = False
                 progress_queue.put({'status': '_done'})
+
+        # Mark generation as in progress
+        generation_status['in_progress'] = True
+        generation_status['status'] = 'starting'
+        generation_status['message'] = 'Initializing EPG generation...'
+        generation_status['percent'] = 0
+        generation_status['extra'] = {}
 
         # Start generation thread
         generation_thread = threading.Thread(target=run_generation)
@@ -2132,6 +2167,21 @@ def generate_epg_stream():
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no'
     })
+
+
+@app.route('/api/generation/status')
+def get_generation_status():
+    """
+    Get current EPG generation status for polling-based progress.
+
+    Returns JSON with:
+    - in_progress: bool - whether generation is running
+    - status: str - current status (starting, progress, complete, error, idle)
+    - message: str - human-readable message
+    - percent: int - progress percentage (0-100)
+    - extra: dict - additional data (team_name, current, total, etc.)
+    """
+    return jsonify(generation_status)
 
 @app.route('/download')
 def download_epg():

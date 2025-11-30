@@ -422,6 +422,24 @@ def run_migrations(conn):
             pass
     conn.commit()
 
+    # =========================================================================
+    # 6. CLEAR PER-GROUP TIMING SETTINGS (now global-only)
+    # =========================================================================
+    # Per-group channel_create_timing and channel_delete_timing are no longer used.
+    # All groups now use the global settings. Clear stale per-group values.
+    try:
+        cursor.execute("""
+            UPDATE event_epg_groups
+            SET channel_create_timing = NULL, channel_delete_timing = NULL
+            WHERE channel_create_timing IS NOT NULL OR channel_delete_timing IS NOT NULL
+        """)
+        if cursor.rowcount > 0:
+            migrations_run += 1
+            print(f"  ✅ Cleared per-group timing settings from {cursor.rowcount} groups (now using global settings)")
+        conn.commit()
+    except Exception as e:
+        print(f"  ⚠️ Could not clear per-group timing settings: {e}")
+
     if migrations_run > 0:
         print(f"✅ Completed {migrations_run} migration(s)")
 
