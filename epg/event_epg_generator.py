@@ -109,7 +109,8 @@ class EventEPGGenerator:
         matched_streams: List[Dict],
         group_info: Dict,
         settings: Optional[Dict] = None,
-        template: Optional[Dict] = None
+        template: Optional[Dict] = None,
+        epg_start_datetime: Optional[datetime] = None
     ) -> str:
         """
         Generate XMLTV for matched streams.
@@ -119,6 +120,7 @@ class EventEPGGenerator:
             group_info: Event EPG group configuration
             settings: Optional settings dict
             template: Optional event template for customizing programme content
+            epg_start_datetime: Optional EPG start datetime (for filler spanning multiple days)
 
         Returns:
             XMLTV XML string
@@ -126,6 +128,23 @@ class EventEPGGenerator:
         import xml.etree.ElementTree as ET
 
         settings = settings or {}
+
+        # Get days_ahead from settings for calculating EPG end date
+        days_ahead = settings.get('epg_days_ahead', 14)
+
+        # Calculate EPG start datetime if not provided
+        epg_timezone = settings.get('default_timezone', 'America/Detroit')
+        try:
+            tz = ZoneInfo(epg_timezone)
+        except Exception:
+            tz = ZoneInfo('America/Detroit')
+
+        if epg_start_datetime is None:
+            # Default to now, rounded down to last hour
+            now = datetime.now(tz)
+            epg_start_datetime = now.replace(minute=0, second=0, microsecond=0)
+        elif epg_start_datetime.tzinfo is None:
+            epg_start_datetime = epg_start_datetime.replace(tzinfo=tz)
 
         # Create root element (no watermark - consolidator handles that)
         tv = ET.Element('tv')
@@ -144,16 +163,22 @@ class EventEPGGenerator:
                 self._add_channel(tv, stream, event, group_info, settings, template)
                 added_channels.add(channel_id)
 
-            # Add pregame filler if enabled in template (00:00 to event start)
+            # Add pregame filler if enabled in template (EPG start to event start)
             if template and template.get('pregame_enabled'):
-                self._add_pregame_programme(tv, stream, event, group_info, settings, template)
+                self._add_pregame_programmes(
+                    tv, stream, event, group_info, settings, template,
+                    epg_start_datetime, days_ahead
+                )
 
             # Add programme for the event
             self._add_programme(tv, stream, event, group_info, settings, template)
 
-            # Add postgame filler if enabled in template (event end to 23:59:59)
+            # Add postgame filler if enabled in template (event end to EPG end)
             if template and template.get('postgame_enabled'):
-                self._add_postgame_programme(tv, stream, event, group_info, settings, template)
+                self._add_postgame_programmes(
+                    tv, stream, event, group_info, settings, template,
+                    epg_start_datetime, days_ahead
+                )
 
         # Convert to pretty XML
         xml_str = self._xmltv._prettify(tv)
@@ -318,18 +343,34 @@ class EventEPGGenerator:
             logger.warning(f"Could not parse date '{date_str}': {e}")
             return None
 
-    def _add_pregame_programme(
+    def _add_pregame_programmes(
         self,
         parent,
         stream: Dict,
         event: Dict,
         group_info: Dict,
         settings: Dict,
-        template: Dict
+        template: Dict,
+        epg_start_datetime: datetime,
+        days_ahead: int
     ):
-        """Add pregame filler programme (00:00 to event start)."""
+        """
+        Add pregame filler programmes from EPG start to event start.
+
+        Creates daily filler programmes spanning from EPG start time to event start,
+        which can span multiple days if channel is created before game day.
+
+        Args:
+            parent: XML parent element
+            stream: Stream data
+            event: ESPN event data
+            group_info: Event EPG group config
+            settings: Settings dict
+            template: Event template
+            epg_start_datetime: When EPG starts (channel creation or EPG generation time)
+            days_ahead: Number of days in EPG window
+        """
         import xml.etree.ElementTree as ET
-        from zoneinfo import ZoneInfo
 
         # Parse event date
         event_date = self._parse_event_date(event.get('date'))
@@ -343,77 +384,69 @@ class EventEPGGenerator:
         except Exception:
             tz = ZoneInfo('America/Detroit')
 
-        # Convert event time to user's timezone
+        # Convert times to user's timezone
+        epg_start_local = epg_start_datetime.astimezone(tz)
         event_local = event_date.astimezone(tz)
 
-        # Calculate start of day (00:00) in user's timezone
-        day_start = event_local.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        # Don't generate pregame if event starts at midnight or day_start >= event_date
-        if day_start >= event_date:
+        # Don't generate pregame if EPG starts at or after event start
+        if epg_start_local >= event_local:
             return
 
-        # Format times for XMLTV (convert back to UTC for XMLTV format)
-        start_time = self._xmltv._format_xmltv_time(day_start)
-        stop_time = self._xmltv._format_xmltv_time(event_date)
-
-        programme = ET.SubElement(parent, 'programme')
-        programme.set('start', start_time)
-        programme.set('stop', stop_time)
-        programme.set('channel', self._get_channel_id(stream, event))
-
-        # Build template context for variable resolution
+        # Build template context for variable resolution (once, reused for all programmes)
         template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
 
-        # Title - use pregame_title from template
-        title = ET.SubElement(programme, 'title')
-        title.set('lang', 'en')
-        pregame_title = template.get('pregame_title', 'Pregame Coverage')
-        title.text = self._template_engine.resolve(pregame_title, template_ctx)
+        # Create daily filler programmes from EPG start to event start
+        current_start = epg_start_local
+        while current_start < event_local:
+            # Calculate end of this programme (midnight of next day, or event start if sooner)
+            next_midnight = (current_start + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            current_end = min(next_midnight, event_local)
 
-        # Sub-title - use pregame_subtitle from template
-        pregame_subtitle = template.get('pregame_subtitle', '')
-        if pregame_subtitle:
-            subtitle_text = self._template_engine.resolve(pregame_subtitle, template_ctx)
-            if subtitle_text:
-                sub_title = ET.SubElement(programme, 'sub-title')
-                sub_title.set('lang', 'en')
-                sub_title.text = subtitle_text
+            # Create the programme element
+            self._create_filler_programme(
+                parent=parent,
+                stream=stream,
+                event=event,
+                start_dt=current_start,
+                end_dt=current_end,
+                template=template,
+                template_ctx=template_ctx,
+                filler_type='pregame',
+                settings=settings
+            )
 
-        # Description - use pregame_description from template
-        pregame_desc = template.get('pregame_description', '')
-        if pregame_desc:
-            desc_text = self._template_engine.resolve(pregame_desc, template_ctx)
-            if desc_text:
-                desc = ET.SubElement(programme, 'desc')
-                desc.set('lang', 'en')
-                desc.text = desc_text
+            current_start = current_end
 
-        # Pregame art if available
-        if template.get('pregame_art_url'):
-            icon_url = self._template_engine.resolve(template['pregame_art_url'], template_ctx)
-            if icon_url:
-                icon = ET.SubElement(programme, 'icon')
-                icon.set('src', icon_url)
-
-        # Categories - respects categories_apply_to setting
-        self._add_categories(programme, template, template_ctx, is_filler=True)
-
-        # Teamarr metadata (invisible to EPG readers, used internally)
-        programme.append(ET.Comment("teamarr:event-filler-pregame"))
-
-    def _add_postgame_programme(
+    def _add_postgame_programmes(
         self,
         parent,
         stream: Dict,
         event: Dict,
         group_info: Dict,
         settings: Dict,
-        template: Dict
+        template: Dict,
+        epg_start_datetime: datetime,
+        days_ahead: int
     ):
-        """Add postgame filler programme (event end to 23:59:59)."""
+        """
+        Add postgame filler programmes from event end to EPG end.
+
+        Creates daily filler programmes spanning from event end to EPG window end,
+        which can span multiple days based on days_ahead setting.
+
+        Args:
+            parent: XML parent element
+            stream: Stream data
+            event: ESPN event data
+            group_info: Event EPG group config
+            settings: Settings dict
+            template: Event template
+            epg_start_datetime: When EPG starts
+            days_ahead: Number of days in EPG window
+        """
         import xml.etree.ElementTree as ET
-        from zoneinfo import ZoneInfo
 
         # Parse event date
         event_date = self._parse_event_date(event.get('date'))
@@ -431,55 +464,120 @@ class EventEPGGenerator:
         duration_hours = self._get_event_duration(group_info, settings, template)
         event_end = event_date + timedelta(hours=duration_hours)
 
-        # Convert event end to user's timezone
+        # Convert times to user's timezone
+        epg_start_local = epg_start_datetime.astimezone(tz)
         event_end_local = event_end.astimezone(tz)
 
-        # Calculate end of day (23:59:59) in user's timezone
-        day_end = event_end_local.replace(hour=23, minute=59, second=59, microsecond=0)
+        # Calculate EPG end datetime (midnight after the last day)
+        # EPG covers days_ahead days starting from epg_start_datetime's date
+        epg_start_date = epg_start_local.date()
+        epg_end_date = epg_start_date + timedelta(days=days_ahead)
+        epg_end_datetime = datetime.combine(epg_end_date, datetime.min.time()).replace(tzinfo=tz)
 
-        # Don't generate postgame if event ends at or after midnight
-        if event_end >= day_end:
+        # Don't generate postgame if event ends at or after EPG end
+        if event_end_local >= epg_end_datetime:
             return
 
+        # Build template context for variable resolution (once, reused for all programmes)
+        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+
+        # Create daily filler programmes from event end to EPG end
+        current_start = event_end_local
+        while current_start < epg_end_datetime:
+            # Calculate end of this programme (midnight of next day, or EPG end if sooner)
+            next_midnight = (current_start + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            current_end = min(next_midnight, epg_end_datetime)
+
+            # Create the programme element
+            self._create_filler_programme(
+                parent=parent,
+                stream=stream,
+                event=event,
+                start_dt=current_start,
+                end_dt=current_end,
+                template=template,
+                template_ctx=template_ctx,
+                filler_type='postgame',
+                settings=settings
+            )
+
+            current_start = current_end
+
+    def _create_filler_programme(
+        self,
+        parent,
+        stream: Dict,
+        event: Dict,
+        start_dt: datetime,
+        end_dt: datetime,
+        template: Dict,
+        template_ctx: Dict,
+        filler_type: str,
+        settings: Dict
+    ):
+        """
+        Create a single filler programme element.
+
+        Helper method used by _add_pregame_programmes and _add_postgame_programmes
+        to create individual daily filler programme elements.
+
+        Args:
+            parent: XML parent element
+            stream: Stream data
+            event: ESPN event data
+            start_dt: Programme start datetime (timezone-aware)
+            end_dt: Programme end datetime (timezone-aware)
+            template: Event template
+            template_ctx: Pre-built template context for variable resolution
+            filler_type: 'pregame' or 'postgame'
+            settings: Settings dict
+        """
+        import xml.etree.ElementTree as ET
+
         # Format times for XMLTV
-        start_time = self._xmltv._format_xmltv_time(event_end)
-        stop_time = self._xmltv._format_xmltv_time(day_end)
+        start_time = self._xmltv._format_xmltv_time(start_dt)
+        stop_time = self._xmltv._format_xmltv_time(end_dt)
 
         programme = ET.SubElement(parent, 'programme')
         programme.set('start', start_time)
         programme.set('stop', stop_time)
         programme.set('channel', self._get_channel_id(stream, event))
 
-        # Build template context for variable resolution
-        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
-
-        # Title - use postgame_title from template
+        # Title - use {filler_type}_title from template
         title = ET.SubElement(programme, 'title')
         title.set('lang', 'en')
-        postgame_title = template.get('postgame_title', 'Postgame Recap')
-        title.text = self._template_engine.resolve(postgame_title, template_ctx)
+        title_template = template.get(f'{filler_type}_title', f'{filler_type.capitalize()} Coverage')
+        title.text = self._template_engine.resolve(title_template, template_ctx)
 
-        # Sub-title - use postgame_subtitle from template
-        postgame_subtitle = template.get('postgame_subtitle', '')
-        if postgame_subtitle:
-            subtitle_text = self._template_engine.resolve(postgame_subtitle, template_ctx)
+        # Sub-title - use {filler_type}_subtitle from template
+        subtitle_template = template.get(f'{filler_type}_subtitle', '')
+        if subtitle_template:
+            subtitle_text = self._template_engine.resolve(subtitle_template, template_ctx)
             if subtitle_text:
                 sub_title = ET.SubElement(programme, 'sub-title')
                 sub_title.set('lang', 'en')
                 sub_title.text = subtitle_text
 
-        # Description - supports conditional logic based on game final status
-        postgame_desc = self._get_postgame_description(template, event)
-        if postgame_desc:
-            desc_text = self._template_engine.resolve(postgame_desc, template_ctx)
+        # Description - use {filler_type}_description from template
+        # Postgame supports conditional logic based on game final status
+        if filler_type == 'postgame':
+            desc_template = self._get_postgame_description(template, event)
+        else:
+            desc_template = template.get(f'{filler_type}_description', '')
+
+        if desc_template:
+            desc_text = self._template_engine.resolve(desc_template, template_ctx)
             if desc_text and desc_text.strip():
                 desc = ET.SubElement(programme, 'desc')
                 desc.set('lang', 'en')
                 desc.text = desc_text
 
-        # Postgame art if available
-        if template.get('postgame_art_url'):
-            icon_url = self._template_engine.resolve(template['postgame_art_url'], template_ctx)
+        # Art URL if available
+        art_url_key = f'{filler_type}_art_url'
+        if template.get(art_url_key):
+            icon_url = self._template_engine.resolve(template[art_url_key], template_ctx)
             if icon_url:
                 icon = ET.SubElement(programme, 'icon')
                 icon.set('src', icon_url)
@@ -488,7 +586,7 @@ class EventEPGGenerator:
         self._add_categories(programme, template, template_ctx, is_filler=True)
 
         # Teamarr metadata (invisible to EPG readers, used internally)
-        programme.append(ET.Comment("teamarr:event-filler-postgame"))
+        programme.append(ET.Comment(f"teamarr:event-filler-{filler_type}"))
 
     def _add_categories(
         self,
@@ -674,7 +772,8 @@ def generate_event_epg(
     save: bool = True,
     data_dir: str = None,
     settings: Dict = None,
-    template: Dict = None
+    template: Dict = None,
+    epg_start_datetime: Optional[datetime] = None
 ) -> Dict[str, Any]:
     """
     Convenience function to generate event EPG.
@@ -686,6 +785,7 @@ def generate_event_epg(
         data_dir: Directory to save file
         settings: Optional settings dict (for timezone, etc.)
         template: Optional event template for customizing programme content
+        epg_start_datetime: Optional EPG start datetime (for filler spanning multiple days)
 
     Returns:
         Dict with:
@@ -705,7 +805,8 @@ def generate_event_epg(
             matched_streams,
             group_info,
             settings=settings,
-            template=template
+            template=template,
+            epg_start_datetime=epg_start_datetime
         )
 
         # Count programmes by type

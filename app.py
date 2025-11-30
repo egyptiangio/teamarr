@@ -220,7 +220,7 @@ def inject_globals():
 # CORE EPG GENERATION FUNCTIONS
 # =============================================================================
 
-def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False):
+def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_start_datetime=None):
     """
     Core function to refresh a single event EPG group.
 
@@ -231,6 +231,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False):
         group: The event EPG group dict from database
         m3u_manager: M3UAccountManager instance
         skip_m3u_refresh: If True, skip M3U refresh (use when already refreshed in batch)
+        epg_start_datetime: Optional datetime for EPG start (for multi-day filler)
 
     Returns:
         dict with keys: success, stream_count, matched_count, matched_streams,
@@ -508,7 +509,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False):
                 save=True,
                 data_dir=get_data_dir(output_path),
                 settings=settings,
-                template=event_template
+                template=event_template,
+                epg_start_datetime=epg_start_datetime
             )
 
             if not epg_result.get('success'):
@@ -703,6 +705,13 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         epg_timezone = settings.get('default_timezone', 'America/Detroit')
         output_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
 
+        # Calculate EPG start datetime (used for event-based filler spanning multiple days)
+        try:
+            tz = ZoneInfo(epg_timezone)
+        except Exception:
+            tz = ZoneInfo('America/Detroit')
+        epg_start_datetime = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+
         report_progress('starting', 'Initializing EPG generation...', 0)
 
         # Clear caches and reset counters for fresh generation
@@ -814,7 +823,12 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                     """Process a single event group - called in parallel. Exact same logic."""
                     try:
                         # Skip M3U refresh since we did batch refresh above
-                        refresh_result = refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=True)
+                        # Pass epg_start_datetime for multi-day filler support
+                        refresh_result = refresh_event_group_core(
+                            group, m3u_manager,
+                            skip_m3u_refresh=True,
+                            epg_start_datetime=epg_start_datetime
+                        )
                         return (group, refresh_result, None)
                     except Exception as e:
                         app.logger.warning(f"Error refreshing event group '{group['group_name']}': {e}")
