@@ -645,11 +645,23 @@ def init_database():
 
     conn = get_connection()
     try:
+        # Check if this is an existing database (has tables already)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
+        is_existing_db = cursor.fetchone() is not None
+
+        if is_existing_db:
+            # Existing database: run migrations FIRST to add new columns
+            # This ensures columns exist before CREATE INDEX in schema.sql
+            run_migrations(conn)
+
+        # Run schema.sql (CREATE TABLE IF NOT EXISTS, indexes, etc.)
         conn.executescript(schema_sql)
         conn.commit()
 
-        # Run migrations for existing databases
-        run_migrations(conn)
+        if not is_existing_db:
+            # Fresh install: run migrations after (mostly no-ops, but ensures consistency)
+            run_migrations(conn)
 
         # Sync timezone from environment variable if set
         env_tz = os.environ.get('TZ')
