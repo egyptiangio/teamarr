@@ -874,10 +874,10 @@ class ESPNClient:
         Get ALL teams for a college league, organized by conference, with independents included.
 
         This is the recommended helper for college team imports. It:
-        1. Gets teams by conference via /groups (fast, single call)
-        2. Gets ALL teams via /teams?limit=500 (includes independents)
-        3. Identifies teams not in any conference and adds them to "Other Teams"
-        4. Returns a sorted list of conference dicts ready for UI display
+        - For basketball: Uses /groups endpoint (has conferences with teams)
+        - For football: Uses standings API (FBS conferences with teams)
+        - Adds any teams not in conferences to "Other Teams"
+        - Returns a sorted list of conference dicts ready for UI display
 
         Args:
             sport: Sport type (e.g., 'basketball', 'football')
@@ -898,52 +898,120 @@ class ESPNClient:
             return None
 
         try:
-            # Get teams organized by conference (single API call)
-            conferences_data = self.get_teams_by_conference_batch(sport, league)
-
-            # Get ALL teams (includes independents not in conferences)
-            all_teams = self.get_league_teams(sport, league)
-
-            if not all_teams:
-                return None
-
-            result = []
-
-            if conferences_data:
-                # Track which teams are in conferences
-                conf_team_ids = set()
-
-                # Add each conference with its teams (sorted alphabetically)
-                for conf_name in sorted(conferences_data.keys()):
-                    conf_teams = conferences_data[conf_name]
-                    for t in conf_teams:
-                        conf_team_ids.add(str(t.get('id')))
-
-                    result.append({
-                        'name': conf_name,
-                        'teams': sorted(conf_teams, key=lambda x: x.get('name', ''))
-                    })
-
-                # Find teams not in any conference (independents/transitioning)
-                other_teams = [t for t in all_teams if str(t.get('id')) not in conf_team_ids]
-                if other_teams:
-                    result.append({
-                        'name': '— Other Teams —',
-                        'teams': sorted(other_teams, key=lambda x: x.get('name', ''))
-                    })
-
-                total = sum(len(c['teams']) for c in result)
-                logger.info(f"get_all_teams_by_conference: {len(result)} conferences, {total} teams for {league}")
+            # College football uses standings API (FBS only, has full team data)
+            # College basketball uses /groups endpoint (has conferences with teams)
+            if league == 'college-football':
+                return self._get_football_teams_by_conference(sport, league)
             else:
-                # No conference data available - return flat list
-                result.append({
-                    'name': 'All Teams',
-                    'teams': sorted(all_teams, key=lambda x: x.get('name', ''))
-                })
-                logger.info(f"get_all_teams_by_conference: no conference data, {len(all_teams)} teams for {league}")
-
-            return result
+                return self._get_basketball_teams_by_conference(sport, league)
 
         except Exception as e:
             logger.error(f"Error in get_all_teams_by_conference for {league}: {e}")
             return None
+
+    def _get_football_teams_by_conference(self, sport: str, league: str) -> Optional[List[Dict]]:
+        """
+        Get FBS football teams organized by conference using standings API.
+
+        The /groups endpoint for football doesn't have conference-level data,
+        but the standings API provides FBS conferences with full team data.
+        """
+        standings_url = f"https://site.api.espn.com/apis/v2/sports/{sport}/{league}/standings"
+        logger.info(f"Fetching FBS teams by conference from standings API")
+
+        try:
+            standings_data = self._make_request(standings_url)
+            if not standings_data or 'children' not in standings_data:
+                logger.warning(f"No standings data found for {league}")
+                return None
+
+            result = []
+
+            for child in standings_data.get('children', []):
+                conf_name = child.get('name', 'Unknown')
+                entries = child.get('standings', {}).get('entries', [])
+
+                if not entries:
+                    continue
+
+                teams = []
+                for entry in entries:
+                    team_data = entry.get('team', {})
+                    teams.append({
+                        'id': team_data.get('id'),
+                        'slug': team_data.get('slug'),
+                        'name': team_data.get('displayName') or team_data.get('name'),
+                        'abbreviation': team_data.get('abbreviation'),
+                        'shortName': team_data.get('shortDisplayName'),
+                        'logo': team_data.get('logos', [{}])[0].get('href') if team_data.get('logos') else None,
+                        'color': team_data.get('color'),
+                        'alternateColor': team_data.get('alternateColor')
+                    })
+
+                if teams:
+                    result.append({
+                        'name': conf_name,
+                        'teams': sorted(teams, key=lambda x: x.get('name', ''))
+                    })
+
+            # Sort conferences alphabetically, but keep Independents at end
+            result.sort(key=lambda x: ('zzz' if 'independent' in x['name'].lower() else x['name'].lower()))
+
+            total = sum(len(c['teams']) for c in result)
+            logger.info(f"_get_football_teams_by_conference: {len(result)} conferences, {total} FBS teams")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching football teams by conference: {e}")
+            return None
+
+    def _get_basketball_teams_by_conference(self, sport: str, league: str) -> Optional[List[Dict]]:
+        """
+        Get basketball teams organized by conference using /groups endpoint.
+        Also includes independents not in any conference.
+        """
+        # Get teams organized by conference (single API call)
+        conferences_data = self.get_teams_by_conference_batch(sport, league)
+
+        # Get ALL teams (includes independents not in conferences)
+        all_teams = self.get_league_teams(sport, league)
+
+        if not all_teams:
+            return None
+
+        result = []
+
+        if conferences_data:
+            # Track which teams are in conferences
+            conf_team_ids = set()
+
+            # Add each conference with its teams (sorted alphabetically)
+            for conf_name in sorted(conferences_data.keys()):
+                conf_teams = conferences_data[conf_name]
+                for t in conf_teams:
+                    conf_team_ids.add(str(t.get('id')))
+
+                result.append({
+                    'name': conf_name,
+                    'teams': sorted(conf_teams, key=lambda x: x.get('name', ''))
+                })
+
+            # Find teams not in any conference (independents/transitioning)
+            other_teams = [t for t in all_teams if str(t.get('id')) not in conf_team_ids]
+            if other_teams:
+                result.append({
+                    'name': '— Other Teams —',
+                    'teams': sorted(other_teams, key=lambda x: x.get('name', ''))
+                })
+
+            total = sum(len(c['teams']) for c in result)
+            logger.info(f"_get_basketball_teams_by_conference: {len(result)} conferences, {total} teams for {league}")
+        else:
+            # No conference data available - return flat list
+            result.append({
+                'name': 'All Teams',
+                'teams': sorted(all_teams, key=lambda x: x.get('name', ''))
+            })
+            logger.info(f"_get_basketball_teams_by_conference: no conference data, {len(all_teams)} teams for {league}")
+
+        return result
