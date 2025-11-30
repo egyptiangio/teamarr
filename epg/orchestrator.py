@@ -192,11 +192,11 @@ class EPGOrchestrator:
                 logger.error(f"Error processing team {team_name}: {e}", exc_info=True)
                 return (team_id, [], str(e))
 
-        # Process all teams in parallel (max 30 workers) with progress updates
+        # Process all teams in parallel (max 50 workers) with progress updates
         if progress_callback:
             progress_callback(0, total_teams, "", f"Processing {total_teams} teams...")
 
-        with ThreadPoolExecutor(max_workers=min(len(teams_list), 30)) as executor:
+        with ThreadPoolExecutor(max_workers=min(len(teams_list), 50)) as executor:
             # Submit all tasks
             futures = {executor.submit(process_single_team, team): team for team in teams_list}
 

@@ -456,6 +456,9 @@ function generateEPGFromChannelsPage() {
     // Create persistent notification for progress
     let progressNotification = showNotification('Initializing EPG generation...', 'info', 0, 'Generating EPG');
 
+    // Prevent duplicate completion handling
+    let completed = false;
+
     // Listen to Server-Sent Events stream
     const eventSource = new EventSource('/generate/stream');
 
@@ -478,7 +481,8 @@ function generateEPGFromChannelsPage() {
         else if (data.status === 'finalizing') {
             updateProgressNotification(progressNotification, data.message, 95);
         }
-        else if (data.status === 'complete') {
+        else if (data.status === 'complete' && !completed) {
+            completed = true;
             eventSource.close();
             closeNotification(progressNotification.querySelector('.notification-close'));
             showNotification(data.message, 'success', 10000);
@@ -489,7 +493,8 @@ function generateEPGFromChannelsPage() {
             // Refresh channels list instead of reloading page
             loadChannels();
         }
-        else if (data.status === 'error') {
+        else if (data.status === 'error' && !completed) {
+            completed = true;
             eventSource.close();
             closeNotification(progressNotification.querySelector('.notification-close'));
             showNotification('Error: ' + data.message, 'error', 10000);
@@ -500,6 +505,8 @@ function generateEPGFromChannelsPage() {
     };
 
     eventSource.onerror = function(error) {
+        if (completed) return;
+        completed = true;
         console.error('SSE Error:', error);
         eventSource.close();
         closeNotification(progressNotification.querySelector('.notification-close'));

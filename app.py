@@ -378,7 +378,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False):
         results = []
 
         if streams:  # Only use ThreadPoolExecutor if there are streams to process
-            with ThreadPoolExecutor(max_workers=min(len(streams), 30)) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(streams), 50)) as executor:
                 results = list(executor.map(match_single_stream, streams))
 
         # Process results
@@ -822,7 +822,7 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
 
                 # Process all groups in parallel with progress updates as each completes
                 from concurrent.futures import ThreadPoolExecutor, as_completed
-                with ThreadPoolExecutor(max_workers=min(len(event_groups_with_templates), 30)) as executor:
+                with ThreadPoolExecutor(max_workers=min(len(event_groups_with_templates), 50)) as executor:
                     # Submit all tasks
                     futures = {executor.submit(process_single_group, g): g for g in event_groups_with_templates}
 
@@ -3531,7 +3531,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                     # Process streams in parallel (max 10 workers)
                     match_results = []
                     if streams:
-                        with ThreadPoolExecutor(max_workers=min(len(streams), 30)) as executor:
+                        with ThreadPoolExecutor(max_workers=min(len(streams), 50)) as executor:
                             match_results = list(executor.map(match_single_stream, streams))
 
                     # Process results
