@@ -2639,7 +2639,7 @@ def api_epg_stats_live():
         settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
         conn.close()
 
-        epg_path = settings.get('epg_output_path', './data/teamarr.xml')
+        epg_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
         user_tz_name = settings.get('default_timezone', 'America/Detroit')
         user_tz = ZoneInfo(user_tz_name)
         time_fmt, show_tz = get_time_settings(settings)
