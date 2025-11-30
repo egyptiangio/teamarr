@@ -72,6 +72,21 @@
                 <div class="tile tile-hoverable">
                     <div class="tile-value">{{ event_group_count }}</div>
                     <div class="tile-label">Groups</div>
+                    {% if event_groups_list %}
+                    <div class="tile-tooltip tile-tooltip-wide">
+                        <div class="tooltip-title">Event Groups</div>
+                        {% for group in event_groups_list %}
+                        <div class="tooltip-row">
+                            <span class="tooltip-name tooltip-name-truncate">{{ group.group_name }}</span>
+                            <span class="tooltip-value">{{ group.matched_count }}/{{ group.stream_count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="tile tile-hoverable">
+                    <div class="tile-value">{{ event_leagues | length }}</div>
+                    <div class="tile-label">Leagues</div>
                     {% if event_leagues %}
                     <div class="tile-tooltip">
                         <div class="tooltip-title">Leagues</div>
@@ -86,10 +101,6 @@
                         {% endfor %}
                     </div>
                     {% endif %}
-                </div>
-                <div class="tile">
-                    <div class="tile-value">{{ enabled_event_group_count }}</div>
-                    <div class="tile-label">Active</div>
                 </div>
                 <div class="tile">
                     <div class="tile-value">{{ total_event_streams }}</div>
@@ -185,10 +196,10 @@
                     <div class="tile-label">Groups</div>
                     {% if channel_groups_list %}
                     <div class="tile-tooltip tile-tooltip-wide">
-                        <div class="tooltip-title">Provider Groups</div>
+                        <div class="tooltip-title">Channel Groups</div>
                         {% for group in channel_groups_list %}
                         <div class="tooltip-row">
-                            <span class="tooltip-name tooltip-name-truncate">{{ group.group_name }}</span>
+                            <span class="tooltip-name tooltip-name-truncate">{{ group.channel_group_name }}</span>
                             <span class="tooltip-value">{{ group.channel_count }}</span>
                         </div>
                         {% endfor %}

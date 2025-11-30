@@ -633,6 +633,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     channel_create_timing TEXT DEFAULT 'same_day', -- When to create: stream_available, same_day, day_before, 2_days_before, manual
     channel_delete_timing TEXT DEFAULT 'same_day', -- When to delete: stream_removed, same_day, day_after, 2_days_after, manual
     channel_group_id INTEGER,                      -- Dispatcharr channel group to create channels in
+    channel_group_name TEXT,                       -- Dispatcharr channel group name (for UI display)
 
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated

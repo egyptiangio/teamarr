@@ -331,6 +331,7 @@ def run_migrations(conn):
             ("filtered_outside_lookahead", "INTEGER DEFAULT 0"),  # Date outside lookahead window
             ("filtered_final", "INTEGER DEFAULT 0"),  # Final events (when exclude setting on)
             # Note: stream_count is now "eligible" streams, matched_count already exists
+            ("channel_group_name", "TEXT"),  # Dispatcharr channel group name (for UI display)
         ]
         add_columns_if_missing("event_epg_groups", event_group_columns)
 
@@ -1094,6 +1095,7 @@ def create_event_epg_group(
     account_name: str = None,
     channel_start: int = None,
     channel_group_id: int = None,
+    channel_group_name: str = None,
     stream_profile_id: int = None,
     channel_profile_id: int = None,
     custom_regex: str = None,
@@ -1116,6 +1118,7 @@ def create_event_epg_group(
         account_name: Optional M3U account name for display purposes
         channel_start: Starting channel number for auto-created channels
         channel_group_id: Dispatcharr channel group ID to assign created channels to
+        channel_group_name: Dispatcharr channel group name (for UI display)
         stream_profile_id: Dispatcharr stream profile ID to assign to created channels
         channel_profile_id: Dispatcharr channel profile ID to add created channels to
         custom_regex: Legacy single regex pattern (deprecated)
@@ -1151,21 +1154,22 @@ def create_event_epg_group(
             (dispatcharr_group_id, dispatcharr_account_id, group_name,
              assigned_league, assigned_sport, enabled,
              event_template_id, account_name, channel_start, channel_group_id,
-             stream_profile_id, channel_profile_id, custom_regex, custom_regex_enabled,
+             channel_group_name, stream_profile_id, channel_profile_id,
+             custom_regex, custom_regex_enabled,
              custom_regex_teams, custom_regex_teams_enabled,
              custom_regex_date, custom_regex_date_enabled,
              custom_regex_time, custom_regex_time_enabled,
              stream_exclude_regex, stream_exclude_regex_enabled,
              skip_builtin_filter)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
                 assigned_league.lower(), assigned_sport.lower(),
                 1 if enabled else 0,
                 event_template_id, account_name, channel_start,
-                channel_group_id, stream_profile_id, channel_profile_id, custom_regex,
-                1 if custom_regex_enabled else 0,
+                channel_group_id, channel_group_name, stream_profile_id, channel_profile_id,
+                custom_regex, 1 if custom_regex_enabled else 0,
                 custom_regex_teams, 1 if custom_regex_teams_enabled else 0,
                 custom_regex_date, 1 if custom_regex_date_enabled else 0,
                 custom_regex_time, 1 if custom_regex_time_enabled else 0,

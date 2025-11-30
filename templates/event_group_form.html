@@ -714,6 +714,15 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
         }
     });
 
+    // Get channel_group_name from selected option text
+    const channelGroupSelect = document.getElementById('channel_group_id');
+    if (channelGroupSelect.value) {
+        const selectedOption = channelGroupSelect.options[channelGroupSelect.selectedIndex];
+        if (selectedOption) {
+            data.channel_group_name = selectedOption.textContent.trim();
+        }
+    }
+
     {% if mode == 'edit' %}
     const url = '/api/event-epg/groups/{{ group.id }}';
     const method = 'PATCH';

@@ -105,6 +105,83 @@ else:
     finally:
         conn.close()
 
+
+def populate_missing_channel_group_names():
+    """
+    One-time data fix: populate channel_group_name for existing event groups
+    by querying Dispatcharr API. Runs on startup if any groups have
+    channel_group_id but no channel_group_name.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        # Find groups with channel_group_id but no channel_group_name
+        groups_needing_names = cursor.execute("""
+            SELECT id, channel_group_id
+            FROM event_epg_groups
+            WHERE channel_group_id IS NOT NULL
+              AND (channel_group_name IS NULL OR channel_group_name = '')
+        """).fetchall()
+
+        if not groups_needing_names:
+            return 0
+
+        # Get Dispatcharr settings
+        settings = cursor.execute("""
+            SELECT dispatcharr_enabled, dispatcharr_url, dispatcharr_username, dispatcharr_password
+            FROM settings WHERE id = 1
+        """).fetchone()
+
+        if not settings or not settings['dispatcharr_enabled']:
+            return 0
+
+        # Initialize Dispatcharr client
+        from api.dispatcharr_client import ChannelManager
+        try:
+            channel_manager = ChannelManager(
+                base_url=settings['dispatcharr_url'],
+                username=settings['dispatcharr_username'],
+                password=settings['dispatcharr_password']
+            )
+            channel_groups = channel_manager.get_channel_groups(exclude_m3u=True)
+        except Exception as e:
+            app.logger.warning(f"Could not fetch channel groups from Dispatcharr: {e}")
+            return 0
+
+        # Build lookup by ID
+        group_name_map = {g['id']: g['name'] for g in channel_groups}
+
+        # Update each group
+        updated = 0
+        for row in groups_needing_names:
+            group_id = row['id']
+            channel_group_id = row['channel_group_id']
+            name = group_name_map.get(channel_group_id)
+            if name:
+                cursor.execute(
+                    "UPDATE event_epg_groups SET channel_group_name = ? WHERE id = ?",
+                    (name, group_id)
+                )
+                updated += 1
+
+        conn.commit()
+        return updated
+    except Exception as e:
+        app.logger.warning(f"Error populating channel group names: {e}")
+        return 0
+    finally:
+        conn.close()
+
+
+# Populate missing channel_group_names from Dispatcharr
+try:
+    populated = populate_missing_channel_group_names()
+    if populated > 0:
+        app.logger.info(f"✅ Populated {populated} missing channel group name(s) from Dispatcharr")
+except Exception as e:
+    app.logger.warning(f"Could not populate channel group names: {e}")
+
 # Initialize EPG components
 epg_orchestrator = EPGOrchestrator()
 xmltv_generator = XMLTVGenerator(
@@ -1079,7 +1156,7 @@ def index():
         ORDER BY team_count DESC, league_name
     """).fetchall()
 
-    # Get leagues with logos for Event Groups quadrant hover dropdown
+    # Get leagues with logos for Event Groups quadrant Leagues tile hover
     event_leagues = cursor.execute("""
         SELECT DISTINCT eg.assigned_league as league_code,
                COALESCE(lc.league_name, UPPER(eg.assigned_league)) as league_name,
@@ -1092,14 +1169,24 @@ def index():
         ORDER BY group_count DESC, league_name
     """).fetchall()
 
-    # Get M3U provider group names for Channels quadrant hover dropdown
+    # Get event groups for Event Groups quadrant Groups tile hover
+    event_groups_list = cursor.execute("""
+        SELECT eg.group_name,
+               COALESCE(eg.matched_count, 0) as matched_count,
+               COALESCE(eg.stream_count, 0) as stream_count
+        FROM event_epg_groups eg
+        WHERE eg.enabled = 1
+        ORDER BY eg.group_name
+    """).fetchall()
+
+    # Get Dispatcharr channel groups for Channels quadrant Groups tile hover
     channel_groups_list = cursor.execute("""
-        SELECT DISTINCT eg.group_name, COUNT(mc.id) as channel_count
+        SELECT DISTINCT eg.channel_group_name, COUNT(mc.id) as channel_count
         FROM managed_channels mc
         JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
-        WHERE mc.deleted_at IS NULL
-        GROUP BY eg.group_name
-        ORDER BY channel_count DESC, eg.group_name
+        WHERE mc.deleted_at IS NULL AND eg.channel_group_name IS NOT NULL
+        GROUP BY eg.channel_group_name
+        ORDER BY channel_count DESC, eg.channel_group_name
     """).fetchall()
 
     # Calculate match percentage (handle 0/0 case)
@@ -1188,6 +1275,7 @@ def index():
         # Hover dropdown data
         team_leagues=team_leagues,
         event_leagues=event_leagues,
+        event_groups_list=event_groups_list,
         channel_groups_list=channel_groups_list,
         match_percent=match_percent
     )
@@ -3431,6 +3519,7 @@ def api_event_epg_groups_create():
             account_name=data.get('account_name'),
             channel_start=data.get('channel_start'),
             channel_group_id=data.get('channel_group_id'),
+            channel_group_name=data.get('channel_group_name'),
             stream_profile_id=data.get('stream_profile_id'),
             channel_profile_id=data.get('channel_profile_id'),
             custom_regex=data.get('custom_regex'),
