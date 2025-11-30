@@ -594,6 +594,7 @@ def run_migrations(conn):
     # 7c. Add new columns to managed_channels
     managed_channels_v2_columns = [
         # Identity
+        ("dispatcharr_uuid", "TEXT UNIQUE"),  # Immutable UUID from Dispatcharr
         ("primary_stream_id", "INTEGER"),
         ("logo_url", "TEXT"),
 
@@ -1657,6 +1658,7 @@ def create_managed_channel(
     scheduled_delete_at: str = None,
     dispatcharr_logo_id: int = None,
     channel_profile_id: int = None,
+    dispatcharr_uuid: str = None,  # Immutable UUID from Dispatcharr
     # V2 fields
     primary_stream_id: int = None,
     channel_group_id: int = None,
@@ -1720,16 +1722,16 @@ def create_managed_channel(
             (event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
              channel_number, channel_name, tvg_id, espn_event_id, event_date,
              home_team, away_team, scheduled_delete_at, dispatcharr_logo_id,
-             channel_profile_id, primary_stream_id, channel_group_id, stream_profile_id,
+             channel_profile_id, dispatcharr_uuid, primary_stream_id, channel_group_id, stream_profile_id,
              logo_url, home_team_abbrev, home_team_logo, away_team_abbrev, away_team_logo,
              event_name, league, sport, venue, broadcast, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
                 channel_number, channel_name, tvg_id, espn_event_id, event_date,
                 home_team, away_team, scheduled_delete_at, dispatcharr_logo_id,
-                channel_profile_id, primary_stream_id, channel_group_id, stream_profile_id,
+                channel_profile_id, dispatcharr_uuid, primary_stream_id, channel_group_id, stream_profile_id,
                 logo_url, home_team_abbrev, home_team_logo, away_team_abbrev, away_team_logo,
                 event_name, league, sport, venue, broadcast, sync_status
             )

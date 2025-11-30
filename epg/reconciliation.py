@@ -31,6 +31,7 @@ class ReconciliationIssue:
     severity: str  # critical, warning, info
     managed_channel_id: int = None
     dispatcharr_channel_id: int = None
+    dispatcharr_uuid: str = None  # Immutable identifier from Dispatcharr
     channel_name: str = None
     espn_event_id: str = None
     details: Dict = field(default_factory=dict)
@@ -150,10 +151,13 @@ class ChannelReconciler:
         """
         Detect Teamarr records that have no corresponding Dispatcharr channel.
 
+        Uses UUID as authoritative identifier when available, with channel ID as fallback.
+        Also backfills UUIDs for channels that don't have them yet.
+
         These are channels that were created but may have been deleted externally,
         or where creation partially failed.
         """
-        from database import get_connection
+        from database import get_connection, update_managed_channel
 
         issues = []
 
@@ -177,6 +181,8 @@ class ChannelReconciler:
 
         for channel in channels:
             dispatcharr_id = channel.get('dispatcharr_channel_id')
+            stored_uuid = channel.get('dispatcharr_uuid')
+
             if not dispatcharr_id:
                 continue
 
@@ -194,11 +200,25 @@ class ChannelReconciler:
                     details={
                         'group_name': channel.get('group_name'),
                         'channel_number': channel.get('channel_number'),
-                        'tvg_id': channel.get('tvg_id')
+                        'tvg_id': channel.get('tvg_id'),
+                        'uuid': stored_uuid
                     },
                     suggested_action='mark_deleted',
                     auto_fixable=self.settings.get('auto_fix_orphan_teamarr', True)
                 ))
+            else:
+                # Channel exists - backfill UUID if we don't have it
+                if not stored_uuid and dispatcharr_channel.get('uuid'):
+                    try:
+                        update_managed_channel(channel['id'], {
+                            'dispatcharr_uuid': dispatcharr_channel['uuid']
+                        })
+                        logger.debug(
+                            f"Backfilled UUID for channel '{channel.get('channel_name')}': "
+                            f"{dispatcharr_channel['uuid']}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to backfill UUID for channel {channel['id']}: {e}")
 
         if issues:
             logger.info(f"Found {len(issues)} Teamarr orphan(s)")
@@ -209,6 +229,10 @@ class ChannelReconciler:
         """
         Detect Dispatcharr channels with teamarr-* tvg_id that aren't tracked.
 
+        Uses two identification methods:
+        1. UUID match (authoritative) - immutable identifier from Dispatcharr
+        2. tvg_id pattern match (fallback) - for channels created before UUID tracking
+
         These are channels that may have been created manually or where
         Teamarr's database record was lost.
         """
@@ -216,30 +240,39 @@ class ChannelReconciler:
 
         issues = []
 
-        # Get all channels from Dispatcharr with teamarr-* tvg_id pattern
-        all_channels = self.channel_api.list_channels()
-        teamarr_channels = [
-            ch for ch in all_channels
-            if ch.get('tvg_id', '').startswith('teamarr-event-')
-        ]
+        # Get all channels from Dispatcharr
+        all_channels = self.channel_api.get_channels()
 
-        if not teamarr_channels:
-            return issues
-
-        # Build set of known dispatcharr_channel_ids
+        # Build sets of known identifiers from our managed_channels
         conn = get_connection()
         try:
-            query = "SELECT dispatcharr_channel_id FROM managed_channels WHERE deleted_at IS NULL"
-            known_ids = {row[0] for row in conn.execute(query).fetchall()}
+            query = """
+                SELECT dispatcharr_channel_id, dispatcharr_uuid
+                FROM managed_channels WHERE deleted_at IS NULL
+            """
+            rows = conn.execute(query).fetchall()
+            known_channel_ids = {row[0] for row in rows if row[0]}
+            known_uuids = {row[1] for row in rows if row[1]}
         finally:
             conn.close()
 
-        for channel in teamarr_channels:
+        for channel in all_channels:
             channel_id = channel.get('id')
-            if channel_id not in known_ids:
-                # Extract event ID from tvg_id
-                tvg_id = channel.get('tvg_id', '')
-                event_id = tvg_id.replace('teamarr-event-', '') if tvg_id.startswith('teamarr-event-') else None
+            channel_uuid = channel.get('uuid')
+            tvg_id = channel.get('tvg_id', '')
+
+            # Check if this is a Teamarr channel (either by UUID or tvg_id pattern)
+            is_ours_by_uuid = channel_uuid and channel_uuid in known_uuids
+            is_ours_by_id = channel_id in known_channel_ids
+            has_teamarr_tvg_id = tvg_id.startswith('teamarr-event-')
+
+            # If we know this channel (by UUID or ID), it's not orphaned
+            if is_ours_by_uuid or is_ours_by_id:
+                continue
+
+            # If it has our tvg_id pattern but we don't have a record, it's orphaned
+            if has_teamarr_tvg_id:
+                event_id = tvg_id.replace('teamarr-event-', '')
 
                 issues.append(ReconciliationIssue(
                     issue_type='orphan_dispatcharr',
@@ -250,6 +283,7 @@ class ChannelReconciler:
                     details={
                         'channel_number': channel.get('channel_number'),
                         'tvg_id': tvg_id,
+                        'uuid': channel_uuid,
                         'streams': channel.get('streams', [])
                     },
                     suggested_action='delete_or_adopt',

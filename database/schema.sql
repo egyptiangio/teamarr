@@ -708,6 +708,7 @@ CREATE TABLE IF NOT EXISTS managed_channels (
     -- ========== IDENTITY ==========
     event_epg_group_id INTEGER NOT NULL REFERENCES event_epg_groups(id) ON DELETE CASCADE,
     dispatcharr_channel_id INTEGER NOT NULL UNIQUE,
+    dispatcharr_uuid TEXT UNIQUE,            -- Immutable UUID from Dispatcharr (authoritative identifier)
     espn_event_id TEXT NOT NULL,
     tvg_id TEXT NOT NULL,
     primary_stream_id INTEGER,               -- Stream that created this channel (for 'separate' mode)

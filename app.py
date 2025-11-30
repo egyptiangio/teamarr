@@ -5464,6 +5464,286 @@ def api_channel_streams(channel_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/channel-lifecycle/info/<int:channel_id>', methods=['GET'])
+def api_channel_info(channel_id):
+    """
+    Get comprehensive info for a managed channel.
+
+    Returns all channel details including:
+    - Identity (UUID, channel ID, tvg_id)
+    - Dispatcharr info (name, number, group, profile)
+    - Event details (ESPN event ID, teams, date, venue)
+    - Lifecycle info (created, modified, scheduled delete)
+    - Streams and history
+    """
+    try:
+        from database import (
+            get_managed_channel,
+            get_channel_streams,
+            get_channel_history,
+            get_event_epg_group,
+            get_connection
+        )
+
+        channel = get_managed_channel(channel_id)
+        if not channel:
+            return jsonify({'error': 'Channel not found'}), 404
+
+        # Get event group info
+        group = None
+        if channel.get('event_epg_group_id'):
+            group = get_event_epg_group(channel['event_epg_group_id'])
+
+        # Get streams and history
+        streams = get_channel_streams(channel_id, include_removed=False)
+        history = get_channel_history(channel_id, limit=50)
+
+        # Get Dispatcharr URL for logo
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT dispatcharr_url FROM settings WHERE id = 1").fetchone() or {})
+        conn.close()
+        dispatcharr_url = settings.get('dispatcharr_url', '').rstrip('/')
+
+        # Build comprehensive response
+        info = {
+            # Identity
+            'id': channel['id'],
+            'dispatcharr_channel_id': channel.get('dispatcharr_channel_id'),
+            'dispatcharr_uuid': channel.get('dispatcharr_uuid'),
+            'tvg_id': channel.get('tvg_id'),
+
+            # Display
+            'channel_name': channel.get('channel_name'),
+            'channel_number': channel.get('channel_number'),
+
+            # Group/Profile
+            'event_epg_group_id': channel.get('event_epg_group_id'),
+            'event_epg_group_name': group.get('group_name') if group else None,
+            'channel_group_id': channel.get('channel_group_id'),
+            'channel_profile_id': channel.get('channel_profile_id'),
+            'stream_profile_id': channel.get('stream_profile_id'),
+
+            # Event
+            'espn_event_id': channel.get('espn_event_id'),
+            'event_name': channel.get('event_name'),
+            'event_date': channel.get('event_date'),
+            'home_team': channel.get('home_team'),
+            'home_team_abbrev': channel.get('home_team_abbrev'),
+            'home_team_logo': channel.get('home_team_logo'),
+            'away_team': channel.get('away_team'),
+            'away_team_abbrev': channel.get('away_team_abbrev'),
+            'away_team_logo': channel.get('away_team_logo'),
+            'league': channel.get('league'),
+            'sport': channel.get('sport'),
+            'venue': channel.get('venue'),
+            'broadcast': channel.get('broadcast'),
+
+            # Lifecycle
+            'sync_status': channel.get('sync_status'),
+            'sync_message': channel.get('sync_message'),
+            'created_at': channel.get('created_at'),
+            'updated_at': channel.get('updated_at'),
+            'scheduled_delete_at': channel.get('scheduled_delete_at'),
+            'deleted_at': channel.get('deleted_at'),
+
+            # Logo
+            'dispatcharr_logo_id': channel.get('dispatcharr_logo_id'),
+            'logo_url': channel.get('logo_url'),
+            'logo_cache_url': f"{dispatcharr_url}/api/channels/logos/{channel.get('dispatcharr_logo_id')}/cache/" if channel.get('dispatcharr_logo_id') and dispatcharr_url else None,
+
+            # Streams
+            'primary_stream_id': channel.get('primary_stream_id'),
+            'streams': streams,
+            'stream_count': len(streams),
+
+            # History
+            'history': history,
+            'history_count': len(history)
+        }
+
+        return jsonify({
+            'success': True,
+            'channel': info
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting channel info: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/orphans', methods=['GET'])
+def api_find_orphan_channels():
+    """
+    Find orphaned channels in Dispatcharr.
+
+    Orphans are channels with teamarr-event-* tvg_id that don't match
+    any managed channel by UUID (or by channel ID as fallback).
+
+    Returns list of orphaned channels that can be deleted.
+    """
+    try:
+        from database import get_connection
+        from api.dispatcharr_client import ChannelManager
+
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+
+        # Get known UUIDs and channel IDs
+        rows = conn.execute("""
+            SELECT dispatcharr_channel_id, dispatcharr_uuid
+            FROM managed_channels WHERE deleted_at IS NULL
+        """).fetchall()
+        conn.close()
+
+        known_channel_ids = {row[0] for row in rows if row[0]}
+        known_uuids = {row[1] for row in rows if row[1]}
+
+        if not settings.get('dispatcharr_enabled'):
+            return jsonify({'error': 'Dispatcharr not configured'}), 400
+
+        # Get all channels from Dispatcharr
+        channel_api = ChannelManager(
+            settings['dispatcharr_url'],
+            settings['dispatcharr_username'],
+            settings['dispatcharr_password']
+        )
+        all_channels = channel_api.get_channels()
+
+        # Find orphans
+        orphans = []
+        for ch in all_channels:
+            tvg_id = ch.get('tvg_id', '')
+            if not tvg_id.startswith('teamarr-event-'):
+                continue
+
+            ch_id = ch.get('id')
+            ch_uuid = ch.get('uuid')
+
+            # Check if we know this channel
+            is_known_by_uuid = ch_uuid and ch_uuid in known_uuids
+            is_known_by_id = ch_id in known_channel_ids
+
+            if not is_known_by_uuid and not is_known_by_id:
+                # Extract event ID from tvg_id
+                event_id = tvg_id.replace('teamarr-event-', '')
+                orphans.append({
+                    'dispatcharr_channel_id': ch_id,
+                    'uuid': ch_uuid,
+                    'tvg_id': tvg_id,
+                    'channel_name': ch.get('name'),
+                    'channel_number': ch.get('channel_number'),
+                    'espn_event_id': event_id
+                })
+
+        return jsonify({
+            'success': True,
+            'orphan_count': len(orphans),
+            'orphans': orphans
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error finding orphan channels: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/orphans/cleanup', methods=['POST'])
+def api_cleanup_orphan_channels():
+    """
+    Delete orphaned channels from Dispatcharr.
+
+    JSON body:
+        channel_ids: List of Dispatcharr channel IDs to delete (optional, deletes all if not provided)
+
+    Uses UUID-based identification to ensure we only delete orphans.
+    """
+    try:
+        from database import get_connection
+        from api.dispatcharr_client import ChannelManager
+
+        data = request.get_json() or {}
+        channel_ids_to_delete = data.get('channel_ids')  # Optional filter
+
+        conn = get_connection()
+        settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+
+        # Get known UUIDs and channel IDs
+        rows = conn.execute("""
+            SELECT dispatcharr_channel_id, dispatcharr_uuid
+            FROM managed_channels WHERE deleted_at IS NULL
+        """).fetchall()
+        conn.close()
+
+        known_channel_ids = {row[0] for row in rows if row[0]}
+        known_uuids = {row[1] for row in rows if row[1]}
+
+        if not settings.get('dispatcharr_enabled'):
+            return jsonify({'error': 'Dispatcharr not configured'}), 400
+
+        channel_api = ChannelManager(
+            settings['dispatcharr_url'],
+            settings['dispatcharr_username'],
+            settings['dispatcharr_password']
+        )
+        all_channels = channel_api.get_channels()
+
+        # Find and delete orphans
+        deleted = []
+        errors = []
+
+        for ch in all_channels:
+            tvg_id = ch.get('tvg_id', '')
+            if not tvg_id.startswith('teamarr-event-'):
+                continue
+
+            ch_id = ch.get('id')
+            ch_uuid = ch.get('uuid')
+
+            # Skip if we know this channel
+            is_known_by_uuid = ch_uuid and ch_uuid in known_uuids
+            is_known_by_id = ch_id in known_channel_ids
+            if is_known_by_uuid or is_known_by_id:
+                continue
+
+            # Skip if not in filter list (when filter provided)
+            if channel_ids_to_delete is not None and ch_id not in channel_ids_to_delete:
+                continue
+
+            # Delete the orphan
+            try:
+                result = channel_api.delete_channel(ch_id)
+                if result.get('success'):
+                    deleted.append({
+                        'channel_id': ch_id,
+                        'channel_name': ch.get('name'),
+                        'tvg_id': tvg_id
+                    })
+                    app.logger.info(f"Deleted orphan channel: {ch.get('name')} ({tvg_id})")
+                else:
+                    errors.append({
+                        'channel_id': ch_id,
+                        'channel_name': ch.get('name'),
+                        'error': result.get('error', 'Unknown error')
+                    })
+            except Exception as e:
+                errors.append({
+                    'channel_id': ch_id,
+                    'channel_name': ch.get('name'),
+                    'error': str(e)
+                })
+
+        return jsonify({
+            'success': True,
+            'deleted_count': len(deleted),
+            'deleted': deleted,
+            'error_count': len(errors),
+            'errors': errors
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error cleaning up orphan channels: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/channel-lifecycle/scheduler', methods=['POST'])
 def api_channel_lifecycle_scheduler():
     """

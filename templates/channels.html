@@ -10,6 +10,9 @@
             <p class="page-subtitle">Channels created by Teamarr in Dispatcharr</p>
         </div>
         <div class="page-actions">
+            <button onclick="findOrphanChannels()" class="btn btn-secondary" id="btn-find-orphans" title="Find channels in Dispatcharr that aren't tracked">
+                🔍 Find Orphans
+            </button>
             <button onclick="refreshChannelsList()" class="btn btn-secondary" id="btn-refresh">
                 🔄 Refresh
             </button>
@@ -113,25 +116,248 @@
                 <span>Loading...</span>
             </div>
             <div id="channel-info-content" style="display: none;">
-                <!-- Streams Tab -->
-                <div class="info-section">
-                    <h3>Streams</h3>
+                <!-- Channel Summary Card -->
+                <div class="info-section info-summary">
+                    <div id="channel-summary-content"></div>
+                </div>
+
+                <!-- Collapsible Sections -->
+                <details class="info-details" open>
+                    <summary>Identity & Dispatcharr</summary>
+                    <div id="channel-identity-content" class="info-grid"></div>
+                </details>
+
+                <details class="info-details">
+                    <summary>Event Details</summary>
+                    <div id="channel-event-content" class="info-grid"></div>
+                </details>
+
+                <details class="info-details">
+                    <summary>Lifecycle</summary>
+                    <div id="channel-lifecycle-content" class="info-grid"></div>
+                </details>
+
+                <details class="info-details" open>
+                    <summary>Streams (<span id="stream-count">0</span>)</summary>
                     <div id="channel-streams-content">
                         <p class="text-muted">No streams</p>
                     </div>
-                </div>
+                </details>
 
-                <!-- History Tab -->
-                <div class="info-section">
-                    <h3>History</h3>
+                <details class="info-details">
+                    <summary>History (<span id="history-count">0</span>)</summary>
                     <div id="channel-history-content">
                         <p class="text-muted">No history</p>
                     </div>
-                </div>
+                </details>
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" onclick="closeChannelInfoModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.info-summary {
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.info-summary .summary-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+.info-summary .channel-logo {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.2);
+}
+.info-summary .channel-title {
+    flex: 1;
+}
+.info-summary .channel-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+.info-summary .channel-number {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+.info-summary .summary-badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.info-summary .summary-ids {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    font-family: monospace;
+}
+.info-summary .summary-ids code {
+    background: rgba(0,0,0,0.2);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+}
+.info-details {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.info-details summary {
+    padding: 0.75rem 1rem;
+    background: rgba(0,0,0,0.1);
+    cursor: pointer;
+    font-weight: 500;
+    user-select: none;
+}
+.info-details summary:hover {
+    background: rgba(0,0,0,0.15);
+}
+.info-details[open] summary {
+    border-bottom: 1px solid var(--border-color);
+}
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+}
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.info-item .label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.info-item .value {
+    font-size: 0.875rem;
+    word-break: break-word;
+}
+.info-item .value.mono {
+    font-family: monospace;
+    font-size: 0.8rem;
+}
+.info-item .value.empty {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+.badge-sync {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+.badge-sync.created { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+.badge-sync.in_sync { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+.badge-sync.drifted { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+.badge-sync.orphaned { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.badge-sync.error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+/* Orphan Modal Styles */
+.orphan-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.orphan-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    background: rgba(239, 68, 68, 0.05);
+}
+.orphan-info {
+    flex: 1;
+}
+.orphan-name {
+    font-weight: 500;
+}
+.orphan-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.25rem;
+}
+.orphan-meta code {
+    background: rgba(0,0,0,0.2);
+    padding: 0.125rem 0.25rem;
+    border-radius: 3px;
+}
+.orphan-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+.orphan-empty .icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+.orphan-summary {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.orphan-count {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #ef4444;
+}
+</style>
+
+<!-- Orphan Channels Modal -->
+<div id="orphan-modal" class="modal-overlay" onclick="closeOrphanModal(event)">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>Orphaned Channels</h2>
+            <button class="modal-close" onclick="closeOrphanModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="orphan-loading" class="loading-state">
+                <div class="spinner"></div>
+                <span>Scanning Dispatcharr...</span>
+            </div>
+            <div id="orphan-content" style="display: none;">
+                <p class="text-muted" style="margin-bottom: 1rem;">
+                    Orphan channels have <code>teamarr-event-*</code> tvg_id but aren't tracked in Teamarr's database.
+                    They may be from old EPG runs or failed cleanups.
+                </p>
+                <div id="orphan-summary" class="orphan-summary" style="display: none;">
+                    <div>
+                        <span class="orphan-count" id="orphan-count-display">0</span>
+                        <span> orphan channel(s) found</span>
+                    </div>
+                    <button onclick="cleanupAllOrphans()" class="btn btn-danger" id="btn-cleanup-all">
+                        🗑️ Delete All Orphans
+                    </button>
+                </div>
+                <div id="orphan-list" class="orphan-list"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeOrphanModal()">Close</button>
         </div>
     </div>
 </div>
@@ -388,8 +614,6 @@ async function showChannelInfo(channelId, channelName) {
     const titleEl = document.getElementById('channel-info-title');
     const loadingEl = document.getElementById('channel-info-loading');
     const contentEl = document.getElementById('channel-info-content');
-    const streamsEl = document.getElementById('channel-streams-content');
-    const historyEl = document.getElementById('channel-history-content');
 
     titleEl.textContent = channelName;
     loadingEl.style.display = 'flex';
@@ -397,19 +621,98 @@ async function showChannelInfo(channelId, channelName) {
     modal.classList.add('active');
 
     try {
-        // Fetch streams and history in parallel
-        const [streamsRes, historyRes] = await Promise.all([
-            fetch(`/api/channel-lifecycle/streams/${channelId}`),
-            fetch(`/api/channel-lifecycle/history/${channelId}`)
-        ]);
+        // Fetch comprehensive channel info
+        const response = await fetch(`/api/channel-lifecycle/info/${channelId}`);
+        const data = await response.json();
 
-        const streamsData = await streamsRes.json();
-        const historyData = await historyRes.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load channel info');
+        }
+
+        const ch = data.channel;
+
+        // Helper for rendering info items
+        const infoItem = (label, value, isMono = false) => {
+            const valueClass = value ? (isMono ? 'value mono' : 'value') : 'value empty';
+            const displayValue = value || '—';
+            return `<div class="info-item"><span class="label">${escapeHtml(label)}</span><span class="${valueClass}">${escapeHtml(String(displayValue))}</span></div>`;
+        };
+
+        // Render summary card
+        const summaryEl = document.getElementById('channel-summary-content');
+        const logoHtml = ch.logo_cache_url
+            ? `<img src="${ch.logo_cache_url}" class="channel-logo" onerror="this.style.display='none'">`
+            : '';
+        const syncClass = ch.sync_status || 'created';
+        summaryEl.innerHTML = `
+            <div class="summary-header">
+                ${logoHtml}
+                <div class="channel-title">
+                    <h3 class="channel-name">${escapeHtml(ch.channel_name || 'Channel')}</h3>
+                    <div class="channel-number">Channel ${ch.channel_number || '?'}</div>
+                </div>
+                <div class="summary-badges">
+                    <span class="badge-sync ${syncClass}">${escapeHtml((ch.sync_status || 'created').replace(/_/g, ' '))}</span>
+                    ${ch.league ? `<span class="badge badge-secondary">${escapeHtml(ch.league)}</span>` : ''}
+                </div>
+            </div>
+            <div class="summary-ids">
+                <span>ID: <code>${ch.dispatcharr_channel_id || '—'}</code></span>
+                <span>UUID: <code>${ch.dispatcharr_uuid || '—'}</code></span>
+                <span>TVG-ID: <code>${ch.tvg_id || '—'}</code></span>
+            </div>
+        `;
+
+        // Render Identity & Dispatcharr section
+        const identityEl = document.getElementById('channel-identity-content');
+        identityEl.innerHTML = `
+            ${infoItem('Teamarr ID', ch.id)}
+            ${infoItem('Dispatcharr ID', ch.dispatcharr_channel_id)}
+            ${infoItem('UUID', ch.dispatcharr_uuid, true)}
+            ${infoItem('TVG-ID', ch.tvg_id, true)}
+            ${infoItem('Event Group', ch.event_epg_group_name)}
+            ${infoItem('Channel Group ID', ch.channel_group_id)}
+            ${infoItem('Channel Profile ID', ch.channel_profile_id)}
+            ${infoItem('Stream Profile ID', ch.stream_profile_id)}
+            ${infoItem('Logo ID', ch.dispatcharr_logo_id)}
+        `;
+
+        // Render Event Details section
+        const eventEl = document.getElementById('channel-event-content');
+        eventEl.innerHTML = `
+            ${infoItem('ESPN Event ID', ch.espn_event_id, true)}
+            ${infoItem('Event Name', ch.event_name)}
+            ${infoItem('Event Date', ch.event_date ? formatChannelDateTime(ch.event_date) : null)}
+            ${infoItem('Home Team', ch.home_team)}
+            ${infoItem('Home Abbrev', ch.home_team_abbrev)}
+            ${infoItem('Away Team', ch.away_team)}
+            ${infoItem('Away Abbrev', ch.away_team_abbrev)}
+            ${infoItem('League', ch.league)}
+            ${infoItem('Sport', ch.sport)}
+            ${infoItem('Venue', ch.venue)}
+            ${infoItem('Broadcast', ch.broadcast)}
+        `;
+
+        // Render Lifecycle section
+        const lifecycleEl = document.getElementById('channel-lifecycle-content');
+        lifecycleEl.innerHTML = `
+            ${infoItem('Sync Status', ch.sync_status)}
+            ${infoItem('Sync Message', ch.sync_message)}
+            ${infoItem('Created', ch.created_at ? formatChannelDateTime(ch.created_at) : null)}
+            ${infoItem('Updated', ch.updated_at ? formatChannelDateTime(ch.updated_at) : null)}
+            ${infoItem('Scheduled Delete', ch.scheduled_delete_at ? formatChannelDateTime(ch.scheduled_delete_at) : null)}
+            ${infoItem('Deleted', ch.deleted_at ? formatChannelDateTime(ch.deleted_at) : null)}
+        `;
+
+        // Update counts
+        document.getElementById('stream-count').textContent = ch.stream_count || 0;
+        document.getElementById('history-count').textContent = ch.history_count || 0;
 
         // Render streams
-        if (streamsRes.ok && streamsData.streams && streamsData.streams.length > 0) {
+        const streamsEl = document.getElementById('channel-streams-content');
+        if (ch.streams && ch.streams.length > 0) {
             let streamsHtml = '<div class="streams-list">';
-            streamsData.streams.forEach(stream => {
+            ch.streams.forEach(stream => {
                 const addedAt = stream.added_at ? formatChannelDateTime(stream.added_at) : '—';
                 const sourceGroup = stream.source_group_name || '—';
                 const isPrimary = stream.is_primary ? ' <span class="badge badge-primary">Primary</span>' : '';
@@ -432,9 +735,10 @@ async function showChannelInfo(channelId, channelName) {
         }
 
         // Render history
-        if (historyRes.ok && historyData.history && historyData.history.length > 0) {
+        const historyEl = document.getElementById('channel-history-content');
+        if (ch.history && ch.history.length > 0) {
             let historyHtml = '<div class="history-list">';
-            historyData.history.forEach(entry => {
+            ch.history.forEach(entry => {
                 const changedAt = entry.changed_at ? formatChannelDateTime(entry.changed_at) : '—';
                 const changeType = entry.change_type || 'unknown';
                 const source = entry.change_source || '';
@@ -452,8 +756,11 @@ async function showChannelInfo(channelId, channelName) {
                     typeIcon = '➕';
                 } else if (changeType === 'stream_removed') {
                     typeIcon = '➖';
-                } else if (changeType === 'updated' || changeType === 'synced') {
+                } else if (changeType === 'updated' || changeType === 'synced' || changeType === 'modified') {
                     typeIcon = '🔄';
+                } else if (changeType === 'verified') {
+                    typeIcon = '✅';
+                    typeClass = 'text-success';
                 }
 
                 // Parse details JSON if present
@@ -479,6 +786,7 @@ async function showChannelInfo(channelId, channelName) {
                             <span class="${typeClass}">${typeIcon} ${escapeHtml(changeType.replace(/_/g, ' '))}</span>
                             <span class="history-time">${changedAt}</span>
                         </div>
+                        ${entry.notes ? `<div class="history-notes">${escapeHtml(entry.notes)}</div>` : ''}
                         ${source ? `<div class="history-source">Source: ${escapeHtml(source)}</div>` : ''}
                         ${detailsHtml}
                     </div>
@@ -496,14 +804,177 @@ async function showChannelInfo(channelId, channelName) {
     } catch (error) {
         loadingEl.style.display = 'none';
         contentEl.style.display = 'block';
-        streamsEl.innerHTML = `<p class="text-danger">Error loading data: ${escapeHtml(error.message)}</p>`;
-        historyEl.innerHTML = '';
+        document.getElementById('channel-summary-content').innerHTML = `<p class="text-danger">Error loading data: ${escapeHtml(error.message)}</p>`;
     }
 }
 
 function closeChannelInfoModal(event) {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('channel-info-modal').classList.remove('active');
+}
+
+// ============================================================================
+// Orphan Channel Cleanup
+// ============================================================================
+
+let currentOrphans = [];
+
+async function findOrphanChannels() {
+    const modal = document.getElementById('orphan-modal');
+    const loadingEl = document.getElementById('orphan-loading');
+    const contentEl = document.getElementById('orphan-content');
+    const summaryEl = document.getElementById('orphan-summary');
+    const listEl = document.getElementById('orphan-list');
+
+    loadingEl.style.display = 'flex';
+    contentEl.style.display = 'none';
+    modal.classList.add('active');
+
+    try {
+        const response = await fetch('/api/channel-lifecycle/orphans');
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to find orphans');
+        }
+
+        currentOrphans = data.orphans || [];
+        const orphanCount = currentOrphans.length;
+
+        document.getElementById('orphan-count-display').textContent = orphanCount;
+
+        if (orphanCount > 0) {
+            summaryEl.style.display = 'flex';
+            let listHtml = '';
+            currentOrphans.forEach(orphan => {
+                listHtml += `
+                    <div class="orphan-item" data-id="${orphan.dispatcharr_channel_id}">
+                        <div class="orphan-info">
+                            <div class="orphan-name">${escapeHtml(orphan.channel_name || 'Unknown')}</div>
+                            <div class="orphan-meta">
+                                <span>Ch ${orphan.channel_number || '?'}</span>
+                                <span>ID: <code>${orphan.dispatcharr_channel_id}</code></span>
+                                <span>TVG: <code>${escapeHtml(orphan.tvg_id || '—')}</code></span>
+                            </div>
+                        </div>
+                        <button onclick="deleteSingleOrphan(${orphan.dispatcharr_channel_id}, '${escapeHtml(orphan.channel_name || 'this channel')}')"
+                                class="btn btn-sm btn-danger">
+                            🗑️
+                        </button>
+                    </div>
+                `;
+            });
+            listEl.innerHTML = listHtml;
+        } else {
+            summaryEl.style.display = 'none';
+            listEl.innerHTML = `
+                <div class="orphan-empty">
+                    <div class="icon">✅</div>
+                    <p>No orphaned channels found</p>
+                    <p class="text-muted">All channels with teamarr-event-* tvg_id are properly tracked.</p>
+                </div>
+            `;
+        }
+
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+
+    } catch (error) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+        listEl.innerHTML = `<p class="text-danger">Error: ${escapeHtml(error.message)}</p>`;
+        document.getElementById('orphan-summary').style.display = 'none';
+    }
+}
+
+async function deleteSingleOrphan(channelId, channelName) {
+    if (!confirm(`Delete orphan channel "${channelName}"?`)) return;
+
+    try {
+        const response = await fetch('/api/channel-lifecycle/orphans/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel_ids: [channelId] })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.deleted_count > 0) {
+            showNotification(`Deleted orphan: ${channelName}`, 'success');
+            // Remove from list
+            const item = document.querySelector(`.orphan-item[data-id="${channelId}"]`);
+            if (item) item.remove();
+            // Update count
+            currentOrphans = currentOrphans.filter(o => o.dispatcharr_channel_id !== channelId);
+            document.getElementById('orphan-count-display').textContent = currentOrphans.length;
+            if (currentOrphans.length === 0) {
+                document.getElementById('orphan-summary').style.display = 'none';
+                document.getElementById('orphan-list').innerHTML = `
+                    <div class="orphan-empty">
+                        <div class="icon">✅</div>
+                        <p>All orphans cleaned up!</p>
+                    </div>
+                `;
+            }
+        } else {
+            showNotification(`Error: ${data.errors?.[0]?.error || 'Failed to delete'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+async function cleanupAllOrphans() {
+    const count = currentOrphans.length;
+    if (count === 0) return;
+
+    if (!confirm(`Delete all ${count} orphan channel(s)? This cannot be undone.`)) return;
+
+    const btn = document.getElementById('btn-cleanup-all');
+    btn.disabled = true;
+    btn.innerHTML = '🔄 Deleting...';
+
+    try {
+        const response = await fetch('/api/channel-lifecycle/orphans/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})  // Delete all
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            const deleted = data.deleted_count || 0;
+            const errors = data.error_count || 0;
+
+            if (errors > 0) {
+                showNotification(`Deleted ${deleted} orphan(s), ${errors} error(s)`, 'warning');
+            } else {
+                showNotification(`Deleted ${deleted} orphan channel(s)`, 'success');
+            }
+
+            // Refresh the list
+            currentOrphans = [];
+            document.getElementById('orphan-count-display').textContent = '0';
+            document.getElementById('orphan-summary').style.display = 'none';
+            document.getElementById('orphan-list').innerHTML = `
+                <div class="orphan-empty">
+                    <div class="icon">✅</div>
+                    <p>All orphans cleaned up!</p>
+                </div>
+            `;
+        } else {
+            showNotification(`Error: ${data.error || 'Failed to cleanup'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🗑️ Delete All Orphans';
+    }
+}
+
+function closeOrphanModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('orphan-modal').classList.remove('active');
 }
 
 // ============================================================================

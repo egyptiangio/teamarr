@@ -1142,6 +1142,7 @@ class ChannelLifecycleManager:
 
                 dispatcharr_channel = create_result['channel']
                 dispatcharr_channel_id = dispatcharr_channel['id']
+                dispatcharr_uuid = dispatcharr_channel.get('uuid')  # Immutable identifier
 
                 # Add to channel profile if configured
                 if channel_profile_id:
@@ -1202,6 +1203,7 @@ class ChannelLifecycleManager:
                     scheduled_delete_at=delete_at.isoformat() if delete_at else None,
                     dispatcharr_logo_id=logo_id,
                     channel_profile_id=channel_profile_id,
+                    dispatcharr_uuid=dispatcharr_uuid,
                     # V2 fields
                     primary_stream_id=stream['id'] if duplicate_mode == 'separate' else None,
                     channel_group_id=channel_group_id,
