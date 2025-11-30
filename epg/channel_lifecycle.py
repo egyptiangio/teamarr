@@ -44,13 +44,17 @@ def get_global_lifecycle_settings() -> Dict[str, str]:
     Get global channel lifecycle settings from the settings table.
 
     Returns:
-        Dict with channel_create_timing and channel_delete_timing
+        Dict with channel_create_timing, channel_delete_timing, default_duplicate_event_handling,
+        and reconciliation settings
     """
     try:
         from database import get_connection
         conn = get_connection()
         row = conn.execute("""
-            SELECT channel_create_timing, channel_delete_timing
+            SELECT channel_create_timing, channel_delete_timing,
+                   default_duplicate_event_handling,
+                   reconcile_on_epg_generation, reconcile_on_startup,
+                   auto_fix_orphan_teamarr, auto_fix_orphan_dispatcharr, auto_fix_duplicates
             FROM settings WHERE id = 1
         """).fetchone()
         conn.close()
@@ -58,14 +62,26 @@ def get_global_lifecycle_settings() -> Dict[str, str]:
         if row:
             return {
                 'channel_create_timing': row['channel_create_timing'] or 'same_day',
-                'channel_delete_timing': row['channel_delete_timing'] or 'same_day'
+                'channel_delete_timing': row['channel_delete_timing'] or 'same_day',
+                'default_duplicate_event_handling': row['default_duplicate_event_handling'] or 'consolidate',
+                'reconcile_on_epg_generation': bool(row['reconcile_on_epg_generation']) if row['reconcile_on_epg_generation'] is not None else True,
+                'reconcile_on_startup': bool(row['reconcile_on_startup']) if row['reconcile_on_startup'] is not None else True,
+                'auto_fix_orphan_teamarr': bool(row['auto_fix_orphan_teamarr']) if row['auto_fix_orphan_teamarr'] is not None else True,
+                'auto_fix_orphan_dispatcharr': bool(row['auto_fix_orphan_dispatcharr']) if row['auto_fix_orphan_dispatcharr'] is not None else False,
+                'auto_fix_duplicates': bool(row['auto_fix_duplicates']) if row['auto_fix_duplicates'] is not None else False,
             }
     except Exception as e:
         logger.warning(f"Could not get global lifecycle settings: {e}")
 
     return {
         'channel_create_timing': 'same_day',
-        'channel_delete_timing': 'same_day'
+        'channel_delete_timing': 'same_day',
+        'default_duplicate_event_handling': 'consolidate',
+        'reconcile_on_epg_generation': True,
+        'reconcile_on_startup': True,
+        'auto_fix_orphan_teamarr': True,
+        'auto_fix_orphan_dispatcharr': False,
+        'auto_fix_duplicates': False,
     }
 
 
@@ -918,8 +934,11 @@ class ChannelLifecycleManager:
         sport = group.get('assigned_sport')
         league = group.get('assigned_league')
 
-        # V2: Get duplicate event handling mode (default: consolidate for backwards compatibility)
-        duplicate_mode = group.get('duplicate_event_handling', 'consolidate')
+        # V2: Get duplicate event handling mode
+        # Per-group setting takes precedence, otherwise use system default
+        duplicate_mode = group.get('duplicate_event_handling')
+        if not duplicate_mode:
+            duplicate_mode = global_settings.get('default_duplicate_event_handling', 'consolidate')
 
         # Auto-assign channel_start if not set (using get_next_channel_number triggers auto-assign)
         if not channel_start:

@@ -531,7 +531,87 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             consolidate_result = after_event_epg_generation(group_id, final_output_path)
 
             # Step 5: Channel Lifecycle Management
-            if group.get('channel_start'):
+            # Check if this is a child group (streams go to parent's channels)
+            is_child_group = group.get('parent_group_id') is not None
+
+            if is_child_group:
+                # Child group: Add streams to parent group's channels
+                from epg.channel_lifecycle import get_lifecycle_manager
+                from database import find_parent_channel_for_event, add_stream_to_channel, stream_exists_on_channel, log_channel_history
+
+                lifecycle_mgr = get_lifecycle_manager()
+                if lifecycle_mgr:
+                    app.logger.debug(f"Processing child group {group_id} - adding streams to parent channels")
+
+                    parent_group_id = group['parent_group_id']
+                    streams_added = 0
+                    streams_skipped = 0
+
+                    for matched in matched_streams:
+                        event_id = matched['event'].get('id')
+                        stream = matched['stream']
+
+                        if not event_id:
+                            continue
+
+                        # Find parent's channel for this event
+                        parent_channel = find_parent_channel_for_event(parent_group_id, event_id)
+                        if not parent_channel:
+                            app.logger.debug(f"No parent channel for event {event_id} - skipping stream '{stream['name']}'")
+                            streams_skipped += 1
+                            continue
+
+                        # Check if stream already attached
+                        if stream_exists_on_channel(parent_channel['id'], stream['id']):
+                            continue
+
+                        # Add stream to parent channel in Dispatcharr
+                        try:
+                            current_channel = lifecycle_mgr.channel_api.get_channel(parent_channel['dispatcharr_channel_id'])
+                            if current_channel:
+                                current_streams = current_channel.get('streams', [])
+                                if stream['id'] not in current_streams:
+                                    new_streams = current_streams + [stream['id']]
+                                    with lifecycle_mgr._dispatcharr_lock:
+                                        update_result = lifecycle_mgr.channel_api.update_channel(
+                                            parent_channel['dispatcharr_channel_id'],
+                                            {'streams': new_streams}
+                                        )
+                                    if update_result.get('success'):
+                                        # Track in database
+                                        add_stream_to_channel(
+                                            managed_channel_id=parent_channel['id'],
+                                            dispatcharr_stream_id=stream['id'],
+                                            source_group_id=group_id,
+                                            stream_name=stream.get('name'),
+                                            source_group_type='child',
+                                            m3u_account_id=stream.get('m3u_account_id'),
+                                            m3u_account_name=stream.get('m3u_account_name')
+                                        )
+                                        log_channel_history(
+                                            managed_channel_id=parent_channel['id'],
+                                            change_type='stream_added',
+                                            change_source='epg_generation',
+                                            notes=f"Added stream '{stream.get('name')}' from child group {group.get('group_name')}"
+                                        )
+                                        streams_added += 1
+                                        app.logger.debug(f"Added stream '{stream['name']}' to parent channel '{parent_channel['channel_name']}'")
+                        except Exception as e:
+                            app.logger.warning(f"Failed to add stream to parent channel: {e}")
+
+                    channel_results = {
+                        'created': [],
+                        'existing': [],
+                        'skipped': [{'stream': 'N/A', 'reason': 'child group'}] * streams_skipped,
+                        'errors': [],
+                        'streams_added': [{'count': streams_added}]
+                    }
+
+                    if streams_added > 0:
+                        app.logger.info(f"Child group '{group['group_name']}': added {streams_added} streams to parent channels")
+
+            elif group.get('channel_start'):
+                # Parent group: Normal channel creation
                 from epg.channel_lifecycle import get_lifecycle_manager
 
                 lifecycle_mgr = get_lifecycle_manager()
@@ -767,6 +847,11 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         event_groups = get_all_event_epg_groups(enabled_only=True)
         event_groups_with_templates = [g for g in event_groups if g.get('event_template_id')]
 
+        # Sort groups: parent groups (parent_group_id IS NULL) first, then child groups
+        # This ensures parent channels exist before child groups try to add streams to them
+        parent_groups = [g for g in event_groups_with_templates if not g.get('parent_group_id')]
+        child_groups = [g for g in event_groups_with_templates if g.get('parent_group_id')]
+
         if event_groups_with_templates:
             # Get M3U manager
             m3u_manager = _get_m3u_manager()
@@ -816,7 +901,9 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                             if not result.get('success') and not result.get('skipped'):
                                 app.logger.warning(f"  Account {account_id}: {result.get('message')}")
 
-                # Step 2b: Process all groups in parallel (M3U already refreshed)
+                # Step 2b: Process groups (parents first, then children)
+                # Parent groups process in parallel, then child groups process in parallel
+                # This ensures parent channels exist before children try to add streams
                 report_progress('progress', f'Processing {total_groups} event group(s)...', 55)
 
                 def process_single_group(group):
@@ -834,37 +921,79 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                         app.logger.warning(f"Error refreshing event group '{group['group_name']}': {e}")
                         return (group, None, str(e))
 
-                # Process all groups in parallel with progress updates as each completes
                 from concurrent.futures import ThreadPoolExecutor, as_completed
-                with ThreadPoolExecutor(max_workers=min(len(event_groups_with_templates), 50)) as executor:
-                    # Submit all tasks
-                    futures = {executor.submit(process_single_group, g): g for g in event_groups_with_templates}
+                group_results = []
+                completed_count = 0
 
-                    # Collect results as they complete, updating progress (55% to 85% range)
-                    group_results = []
-                    for i, future in enumerate(as_completed(futures), 1):
-                        group, refresh_result, error = future.result()
-                        group_results.append((group, refresh_result, error))
+                # Process parent groups first (can run in parallel)
+                if parent_groups:
+                    with ThreadPoolExecutor(max_workers=min(len(parent_groups), 50)) as executor:
+                        futures = {executor.submit(process_single_group, g): g for g in parent_groups}
+                        for future in as_completed(futures):
+                            group, refresh_result, error = future.result()
+                            group_results.append((group, refresh_result, error))
+                            completed_count += 1
 
-                        # Aggregate stats immediately
-                        if refresh_result and refresh_result.get('success'):
-                            event_stats['groups_refreshed'] += 1
-                            event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
-                            event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
-                            event_stats['events'] += refresh_result.get('events_count', 0)
-                            event_stats['pregame'] += refresh_result.get('pregame_count', 0)
-                            event_stats['postgame'] += refresh_result.get('postgame_count', 0)
-                            event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
-                            event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
-                            event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
-                            event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
-                            event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
-                            event_stats['eligible_streams'] += refresh_result.get('stream_count', 0)
-                            update_event_epg_group_last_refresh(group['id'])
+                            # Aggregate stats immediately
+                            if refresh_result and refresh_result.get('success'):
+                                event_stats['groups_refreshed'] += 1
+                                event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
+                                event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
+                                event_stats['events'] += refresh_result.get('events_count', 0)
+                                event_stats['pregame'] += refresh_result.get('pregame_count', 0)
+                                event_stats['postgame'] += refresh_result.get('postgame_count', 0)
+                                event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
+                                event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
+                                event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
+                                event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
+                                event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
 
-                        # Progress: 55% to 85% range
-                        pct = 55 + int((i / total_groups) * 30)
-                        report_progress('progress', f'Processed {i}/{total_groups} event groups...', pct)
+                            progress_percent = 55 + int(30 * completed_count / total_groups)
+                            report_progress(
+                                'progress',
+                                f"Processed {completed_count}/{total_groups} groups ({group['group_name']})",
+                                progress_percent,
+                                group_name=group['group_name'],
+                                current=completed_count,
+                                total=total_groups
+                            )
+
+                # Process child groups after parents (can run in parallel)
+                if child_groups:
+                    app.logger.debug(f"Processing {len(child_groups)} child group(s)...")
+                    with ThreadPoolExecutor(max_workers=min(len(child_groups), 50)) as executor:
+                        futures = {executor.submit(process_single_group, g): g for g in child_groups}
+                        for future in as_completed(futures):
+                            group, refresh_result, error = future.result()
+                            group_results.append((group, refresh_result, error))
+                            completed_count += 1
+
+                            # Aggregate stats immediately
+                            if refresh_result and refresh_result.get('success'):
+                                event_stats['groups_refreshed'] += 1
+                                event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
+                                event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
+                                event_stats['events'] += refresh_result.get('events_count', 0)
+                                event_stats['pregame'] += refresh_result.get('pregame_count', 0)
+                                event_stats['postgame'] += refresh_result.get('postgame_count', 0)
+                                event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
+                                event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
+                                event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
+                                event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
+                                event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
+                                event_stats['eligible_streams'] += refresh_result.get('stream_count', 0)
+                                update_event_epg_group_last_refresh(group['id'])
+
+                            # Progress: 55% to 85% range
+                            progress_percent = 55 + int(30 * completed_count / total_groups)
+                            report_progress(
+                                'progress',
+                                f"Processed {completed_count}/{total_groups} groups ({group['group_name']})",
+                                progress_percent,
+                                group_name=group['group_name'],
+                                current=completed_count,
+                                total=total_groups
+                            )
             else:
                 report_progress('progress', 'M3U manager not available, skipping event groups...', 85)
                 app.logger.warning("M3U manager not available - skipping event groups")
@@ -5187,6 +5316,149 @@ def api_channel_lifecycle_cleanup_old():
 
     except Exception as e:
         app.logger.error(f"Error cleaning up old records: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/history/<int:channel_id>', methods=['GET'])
+def api_channel_history(channel_id):
+    """
+    Get history for a specific managed channel.
+
+    Query params:
+        limit: Maximum number of records (default: 100)
+
+    Returns list of history entries with change details.
+    """
+    try:
+        from database import get_channel_history, get_managed_channel
+
+        # Verify channel exists
+        channel = get_managed_channel(channel_id)
+        if not channel:
+            return jsonify({'error': 'Channel not found'}), 404
+
+        limit = request.args.get('limit', 100, type=int)
+        history = get_channel_history(channel_id, limit=limit)
+
+        return jsonify({
+            'success': True,
+            'channel_id': channel_id,
+            'channel_name': channel.get('channel_name'),
+            'history': history
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting channel history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/history/recent', methods=['GET'])
+def api_channel_history_recent():
+    """
+    Get recent channel changes across all channels.
+
+    Query params:
+        hours: Look back N hours (default: 24)
+        types: Comma-separated change types to filter (optional)
+
+    Returns list of recent changes with channel info.
+    """
+    try:
+        from database import get_recent_channel_changes
+
+        hours = request.args.get('hours', 24, type=int)
+        types_param = request.args.get('types', '')
+        change_types = [t.strip() for t in types_param.split(',') if t.strip()] or None
+
+        changes = get_recent_channel_changes(hours=hours, change_types=change_types)
+
+        return jsonify({
+            'success': True,
+            'hours': hours,
+            'count': len(changes),
+            'changes': changes
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting recent changes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/reconcile', methods=['POST'])
+def api_channel_reconcile():
+    """
+    Run channel reconciliation.
+
+    Query params:
+        auto_fix: Whether to auto-fix issues (default: from settings)
+        group_id: Limit to specific group (optional)
+
+    Returns reconciliation results with issues found and fixed.
+    """
+    try:
+        from epg.reconciliation import run_reconciliation
+
+        auto_fix = request.args.get('auto_fix', type=lambda x: x.lower() == 'true')
+        group_id = request.args.get('group_id', type=int)
+        group_ids = [group_id] if group_id else None
+
+        result = run_reconciliation(auto_fix=auto_fix, group_ids=group_ids)
+
+        if not result:
+            return jsonify({'error': 'Reconciliation not available - Dispatcharr not configured'}), 400
+
+        return jsonify({
+            'success': True,
+            'summary': result.summary,
+            'issues_found': [
+                {
+                    'type': i.issue_type,
+                    'severity': i.severity,
+                    'channel_name': i.channel_name,
+                    'event_id': i.espn_event_id,
+                    'details': i.details,
+                    'suggested_action': i.suggested_action,
+                    'auto_fixable': i.auto_fixable
+                }
+                for i in result.issues_found
+            ],
+            'issues_fixed': result.issues_fixed,
+            'issues_skipped': result.issues_skipped,
+            'errors': result.errors,
+            'duration': (result.completed_at - result.started_at).total_seconds() if result.completed_at else None
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error running reconciliation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/channel-lifecycle/streams/<int:channel_id>', methods=['GET'])
+def api_channel_streams(channel_id):
+    """
+    Get all streams attached to a managed channel.
+
+    Returns list of streams with source group and priority info.
+    """
+    try:
+        from database import get_channel_streams, get_managed_channel
+
+        channel = get_managed_channel(channel_id)
+        if not channel:
+            return jsonify({'error': 'Channel not found'}), 404
+
+        include_removed = request.args.get('include_removed', 'false').lower() == 'true'
+        streams = get_channel_streams(channel_id, include_removed=include_removed)
+
+        return jsonify({
+            'success': True,
+            'channel_id': channel_id,
+            'channel_name': channel.get('channel_name'),
+            'streams': streams
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting channel streams: {e}")
         return jsonify({'error': str(e)}), 500
 
 
