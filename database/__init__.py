@@ -137,24 +137,75 @@ def db_insert(query: str, params: tuple = ()) -> int:
         conn.commit()
         return cursor.lastrowid
 
+# =============================================================================
+# SCHEMA VERSIONING
+# =============================================================================
+# Each migration has a version number. Migrations only run if current version < target version.
+# This ensures migrations are idempotent and can be safely re-run.
+#
+# Version History:
+#   0: Base schema (original tables - teams, templates, settings, etc.)
+#   1: Dispatcharr integration + time format + lifecycle settings
+#   2: Template enhancements (conditional descriptions, event support)
+#   3: EPG history enhancements (filler counts, stats breakdown)
+#   4: Event EPG tables (event_epg_groups, team_aliases, managed_channels)
+#   5: Event EPG groups enhancements (custom regex, filtering stats)
+#   6: Managed channels enhancements (logo tracking)
+#   7: Data fixes (NCAA logos, per-group timing cleanup)
+#   8: Channel Lifecycle V2 (multi-stream, history, reconciliation, parent groups)
+# =============================================================================
+
+CURRENT_SCHEMA_VERSION = 8
+
+
+def get_schema_version(conn) -> int:
+    """Get current schema version from database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT schema_version FROM settings WHERE id = 1")
+        row = cursor.fetchone()
+        if row and row[0] is not None:
+            return row[0]
+    except Exception:
+        pass
+    return 0  # No version = version 0 (original schema)
+
+
+def set_schema_version(conn, version: int):
+    """Update schema version in database."""
+    cursor = conn.cursor()
+    try:
+        # First ensure the column exists
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if 'schema_version' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN schema_version INTEGER DEFAULT 0")
+            conn.commit()
+
+        cursor.execute("UPDATE settings SET schema_version = ? WHERE id = 1", (version,))
+        conn.commit()
+    except Exception as e:
+        print(f"  ⚠️ Could not set schema version: {e}")
+
+
 def run_migrations(conn):
     """
-    Run database migrations for schema updates.
+    Run database migrations based on schema version.
 
-    This function handles migrations from v1.x (dev branch) to v2.0 (dev-withevents).
-    New installations get the full schema from schema.sql, so migrations only run
-    for databases that existed before the event-based EPG features were added.
-
-    Migration groups:
-    1. Settings table columns (Dispatcharr, time format, lifecycle)
-    2. Templates table columns (conditional descriptions, event templates)
-    3. EPG History table columns (filler counts, stats breakdown)
-    4. Event EPG tables (event_epg_groups, team_aliases, managed_channels)
-    5. Data fixes (NCAA logos)
+    Migrations are versioned and only run if current version < migration version.
+    Each migration is idempotent (safe to run multiple times).
     """
     cursor = conn.cursor()
+    current_version = get_schema_version(conn)
     migrations_run = 0
 
+    print(f"  📊 Current schema version: {current_version}, target: {CURRENT_SCHEMA_VERSION}")
+
+    if current_version >= CURRENT_SCHEMA_VERSION:
+        print(f"  ✅ Schema is up to date (version {current_version})")
+        return 0
+
+    # Helper functions for migrations
     def add_columns_if_missing(table_name, columns):
         """Helper to add multiple columns to a table if they don't exist"""
         nonlocal migrations_run
@@ -166,9 +217,9 @@ def run_migrations(conn):
                 try:
                     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
                     migrations_run += 1
-                    print(f"  ✅ Added column: {table_name}.{col_name}")
+                    print(f"    ✅ Added column: {table_name}.{col_name}")
                 except Exception as e:
-                    print(f"  ⚠️ Could not add column {table_name}.{col_name}: {e}")
+                    print(f"    ⚠️ Could not add column {table_name}.{col_name}: {e}")
 
         conn.commit()
 
@@ -176,6 +227,17 @@ def run_migrations(conn):
         """Check if a table exists"""
         cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
         return cursor.fetchone() is not None
+
+    def create_index_if_not_exists(index_name, table_name, columns, where_clause=None):
+        """Create an index if it doesn't exist"""
+        try:
+            sql = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name}({columns})"
+            if where_clause:
+                sql += f" WHERE {where_clause}"
+            cursor.execute(sql)
+            conn.commit()
+        except Exception as e:
+            print(f"    ⚠️ Could not create index {index_name}: {e}")
 
     # =========================================================================
     # 1. SETTINGS TABLE MIGRATIONS
@@ -630,14 +692,34 @@ def run_migrations(conn):
         print(f"  ⚠️ Could not create parent group index: {e}")
     conn.commit()
 
+    # =========================================================================
+    # UPDATE SCHEMA VERSION
+    # =========================================================================
+    # All migrations complete - update version to current
+    if current_version < CURRENT_SCHEMA_VERSION:
+        set_schema_version(conn, CURRENT_SCHEMA_VERSION)
+        print(f"  📊 Schema version updated: {current_version} → {CURRENT_SCHEMA_VERSION}")
+
     if migrations_run > 0:
-        print(f"✅ Completed {migrations_run} migration(s)")
+        print(f"  ✅ Completed {migrations_run} migration(s)")
+    else:
+        print(f"  ✅ All migrations already applied")
 
     return migrations_run
 
 
 def init_database():
-    """Initialize database with schema and run migrations"""
+    """
+    Initialize database with schema and run migrations.
+
+    Flow for existing databases:
+      1. Run migrations first (adds new columns to existing tables)
+      2. Run schema.sql (CREATE TABLE IF NOT EXISTS - no-ops, but creates indexes)
+
+    Flow for fresh installations:
+      1. Run schema.sql (creates all tables with current schema, version=8)
+      2. Run migrations (sees version=8, skips all migrations)
+    """
     schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
 
     with open(schema_path, 'r') as f:
@@ -651,16 +733,19 @@ def init_database():
         is_existing_db = cursor.fetchone() is not None
 
         if is_existing_db:
+            print("  📦 Existing database detected - running migrations first")
             # Existing database: run migrations FIRST to add new columns
-            # This ensures columns exist before CREATE INDEX in schema.sql
+            # This ensures columns exist before any index creation
             run_migrations(conn)
+        else:
+            print("  🆕 Fresh installation - creating database schema")
 
         # Run schema.sql (CREATE TABLE IF NOT EXISTS, indexes, etc.)
         conn.executescript(schema_sql)
         conn.commit()
 
         if not is_existing_db:
-            # Fresh install: run migrations after (mostly no-ops, but ensures consistency)
+            # Fresh install: run migrations after to set version (mostly no-ops)
             run_migrations(conn)
 
         # Sync timezone from environment variable if set

@@ -257,6 +257,9 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Default Settings for New Groups
     default_duplicate_event_handling TEXT DEFAULT 'consolidate',  -- ignore, consolidate, separate
 
+    -- Schema versioning for migrations
+    schema_version INTEGER DEFAULT 8,  -- Current schema version (increment with each migration)
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -659,7 +662,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
 
 CREATE INDEX IF NOT EXISTS idx_event_epg_groups_league ON event_epg_groups(assigned_league);
 CREATE INDEX IF NOT EXISTS idx_event_epg_groups_enabled ON event_epg_groups(enabled);
-CREATE INDEX IF NOT EXISTS idx_eeg_parent ON event_epg_groups(parent_group_id) WHERE parent_group_id IS NOT NULL;
+-- Note: idx_eeg_parent is created in migrations after parent_group_id column is added
 
 -- Trigger for updated_at
 CREATE TRIGGER IF NOT EXISTS update_event_epg_groups_timestamp
