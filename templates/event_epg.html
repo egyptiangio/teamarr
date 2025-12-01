@@ -205,9 +205,14 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for group in groups %}
+                    {# Reorganize groups: parent groups with their children nested below #}
+                    {% set parent_groups = groups | selectattr('parent_group_id', 'none') | list %}
+                    {% set child_groups = groups | rejectattr('parent_group_id', 'none') | list %}
+
+                    {% for group in parent_groups %}
                         {% set match_rate = ((group.matched_count / group.stream_count * 100) | round | int) if group.stream_count > 0 else 0 %}
                         <tr data-group-id="{{ group.id }}"
+                            class="parent-group-row"
                             data-dispatcharr-group-id="{{ group.dispatcharr_group_id }}"
                             data-name="{{ group.group_name }}"
                             data-league="{{ group.assigned_league }}"
@@ -233,11 +238,6 @@
                             <td>
                                 <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                     <strong style="font-size: 0.9375rem;">{{ group.group_name }}</strong>
-                                    {% if group.parent_group_id %}
-                                        <span class="badge badge-child" title="Child group: adds streams to parent's channels">
-                                            ↳ {{ group.parent_group_name|truncate(15) }}
-                                        </span>
-                                    {% endif %}
                                     {% if group.account_name %}
                                         <span class="badge badge-secondary">{{ group.account_name }}</span>
                                     {% endif %}
@@ -259,18 +259,14 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if group.parent_group_id %}
-                                    <span class="badge badge-inherited" title="Inherited from parent group">↳ inherited</span>
-                                {% elif group.event_template_name %}
+                                {% if group.event_template_name %}
                                     <span class="badge badge-success">{{ group.event_template_name }}</span>
                                 {% else %}
                                     <span class="badge badge-warning" title="EPG will not be generated without a template" style="cursor: help;">Unassigned</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if group.parent_group_id %}
-                                    <span class="badge badge-inherited" title="Inherited from parent group">↳</span>
-                                {% elif group.channel_start %}
+                                {% if group.channel_start %}
                                     <code>{{ group.channel_start }}</code>
                                 {% else %}
                                     <span class="text-muted">—</span>
@@ -311,6 +307,101 @@
                                 </div>
                             </td>
                         </tr>
+                        {# Render child groups nested under this parent #}
+                        {% for child in child_groups if child.parent_group_id == group.id %}
+                            {% set child_match_rate = ((child.matched_count / child.stream_count * 100) | round | int) if child.stream_count > 0 else 0 %}
+                            <tr data-group-id="{{ child.id }}"
+                                class="child-group-row"
+                                data-parent-id="{{ group.id }}"
+                                data-dispatcharr-group-id="{{ child.dispatcharr_group_id }}"
+                                data-name="{{ child.group_name }}"
+                                data-league="{{ child.assigned_league }}"
+                                data-sport="{{ child.assigned_sport }}"
+                                data-template="{{ child.event_template_name or '' }}"
+                                data-template-id="{{ child.event_template_id or '' }}"
+                                data-channel-start="{{ child.channel_start or 0 }}"
+                                data-channel-group-id="{{ child.channel_group_id or '' }}"
+                                data-custom-regex="{{ child.custom_regex or '' }}"
+                                data-custom-regex-enabled="{{ child.custom_regex_enabled or 0 }}"
+                                data-custom-regex-team1="{{ child.custom_regex_team1 or '' }}"
+                                data-custom-regex-team2="{{ child.custom_regex_team2 or '' }}"
+                                data-custom-regex-date="{{ child.custom_regex_date or '' }}"
+                                data-custom-regex-time="{{ child.custom_regex_time or '' }}"
+                                data-streams="{{ child.stream_count or 0 }}"
+                                data-matched="{{ child.matched_count or 0 }}"
+                                data-enabled="{{ child.enabled }}"
+                                data-refresh="{{ child.last_refresh or '' }}">
+                                <td>
+                                    <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                </td>
+                                <td>
+                                    <div class="child-group-indent">
+                                        <span class="child-connector">└</span>
+                                        <strong style="font-size: 0.875rem;">{{ child.group_name }}</strong>
+                                        {% if child.account_name %}
+                                            <span class="badge badge-secondary" style="font-size: 0.65rem;">{{ child.account_name }}</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <img src="{{ league_logos.get(child.assigned_league, '') }}"
+                                         alt="{{ child.assigned_league.upper() }}"
+                                         class="league-logo"
+                                         style="opacity: 0.6;"
+                                         title="{{ child.assigned_league.upper() }}">
+                                </td>
+                                <td style="font-size: 1.25rem; text-align: center; vertical-align: middle; opacity: 0.6;" title="{{ child.assigned_sport|title }}">
+                                    {% if child.assigned_sport == 'basketball' %}🏀
+                                    {% elif child.assigned_sport == 'football' %}🏈
+                                    {% elif child.assigned_sport == 'baseball' %}⚾
+                                    {% elif child.assigned_sport == 'hockey' %}🏒
+                                    {% elif child.assigned_sport == 'soccer' %}⚽
+                                    {% else %}🏆
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">{{ child.stream_count or 0 }}</td>
+                                <td>
+                                    {% if child.stream_count and child.stream_count > 0 %}
+                                    <div class="match-rate-container">
+                                        <div class="match-rate-bar">
+                                            <div class="match-rate-fill {% if child_match_rate >= 80 %}rate-good{% elif child_match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                                 style="width: {{ child_match_rate }}%;"></div>
+                                        </div>
+                                        <span class="match-rate-text">{{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)</span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" {% if child.enabled %}checked{% endif %}
+                                               onchange="toggleGroupStatus({{ child.id }}, this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button onclick="testMatchGroup({{ child.id }}, '{{ child.group_name | e }}')" class="btn btn-sm btn-primary" title="Test stream matching">
+                                            🔍 Test
+                                        </button>
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
+                                            Edit
+                                        </a>
+                                        <button onclick="deleteGroup({{ child.id }}, '{{ child.group_name | e }}')" class="btn btn-sm btn-danger" title="Delete Group">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -1509,6 +1600,40 @@ code {
 
 .light-theme .badge-inherited {
     background: rgba(168, 85, 247, 0.1);
+    color: #7c3aed;
+}
+
+/* Child group row styling */
+.child-group-row {
+    background: rgba(168, 85, 247, 0.05);
+}
+
+.child-group-row:hover {
+    background: rgba(168, 85, 247, 0.1);
+}
+
+.light-theme .child-group-row {
+    background: rgba(168, 85, 247, 0.03);
+}
+
+.light-theme .child-group-row:hover {
+    background: rgba(168, 85, 247, 0.08);
+}
+
+.child-group-indent {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 1rem;
+}
+
+.child-connector {
+    color: #a78bfa;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.light-theme .child-connector {
     color: #7c3aed;
 }
 
