@@ -266,6 +266,21 @@ class EventTemplateEngine:
                 variables['winner_abbrev'] = 'TIE'
                 variables['loser'] = 'Tie'
                 variables['loser_abbrev'] = 'TIE'
+
+            # Check for overtime - compare periods to regulation threshold per sport
+            periods = status.get('period', 0) or 0
+            overtime_thresholds = {
+                'basketball': 4,  # NBA/NCAAM = 4 quarters/halves
+                'hockey': 3,      # NHL = 3 periods
+                'football': 4,    # NFL/NCAAF = 4 quarters
+                'baseball': 9     # MLB = 9 innings
+            }
+            overtime_threshold = overtime_thresholds.get(sport_code, 4)
+
+            if periods > overtime_threshold:
+                variables['overtime_text'] = 'in overtime'
+            else:
+                variables['overtime_text'] = ''
         else:
             # Game not final - empty results
             variables['event_result'] = ''
@@ -274,6 +289,7 @@ class EventTemplateEngine:
             variables['winner_abbrev'] = ''
             variables['loser'] = ''
             variables['loser_abbrev'] = ''
+            variables['overtime_text'] = ''
 
         # =====================================================================
         # BROADCAST

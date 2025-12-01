@@ -2226,7 +2226,8 @@
         "Soccer": ""
       },
       "context": [
-        "team"
+        "team",
+        "event"
       ]
     },
     {

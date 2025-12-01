@@ -598,6 +598,7 @@ class ESPNClient:
                     'state': competition['status']['type'].get('state', 'pre'),
                     'completed': competition['status']['type'].get('completed', False),
                     'detail': competition['status']['type'].get('detail'),
+                    'period': competition['status'].get('period', 0),  # For overtime detection
                 },
 
                 # Season
