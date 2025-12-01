@@ -4582,7 +4582,7 @@ def api_event_epg_test_regex(group_id):
             return jsonify({'error': 'Group not found'}), 404
 
         data = request.get_json() or {}
-        limit = min(data.get('limit', 5), 20)  # Cap at 20
+        limit = data.get('limit')  # None = test all streams
 
         # Determine which mode we're using
         # Handle None values explicitly (can happen if frontend sends null)
@@ -4640,7 +4640,8 @@ def api_event_epg_test_regex(group_id):
         if not streams:
             return jsonify({'error': 'No streams found for this group'}), 404
 
-        streams = streams[:limit]
+        if limit:
+            streams = streams[:limit]
 
         # Test regex against each stream
         team_matcher = create_matcher()
