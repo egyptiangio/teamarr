@@ -2359,7 +2359,7 @@ def settings_update():
             'dispatcharr_enabled', 'dispatcharr_url', 'dispatcharr_username',
             'dispatcharr_password', 'dispatcharr_epg_id',
             'channel_create_timing', 'channel_delete_timing', 'include_final_events',
-            'default_duplicate_event_handling'
+            'event_lookahead_days', 'default_duplicate_event_handling'
         ]
 
         for field in fields:
@@ -2381,7 +2381,7 @@ def settings_update():
                         conn.close()
                         return redirect(url_for('settings_form'))
                 # Handle numeric fields
-                elif field in ['epg_days_ahead', 'cache_duration_hours', 'dispatcharr_epg_id']:
+                elif field in ['epg_days_ahead', 'cache_duration_hours', 'dispatcharr_epg_id', 'event_lookahead_days']:
                     value = int(value) if value else None
                     # Validate epg_days_ahead range
                     if field == 'epg_days_ahead' and value and (value < 1 or value > 14):
