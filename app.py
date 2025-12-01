@@ -4585,10 +4585,11 @@ def api_event_epg_test_regex(group_id):
         limit = min(data.get('limit', 5), 20)  # Cap at 20
 
         # Determine which mode we're using
-        teams_pattern = data.get('teams_pattern', '').strip()
-        date_pattern = data.get('date_pattern', '').strip() or None
-        time_pattern = data.get('time_pattern', '').strip() or None
-        legacy_regex = data.get('regex', '').strip()
+        # Handle None values explicitly (can happen if frontend sends null)
+        teams_pattern = (data.get('teams_pattern') or '').strip()
+        date_pattern = (data.get('date_pattern') or '').strip() or None
+        time_pattern = (data.get('time_pattern') or '').strip() or None
+        legacy_regex = (data.get('regex') or '').strip()
 
         use_combined = bool(teams_pattern)
         use_legacy = bool(legacy_regex) and not use_combined
