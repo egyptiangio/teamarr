@@ -1138,7 +1138,7 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         # ============================================
         dispatcharr_refreshed = False
         if settings.get('dispatcharr_enabled') and settings.get('dispatcharr_epg_id'):
-            report_progress('progress', 'Triggering Dispatcharr EPG refresh...', 98)
+            report_progress('progress', 'Refreshing Dispatcharr EPG...', 98)
             try:
                 from api.dispatcharr_client import EPGManager
 
@@ -1147,11 +1147,16 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                 dispatcharr_password = settings.get('dispatcharr_password')
                 dispatcharr_epg_id = settings.get('dispatcharr_epg_id')
 
-                app.logger.info("🔄 Triggering Dispatcharr EPG refresh...")
+                app.logger.info("🔄 Refreshing Dispatcharr EPG (waiting for completion)...")
                 manager = EPGManager(dispatcharr_url, dispatcharr_username, dispatcharr_password)
-                refresh_result = manager.refresh(dispatcharr_epg_id)
+
+                # Use wait_for_refresh to ensure EPG import completes before associating
+                refresh_result = manager.wait_for_refresh(dispatcharr_epg_id, timeout=60)
 
                 if refresh_result.get('success'):
+                    duration = refresh_result.get('duration', 0)
+                    app.logger.info(f"✅ Dispatcharr EPG refresh completed in {duration:.1f}s")
+
                     # Update last sync time
                     sync_conn = get_connection()
                     sync_conn.execute(
@@ -1161,19 +1166,14 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                     sync_conn.commit()
                     sync_conn.close()
                     dispatcharr_refreshed = True
-                    app.logger.info("✅ Dispatcharr EPG refresh initiated successfully")
 
                     # ============================================
                     # PHASE 6: Associate EPG with Managed Channels
                     # ============================================
-                    # This must happen AFTER Dispatcharr refresh creates EPGData records
+                    # Now that EPG refresh is complete, EPGData records exist
                     # Pattern: Look up EPGData by tvg_id, call set_channel_epg()
                     report_progress('progress', 'Associating EPG with managed channels...', 99)
                     try:
-                        # Give Dispatcharr time to process the EPG data
-                        import time
-                        time.sleep(2)
-
                         lifecycle_mgr = get_lifecycle_manager()
                         if lifecycle_mgr:
                             assoc_results = lifecycle_mgr.associate_epg_with_channels()
@@ -1184,14 +1184,14 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                             if assoc_count > 0:
                                 app.logger.info(f"🔗 Associated EPG with {assoc_count} managed channels")
                             if skip_count > 0:
-                                app.logger.debug(f"   Skipped {skip_count} channels (no matching EPGData yet)")
+                                app.logger.debug(f"   Skipped {skip_count} channels (no matching EPGData)")
                             if error_count > 0:
                                 app.logger.warning(f"   Failed to associate {error_count} channels")
                     except Exception as e:
                         app.logger.warning(f"EPG association error: {e}")
 
                 else:
-                    app.logger.warning(f"⚠️ Dispatcharr refresh failed: {refresh_result.get('message')}")
+                    app.logger.warning(f"⚠️ Dispatcharr EPG refresh failed: {refresh_result.get('message')}")
             except Exception as e:
                 app.logger.error(f"❌ Dispatcharr refresh error: {e}")
 

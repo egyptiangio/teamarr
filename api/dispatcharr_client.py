@@ -357,6 +357,86 @@ class EPGManager:
                 msg = f"HTTP {response.status_code}"
             return {"success": False, "message": msg}
 
+    def wait_for_refresh(
+        self,
+        epg_id: int,
+        timeout: int = 60,
+        poll_interval: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Trigger EPG refresh and wait for completion.
+
+        Dispatcharr's EPG import is async (returns 202). This method triggers
+        the refresh and polls until completion by monitoring status and updated_at.
+
+        EPG status values: idle, fetching, parsing, error, success, disabled
+
+        Args:
+            epg_id: EPG source ID to refresh
+            timeout: Maximum seconds to wait (default: 60)
+            poll_interval: Seconds between status checks (default: 2)
+
+        Returns:
+            Result dict with:
+            - success: bool
+            - message: str
+            - duration: float (seconds taken)
+            - source: dict (final EPG source state if successful)
+        """
+        import time
+
+        # Get current state before refresh
+        before = self.get_source(epg_id)
+        if not before:
+            return {"success": False, "message": f"EPG source {epg_id} not found"}
+
+        before_updated = before.get('updated_at')
+
+        # Trigger refresh
+        trigger_result = self.refresh(epg_id)
+        if not trigger_result.get('success'):
+            return trigger_result
+
+        # Poll until status changes to success/error or updated_at changes
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            time.sleep(poll_interval)
+
+            current = self.get_source(epg_id)
+            if not current:
+                continue
+
+            current_status = current.get('status', '')
+            current_updated = current.get('updated_at')
+
+            # Check if refresh completed (status is success and updated_at changed)
+            if current_status == 'success' and current_updated != before_updated:
+                duration = time.time() - start_time
+                return {
+                    "success": True,
+                    "message": current.get('last_message', 'EPG refresh completed'),
+                    "duration": duration,
+                    "source": current
+                }
+            elif current_status == 'error':
+                duration = time.time() - start_time
+                return {
+                    "success": False,
+                    "message": current.get('last_message', 'EPG refresh failed'),
+                    "duration": duration,
+                    "source": current
+                }
+
+            # Still in progress (fetching, parsing, idle)
+            # Continue polling
+
+        # Timeout
+        return {
+            "success": False,
+            "message": f"EPG refresh timed out after {timeout} seconds",
+            "duration": timeout
+        }
+
     def refresh_by_name(self, name: str) -> Dict[str, Any]:
         """
         Refresh EPG source by name (partial match).
