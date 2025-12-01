@@ -845,7 +845,11 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         report_progress('progress', 'Processing event groups...', 50)
 
         event_groups = get_all_event_epg_groups(enabled_only=True)
-        event_groups_with_templates = [g for g in event_groups if g.get('event_template_id')]
+        # Parent groups need templates, child groups inherit from parent (template can be NULL)
+        event_groups_with_templates = [
+            g for g in event_groups
+            if g.get('event_template_id') or g.get('parent_group_id')
+        ]
 
         # Sort groups: parent groups (parent_group_id IS NULL) first, then child groups
         # This ensures parent channels exist before child groups try to add streams to them
