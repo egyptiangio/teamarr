@@ -311,6 +311,13 @@
                             Login & List EPGs
                         </button>
                     </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="refreshProviderNames()"
+                                id="refresh-providers-btn" style="width: 100%;"
+                                title="Refresh cached M3U provider names from Dispatcharr">
+                            Refresh Providers
+                        </button>
+                    </div>
                     <div class="form-group" style="flex: 2;">
                         <label for="dispatcharr_epg_select">Select EPG Source</label>
                         <select id="dispatcharr_epg_select" class="form-control" onchange="selectDispatcharrEpg()"
@@ -689,6 +696,33 @@ function selectDispatcharrEpg() {
 
     if (select.value) {
         showDispatcharrStatus(`✓ Selected EPG #${select.value}. Don't forget to save settings!`, true);
+    }
+}
+
+async function refreshProviderNames() {
+    const btn = document.getElementById('refresh-providers-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+
+    try {
+        const response = await fetch('/api/dispatcharr/refresh-provider-names', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showDispatcharrStatus(`✓ ${result.message}`, true);
+        } else {
+            showDispatcharrStatus(result.message || 'Refresh failed', false);
+        }
+    } catch (error) {
+        showDispatcharrStatus(`Error: ${error.message}`, false);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh Providers';
     }
 }
 </script>

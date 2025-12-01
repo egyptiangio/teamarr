@@ -2438,6 +2438,92 @@ def dispatcharr_test():
         }), 500
 
 
+@app.route('/api/dispatcharr/refresh-provider-names', methods=['POST'])
+def dispatcharr_refresh_provider_names():
+    """Refresh cached M3U provider/account names from Dispatcharr"""
+    from api.dispatcharr_client import M3UManager
+
+    conn = get_connection()
+    settings = dict(conn.execute("SELECT * FROM settings WHERE id = 1").fetchone())
+
+    if not settings.get('dispatcharr_enabled'):
+        conn.close()
+        return jsonify({
+            'success': False,
+            'message': 'Dispatcharr integration is not enabled'
+        }), 400
+
+    url = settings.get('dispatcharr_url')
+    username = settings.get('dispatcharr_username')
+    password = settings.get('dispatcharr_password')
+
+    if not all([url, username, password]):
+        conn.close()
+        return jsonify({
+            'success': False,
+            'message': 'Dispatcharr credentials not configured'
+        }), 400
+
+    try:
+        manager = M3UManager(url, username, password)
+        accounts = manager.list_m3u_accounts()
+        account_map = {a['id']: a['name'] for a in accounts}
+
+        # Update all event_epg_groups with current provider names
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, dispatcharr_account_id, account_name FROM event_epg_groups WHERE dispatcharr_account_id IS NOT NULL")
+        groups = cursor.fetchall()
+
+        updated_count = 0
+        for group in groups:
+            group_id = group[0]
+            account_id = group[1]
+            old_name = group[2]
+            new_name = account_map.get(account_id)
+
+            if new_name and new_name != old_name:
+                cursor.execute(
+                    "UPDATE event_epg_groups SET account_name = ? WHERE id = ?",
+                    (new_name, group_id)
+                )
+                updated_count += 1
+
+        # Also update managed_channels
+        cursor.execute("SELECT id, m3u_account_id, m3u_account_name FROM managed_channels WHERE m3u_account_id IS NOT NULL")
+        channels = cursor.fetchall()
+
+        for channel in channels:
+            channel_id = channel[0]
+            account_id = channel[1]
+            old_name = channel[2]
+            new_name = account_map.get(account_id)
+
+            if new_name and new_name != old_name:
+                cursor.execute(
+                    "UPDATE managed_channels SET m3u_account_name = ? WHERE id = ?",
+                    (new_name, channel_id)
+                )
+                updated_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Refreshed {len(accounts)} provider names, updated {updated_count} records',
+            'providers': len(accounts),
+            'updated': updated_count
+        })
+
+    except Exception as e:
+        conn.close()
+        app.logger.error(f"Provider name refresh error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
 @app.route('/api/dispatcharr/refresh', methods=['POST'])
 def dispatcharr_refresh_manual():
     """Manually trigger Dispatcharr EPG refresh"""
