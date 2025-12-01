@@ -4589,6 +4589,7 @@ def api_event_epg_test_regex(group_id):
         teams_pattern = (data.get('teams_pattern') or '').strip()
         date_pattern = (data.get('date_pattern') or '').strip() or None
         time_pattern = (data.get('time_pattern') or '').strip() or None
+        exclude_pattern = (data.get('exclude_pattern') or '').strip() or None
         legacy_regex = (data.get('regex') or '').strip()
 
         use_combined = bool(teams_pattern)
@@ -4607,7 +4608,8 @@ def api_event_epg_test_regex(group_id):
 
             # Validate all provided patterns
             for name, pattern in [('teams_pattern', teams_pattern),
-                                  ('date_pattern', date_pattern), ('time_pattern', time_pattern)]:
+                                  ('date_pattern', date_pattern), ('time_pattern', time_pattern),
+                                  ('exclude_pattern', exclude_pattern)]:
                 if pattern:
                     try:
                         re.compile(pattern)
@@ -4623,6 +4625,12 @@ def api_event_epg_test_regex(group_id):
                 re.compile(legacy_regex)
             except re.error as e:
                 return jsonify({'error': f'Invalid regex syntax: {e}'}), 400
+            # Also validate exclude pattern in legacy mode
+            if exclude_pattern:
+                try:
+                    re.compile(exclude_pattern)
+                except re.error as e:
+                    return jsonify({'error': f'Invalid exclude_pattern syntax: {e}'}), 400
 
         # Get streams for this group from Dispatcharr
         conn = get_connection()
@@ -4643,13 +4651,36 @@ def api_event_epg_test_regex(group_id):
         if limit:
             streams = streams[:limit]
 
+        # Compile exclude pattern if provided
+        exclude_regex = None
+        if exclude_pattern:
+            exclude_regex = re.compile(exclude_pattern, re.IGNORECASE)
+
         # Test regex against each stream
         team_matcher = create_matcher()
         league = group['assigned_league']
         results = []
+        excluded_count = 0
 
         for stream in streams:
             stream_name = stream.get('name', '')
+
+            # Check exclusion pattern first
+            if exclude_regex and exclude_regex.search(stream_name):
+                results.append({
+                    'stream_name': stream_name,
+                    'matched': False,
+                    'excluded': True,
+                    'raw_team1': None,
+                    'raw_team2': None,
+                    'resolved_team1': None,
+                    'resolved_team2': None,
+                    'game_date': None,
+                    'game_time': None,
+                    'error': 'Excluded by exclusion pattern'
+                })
+                excluded_count += 1
+                continue
 
             if use_combined:
                 test_result = team_matcher.extract_teams_with_combined_regex(
@@ -4661,6 +4692,7 @@ def api_event_epg_test_regex(group_id):
             results.append({
                 'stream_name': stream_name,
                 'matched': test_result['matched'],
+                'excluded': False,
                 'raw_team1': test_result.get('raw_away'),
                 'raw_team2': test_result.get('raw_home'),
                 'resolved_team1': test_result.get('away_team_name'),
@@ -4679,6 +4711,7 @@ def api_event_epg_test_regex(group_id):
             'league': league,
             'tested': len(results),
             'matched': matched_count,
+            'excluded': excluded_count,
             'results': results
         })
 

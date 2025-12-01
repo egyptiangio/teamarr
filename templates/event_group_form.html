@@ -859,6 +859,7 @@ async function testRegexPatterns() {
     const teamsPattern = document.getElementById('custom_regex_teams').value.trim();
     const datePattern = document.getElementById('custom_regex_date').value.trim();
     const timePattern = document.getElementById('custom_regex_time').value.trim();
+    const excludePattern = document.getElementById('stream_exclude_regex').value.trim();
     const resultsDiv = document.getElementById('regex-test-results');
     const testBtn = document.getElementById('test-regex-btn');
 
@@ -884,7 +885,8 @@ async function testRegexPatterns() {
             body: JSON.stringify({
                 teams_pattern: teamsPattern,
                 date_pattern: datePattern || null,
-                time_pattern: timePattern || null
+                time_pattern: timePattern || null,
+                exclude_pattern: excludePattern || null
             })
         });
 
@@ -897,18 +899,32 @@ async function testRegexPatterns() {
 
         let html = '';
         const matched = data.matched || 0;
+        const excluded = data.excluded || 0;
         const total = data.tested || 0;
-        const percentage = total > 0 ? Math.round((matched / total) * 100) : 0;
+        const testedAfterExclude = total - excluded;
+        const percentage = testedAfterExclude > 0 ? Math.round((matched / testedAfterExclude) * 100) : 0;
 
         html = `<div style="margin-bottom: 0.5rem;">
-            <strong>${matched}/${total}</strong> streams matched (${percentage}%)
-        </div>`;
+            <strong>${matched}/${testedAfterExclude}</strong> streams matched (${percentage}%)`;
+        if (excluded > 0) {
+            html += ` · <span style="color: var(--warning);">${excluded} excluded</span>`;
+        }
+        html += `</div>`;
 
         if (data.results && data.results.length > 0) {
             html += '<div class="test-results-list">';
             data.results.forEach(result => {
-                const icon = result.matched ? '✓' : '✗';
-                const color = result.matched ? 'var(--success)' : 'var(--danger)';
+                let icon, color;
+                if (result.excluded) {
+                    icon = '⊘';
+                    color = 'var(--warning)';
+                } else if (result.matched) {
+                    icon = '✓';
+                    color = 'var(--success)';
+                } else {
+                    icon = '✗';
+                    color = 'var(--danger)';
+                }
                 html += `<div class="test-result-item">
                     <div style="color: ${color}; display: flex; align-items: center; gap: 0.25rem;">
                         <span>${icon}</span>
@@ -925,7 +941,7 @@ async function testRegexPatterns() {
                     }
                     html += '</div>';
                 } else if (result.error) {
-                    html += `<div class="test-result-detail" style="color: var(--danger);">${escapeHtml(result.error)}</div>`;
+                    html += `<div class="test-result-detail" style="color: ${result.excluded ? 'var(--warning)' : 'var(--danger)'};">${escapeHtml(result.error)}</div>`;
                 }
                 html += '</div>';
             });
