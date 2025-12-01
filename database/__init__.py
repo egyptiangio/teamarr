@@ -155,7 +155,7 @@ def db_insert(query: str, params: tuple = ()) -> int:
 #   8: Channel Lifecycle V2 (multi-stream, history, reconciliation, parent groups)
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 
 def get_schema_version(conn) -> int:
@@ -1716,25 +1716,56 @@ def create_managed_channel(
     conn = get_connection()
     try:
         cursor = conn.cursor()
+
+        # Build column/value lists dynamically to handle schema variations
+        # Core columns that always exist
+        columns = [
+            'event_epg_group_id', 'dispatcharr_channel_id', 'dispatcharr_stream_id',
+            'channel_number', 'channel_name', 'tvg_id', 'espn_event_id', 'event_date',
+            'home_team', 'away_team', 'scheduled_delete_at', 'dispatcharr_logo_id',
+            'channel_profile_id'
+        ]
+        values = [
+            event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
+            channel_number, channel_name, tvg_id, espn_event_id, event_date,
+            home_team, away_team, scheduled_delete_at, dispatcharr_logo_id,
+            channel_profile_id
+        ]
+
+        # Check which optional columns exist in schema
+        cursor.execute("PRAGMA table_info(managed_channels)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Optional v2 columns - only include if they exist
+        optional_columns = [
+            ('dispatcharr_uuid', dispatcharr_uuid),
+            ('primary_stream_id', primary_stream_id),
+            ('channel_group_id', channel_group_id),
+            ('stream_profile_id', stream_profile_id),
+            ('logo_url', logo_url),
+            ('home_team_abbrev', home_team_abbrev),
+            ('home_team_logo', home_team_logo),
+            ('away_team_abbrev', away_team_abbrev),
+            ('away_team_logo', away_team_logo),
+            ('event_name', event_name),
+            ('league', league),
+            ('sport', sport),
+            ('venue', venue),
+            ('broadcast', broadcast),
+            ('sync_status', sync_status),
+        ]
+
+        for col_name, col_value in optional_columns:
+            if col_name in existing_columns:
+                columns.append(col_name)
+                values.append(col_value)
+
+        placeholders = ', '.join(['?' for _ in columns])
+        column_list = ', '.join(columns)
+
         cursor.execute(
-            """
-            INSERT INTO managed_channels
-            (event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
-             channel_number, channel_name, tvg_id, espn_event_id, event_date,
-             home_team, away_team, scheduled_delete_at, dispatcharr_logo_id,
-             channel_profile_id, dispatcharr_uuid, primary_stream_id, channel_group_id, stream_profile_id,
-             logo_url, home_team_abbrev, home_team_logo, away_team_abbrev, away_team_logo,
-             event_name, league, sport, venue, broadcast, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                event_epg_group_id, dispatcharr_channel_id, dispatcharr_stream_id,
-                channel_number, channel_name, tvg_id, espn_event_id, event_date,
-                home_team, away_team, scheduled_delete_at, dispatcharr_logo_id,
-                channel_profile_id, dispatcharr_uuid, primary_stream_id, channel_group_id, stream_profile_id,
-                logo_url, home_team_abbrev, home_team_logo, away_team_abbrev, away_team_logo,
-                event_name, league, sport, venue, broadcast, sync_status
-            )
+            f"INSERT INTO managed_channels ({column_list}) VALUES ({placeholders})",
+            values
         )
         conn.commit()
         return cursor.lastrowid
