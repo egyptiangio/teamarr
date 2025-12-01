@@ -586,28 +586,54 @@ class ChannelLifecycleManager:
         try:
             # Resolve the template logo URL
             logo_ctx = build_event_context(event, stream, group, self.timezone)
-            new_logo_url = template_engine.resolve(template['channel_logo_url'], logo_ctx)
+            template_logo_url = template.get('channel_logo_url')
+            new_logo_url = template_engine.resolve(template_logo_url, logo_ctx) if template_logo_url else None
 
-            if not new_logo_url:
-                return
+            channel_name = existing.get('channel_name', 'Unknown')
+            dispatcharr_channel_id = existing.get('dispatcharr_channel_id')
+            current_logo_id = existing.get('dispatcharr_logo_id')
 
             # Serialize Dispatcharr operations to prevent race conditions
             with self._dispatcharr_lock:
                 # Get current logo URL from Dispatcharr
-                current_logo_id = existing.get('dispatcharr_logo_id')
                 current_logo_url = None
-
                 if current_logo_id:
                     current_logo = self.channel_api.get_logo(current_logo_id)
                     if current_logo:
                         current_logo_url = current_logo.get('url')
 
-                # Compare URLs - if same, no update needed
+                # Case 1: Template has no logo but channel has one - delete it
+                if not new_logo_url and current_logo_id:
+                    # Remove logo from channel
+                    update_result = self.channel_api.update_channel(dispatcharr_channel_id, {'logo_id': None})
+                    if update_result.get('success'):
+                        # Delete the logo from Dispatcharr
+                        delete_result = self.channel_api.delete_logo(current_logo_id)
+                        if delete_result.get('success'):
+                            logger.info(f"Deleted logo for '{channel_name}' (template no longer has logo)")
+
+                        # Update managed_channels record
+                        update_managed_channel(existing['id'], {'dispatcharr_logo_id': None, 'logo_url': None})
+
+                        results['logo_updated'].append({
+                            'channel_name': channel_name,
+                            'channel_id': dispatcharr_channel_id,
+                            'old_logo_url': current_logo_url,
+                            'new_logo_url': None,
+                            'new_logo_id': None,
+                            'action': 'deleted'
+                        })
+                    return
+
+                # Case 2: No logo in template and no logo on channel - nothing to do
+                if not new_logo_url:
+                    return
+
+                # Case 3: Compare URLs - if same, no update needed
                 if current_logo_url == new_logo_url:
                     return
 
-                # Upload new logo (or find existing by URL)
-                channel_name = existing.get('channel_name', 'Unknown')
+                # Case 4: Upload new logo (or find existing by URL)
                 logo_name = f"{channel_name} Logo"
                 logo_result = self.channel_api.upload_logo(logo_name, new_logo_url)
 
@@ -618,7 +644,6 @@ class ChannelLifecycleManager:
                 new_logo_id = logo_result.get('logo_id')
 
                 # Update channel in Dispatcharr with new logo
-                dispatcharr_channel_id = existing.get('dispatcharr_channel_id')
                 update_result = self.channel_api.update_channel(dispatcharr_channel_id, {'logo_id': new_logo_id})
 
                 if not update_result.get('success'):
@@ -626,14 +651,15 @@ class ChannelLifecycleManager:
                     return
 
             # Update managed_channels record with new logo_id
-            update_managed_channel(existing['id'], {'dispatcharr_logo_id': new_logo_id})
+            update_managed_channel(existing['id'], {'dispatcharr_logo_id': new_logo_id, 'logo_url': new_logo_url})
 
             results['logo_updated'].append({
                 'channel_name': channel_name,
                 'channel_id': dispatcharr_channel_id,
                 'old_logo_url': current_logo_url,
                 'new_logo_url': new_logo_url,
-                'new_logo_id': new_logo_id
+                'new_logo_id': new_logo_id,
+                'action': 'updated'
             })
 
             logger.info(f"Updated logo for '{channel_name}': {logo_result.get('status')}")
@@ -1057,7 +1083,8 @@ class ChannelLifecycleManager:
                 )
 
                 # Check if logo needs updating for existing channel
-                if template and template.get('channel_logo_url'):
+                # Call if template has logo OR channel has logo (to handle deletion)
+                if template and (template.get('channel_logo_url') or existing.get('dispatcharr_logo_id')):
                     self._update_channel_logo_if_changed(
                         existing, event, stream, group, template, template_engine, results
                     )
