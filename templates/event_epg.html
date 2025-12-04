@@ -292,13 +292,13 @@
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button onclick="testMatchGroup({{ group.id }}, '{{ group.group_name | e }}')" class="btn btn-sm btn-primary" title="Test stream matching">
+                                    <button onclick="testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})" class="btn btn-sm btn-primary" title="Test stream matching">
                                         🔍 Test
                                     </button>
                                     <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
                                         Edit
                                     </a>
-                                    <button onclick="deleteGroup({{ group.id }}, '{{ group.group_name | e }}')" class="btn btn-sm btn-danger" title="Delete Group">
+                                    <button onclick="deleteGroup({{ group.id }}, {{ group.group_name | tojson }})" class="btn btn-sm btn-danger" title="Delete Group">
                                         🗑️ Delete
                                     </button>
                                 </div>
@@ -386,13 +386,13 @@
                                 </td>
                                 <td>
                                     <div class="action-buttons">
-                                        <button onclick="testMatchGroup({{ child.id }}, '{{ child.group_name | e }}')" class="btn btn-sm btn-primary" title="Test stream matching">
+                                        <button onclick="testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})" class="btn btn-sm btn-primary" title="Test stream matching">
                                             🔍 Test
                                         </button>
                                         <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
                                             Edit
                                         </a>
-                                        <button onclick="deleteGroup({{ child.id }}, '{{ child.group_name | e }}')" class="btn btn-sm btn-danger" title="Delete Group">
+                                        <button onclick="deleteGroup({{ child.id }}, {{ child.group_name | tojson }})" class="btn btn-sm btn-danger" title="Delete Group">
                                             🗑️ Delete
                                         </button>
                                     </div>
