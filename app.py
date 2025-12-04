@@ -4705,6 +4705,106 @@ def api_event_epg_groups_delete(group_id):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# CONSOLIDATION EXCEPTION KEYWORDS API
+# =============================================================================
+
+@app.route('/api/event-epg/groups/<int:group_id>/exception-keywords', methods=['GET'])
+def api_get_exception_keywords(group_id):
+    """Get all exception keywords for a group (includes inherited from parent)."""
+    from database import get_consolidation_exception_keywords
+
+    group = get_event_epg_group(group_id)
+    if not group:
+        return jsonify({'error': 'Group not found'}), 404
+
+    keywords = get_consolidation_exception_keywords(group_id)
+
+    # Check if inherited
+    is_inherited = bool(group.get('parent_group_id'))
+
+    return jsonify({
+        'group_id': group_id,
+        'inherited': is_inherited,
+        'inherited_from': group.get('parent_group_id'),
+        'keywords': keywords
+    })
+
+
+@app.route('/api/event-epg/groups/<int:group_id>/exception-keywords', methods=['POST'])
+def api_add_exception_keyword(group_id):
+    """Add a new exception keyword entry."""
+    from database import add_consolidation_exception_keyword
+
+    group = get_event_epg_group(group_id)
+    if not group:
+        return jsonify({'error': 'Group not found'}), 404
+
+    # Child groups can't have their own keywords
+    if group.get('parent_group_id'):
+        return jsonify({'error': 'Child groups inherit keywords from parent'}), 400
+
+    data = request.get_json() or {}
+    keywords = (data.get('keywords') or '').strip()
+    behavior = data.get('behavior', 'consolidate')
+
+    if not keywords:
+        return jsonify({'error': 'keywords is required'}), 400
+
+    if behavior not in ('consolidate', 'separate', 'ignore'):
+        return jsonify({'error': 'behavior must be consolidate, separate, or ignore'}), 400
+
+    try:
+        new_id = add_consolidation_exception_keyword(group_id, keywords, behavior)
+        app.logger.info(f"Added exception keyword '{keywords}' ({behavior}) to group {group_id}")
+        return jsonify({'success': True, 'id': new_id})
+    except Exception as e:
+        app.logger.error(f"Error adding exception keyword: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/event-epg/groups/<int:group_id>/exception-keywords/<int:keyword_id>', methods=['PUT'])
+def api_update_exception_keyword(group_id, keyword_id):
+    """Update an exception keyword entry."""
+    from database import update_consolidation_exception_keyword
+
+    data = request.get_json() or {}
+
+    keywords = data.get('keywords')
+    behavior = data.get('behavior')
+
+    if behavior and behavior not in ('consolidate', 'separate', 'ignore'):
+        return jsonify({'error': 'behavior must be consolidate, separate, or ignore'}), 400
+
+    try:
+        updated = update_consolidation_exception_keyword(keyword_id, keywords, behavior)
+        if updated:
+            app.logger.info(f"Updated exception keyword {keyword_id}")
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Keyword not found'}), 404
+    except Exception as e:
+        app.logger.error(f"Error updating exception keyword: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/event-epg/groups/<int:group_id>/exception-keywords/<int:keyword_id>', methods=['DELETE'])
+def api_delete_exception_keyword(group_id, keyword_id):
+    """Delete an exception keyword entry."""
+    from database import delete_consolidation_exception_keyword
+
+    try:
+        deleted = delete_consolidation_exception_keyword(keyword_id)
+        if deleted:
+            app.logger.info(f"Deleted exception keyword {keyword_id}")
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Keyword not found'}), 404
+    except Exception as e:
+        app.logger.error(f"Error deleting exception keyword: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/event-epg/groups/<int:group_id>/test-regex', methods=['POST'])
 def api_event_epg_test_regex(group_id):
     """

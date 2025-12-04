@@ -194,6 +194,64 @@
                 </select>
                 <small class="form-help">Ctrl/Cmd+click to select multiple. Use Clear button to deselect all.</small>
                 </div>
+
+            <div class="form-group">
+                <label for="duplicate_event_handling">Duplicate Stream Handling</label>
+                <select id="duplicate_event_handling" name="duplicate_event_handling" class="form-control" onchange="handleDuplicateHandlingChange()">
+                    <option value="consolidate" {% if group and group.duplicate_event_handling == 'consolidate' or not group or not group.duplicate_event_handling %}selected{% endif %}>Consolidate</option>
+                    <option value="ignore" {% if group and group.duplicate_event_handling == 'ignore' %}selected{% endif %}>Ignore</option>
+                    <option value="separate" {% if group and group.duplicate_event_handling == 'separate' %}selected{% endif %}>Separate</option>
+                </select>
+                <small class="form-help">When multiple streams match the same event:<br>
+                    <strong>Consolidate</strong> = add all streams to one channel<br>
+                    <strong>Ignore</strong> = keep first stream only<br>
+                    <strong>Separate</strong> = create separate channel per stream</small>
+            </div>
+
+            <!-- Exception Keywords Section (only visible when duplicate handling = consolidate) -->
+            <div id="exception-keywords-section" class="form-group" style="display: none;">
+                <label>
+                    <strong>Exception Keywords</strong>
+                    <small class="text-muted ms-2">Streams matching these keywords get special handling</small>
+                </label>
+
+                <!-- Keywords table -->
+                <div class="exception-keywords-table-wrapper">
+                    <table class="exception-keywords-table" id="exception-keywords-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50%">Keywords (comma-separated)</th>
+                                <th style="width: 35%">Behavior</th>
+                                <th style="width: 15%"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="exception-keywords-body">
+                            <!-- Rows populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Add new keyword row -->
+                <div class="exception-keyword-add-row" id="exception-keyword-add-row">
+                    <input type="text" id="new-keyword-input" class="form-control"
+                           placeholder="e.g., Prime Vision, Primevision">
+                    <select id="new-keyword-behavior" class="form-control" style="max-width: 150px;">
+                        <option value="consolidate">Consolidate</option>
+                        <option value="separate">Separate</option>
+                        <option value="ignore">Ignore</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="addExceptionKeyword()">
+                        + Add
+                    </button>
+                </div>
+
+                <!-- Help text -->
+                <small class="form-help" style="margin-top: 0.5rem;">
+                    <strong>Consolidate:</strong> Group streams with same keyword on one channel<br>
+                    <strong>Separate:</strong> Create new channel for each matching stream<br>
+                    <strong>Ignore:</strong> Skip streams with this keyword entirely
+                </small>
+            </div>
             </div>
         </div><!-- end independent-settings -->
 
@@ -367,6 +425,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     {% if mode == 'edit' and group.parent_group_id %}
     document.getElementById('parent_group_id').value = '{{ group.parent_group_id }}';
     handleParentGroupChange();  // Update UI based on parent selection
+    {% endif %}
+
+    // Initialize duplicate handling and exception keywords
+    handleDuplicateHandlingChange();
+    {% if mode == 'edit' %}
+    await loadExceptionKeywords();
     {% endif %}
 });
 
@@ -869,6 +933,187 @@ function handleParentGroupChange() {
             // Remove grey out
             if (sportLeagueRow) sportLeagueRow.style.opacity = '1';
         }
+    }
+
+    // Update exception keywords visibility based on parent/child status
+    handleDuplicateHandlingChange();
+}
+
+// ============================================================================
+// Exception Keywords (Consolidation Exceptions)
+// ============================================================================
+
+// Track current exception keywords data
+let exceptionKeywordsData = { keywords: [], inherited: false };
+
+function handleDuplicateHandlingChange() {
+    const handling = document.getElementById('duplicate_event_handling');
+    const section = document.getElementById('exception-keywords-section');
+    const parentSelect = document.getElementById('parent_group_id');
+    const isChildGroup = parentSelect && parentSelect.value !== '';
+
+    // Only show exception keywords section if:
+    // 1. duplicate_event_handling == 'consolidate'
+    // 2. This is NOT a child group (child groups inherit from parent)
+    if (handling && handling.value === 'consolidate' && !isChildGroup) {
+        section.style.display = 'block';
+    } else {
+        section.style.display = 'none';
+    }
+}
+
+async function loadExceptionKeywords() {
+    {% if mode == 'edit' %}
+    const groupId = {{ group.id }};
+    {% else %}
+    const groupId = null;
+    {% endif %}
+    if (!groupId) return;
+
+    try {
+        const response = await fetch(`/api/event-epg/groups/${groupId}/exception-keywords`);
+        const data = await response.json();
+
+        exceptionKeywordsData = data;
+        renderExceptionKeywords();
+    } catch (error) {
+        console.error('Failed to load exception keywords:', error);
+    }
+}
+
+function renderExceptionKeywords() {
+    const tbody = document.getElementById('exception-keywords-body');
+    const addRow = document.getElementById('exception-keyword-add-row');
+    tbody.innerHTML = '';
+
+    const isInherited = exceptionKeywordsData.inherited;
+
+    // Hide add row if inherited
+    if (addRow) {
+        addRow.style.display = isInherited ? 'none' : 'flex';
+    }
+
+    if (exceptionKeywordsData.keywords.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="3" class="text-muted text-center" style="padding: 1rem;">
+            ${isInherited ? 'No keywords inherited from parent' : 'No exception keywords defined'}
+        </td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    exceptionKeywordsData.keywords.forEach(kw => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       value="${escapeHtml(kw.keywords)}"
+                       ${isInherited ? 'disabled' : ''}
+                       onchange="updateExceptionKeyword(${kw.id}, this.value, null)">
+            </td>
+            <td>
+                <select class="form-control form-control-sm"
+                        ${isInherited ? 'disabled' : ''}
+                        onchange="updateExceptionKeyword(${kw.id}, null, this.value)">
+                    <option value="consolidate" ${kw.behavior === 'consolidate' ? 'selected' : ''}>Consolidate</option>
+                    <option value="separate" ${kw.behavior === 'separate' ? 'selected' : ''}>Separate</option>
+                    <option value="ignore" ${kw.behavior === 'ignore' ? 'selected' : ''}>Ignore</option>
+                </select>
+            </td>
+            <td class="text-end">
+                ${isInherited ? '<span class="badge badge-muted">inherited</span>' : `
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        onclick="deleteExceptionKeyword(${kw.id})" title="Delete">
+                    &times;
+                </button>
+                `}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+async function addExceptionKeyword() {
+    {% if mode == 'edit' %}
+    const groupId = {{ group.id }};
+    {% else %}
+    const groupId = null;
+    {% endif %}
+    const keywords = document.getElementById('new-keyword-input').value.trim();
+    const behavior = document.getElementById('new-keyword-behavior').value;
+
+    if (!keywords) {
+        alert('Please enter at least one keyword');
+        return;
+    }
+
+    if (!groupId) {
+        // In add mode, we can't add keywords yet - need to save group first
+        alert('Please save the group first before adding exception keywords');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/event-epg/groups/${groupId}/exception-keywords`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keywords, behavior})
+        });
+
+        if (response.ok) {
+            document.getElementById('new-keyword-input').value = '';
+            await loadExceptionKeywords();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to add keyword');
+        }
+    } catch (error) {
+        console.error('Failed to add keyword:', error);
+        alert('Failed to add keyword');
+    }
+}
+
+async function updateExceptionKeyword(keywordId, keywords, behavior) {
+    {% if mode == 'edit' %}
+    const groupId = {{ group.id }};
+    {% else %}
+    const groupId = null;
+    {% endif %}
+
+    const body = {};
+    if (keywords !== null) body.keywords = keywords;
+    if (behavior !== null) body.behavior = behavior;
+
+    try {
+        await fetch(`/api/event-epg/groups/${groupId}/exception-keywords/${keywordId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+    } catch (error) {
+        console.error('Failed to update keyword:', error);
+    }
+}
+
+async function deleteExceptionKeyword(keywordId) {
+    {% if mode == 'edit' %}
+    const groupId = {{ group.id }};
+    {% else %}
+    const groupId = null;
+    {% endif %}
+
+    if (!confirm('Delete this keyword?')) return;
+
+    try {
+        const response = await fetch(`/api/event-epg/groups/${groupId}/exception-keywords/${keywordId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            await loadExceptionKeywords();
+        }
+    } catch (error) {
+        console.error('Failed to delete keyword:', error);
     }
 }
 
@@ -1382,6 +1627,65 @@ select.form-control {
     .form-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* Exception Keywords Section */
+.exception-keywords-table-wrapper {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.exception-keywords-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.exception-keywords-table thead {
+    background: var(--bg-tertiary);
+}
+
+.exception-keywords-table th {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+}
+
+.exception-keywords-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.exception-keywords-table tr:last-child td {
+    border-bottom: none;
+}
+
+.exception-keywords-table .form-control-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.exception-keyword-add-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.exception-keyword-add-row .form-control {
+    flex: 1;
+}
+
+.badge-muted {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
 }
 </style>
 {% endblock %}

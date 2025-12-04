@@ -157,7 +157,7 @@ def db_insert(query: str, params: tuple = ()) -> int:
 #   12: Soccer multi-league cache tables (with league_tags JSON array)
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 
 
 def get_schema_version(conn) -> int:
@@ -851,6 +851,44 @@ def run_migrations(conn):
         add_columns_if_missing("settings", [
             ("soccer_cache_refresh_frequency", "TEXT DEFAULT 'weekly'"),
         ])
+
+    # =========================================================================
+    # 13. CONSOLIDATION EXCEPTION KEYWORDS
+    # =========================================================================
+    if current_version < 13:
+        print("  🔄 Running migration 13: Consolidation exception keywords...")
+
+        # 13a. Create consolidation_exception_keywords table
+        if not table_exists("consolidation_exception_keywords"):
+            try:
+                cursor.execute("""
+                    CREATE TABLE consolidation_exception_keywords (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_id INTEGER NOT NULL,
+                        keywords TEXT NOT NULL,
+                        behavior TEXT NOT NULL DEFAULT 'consolidate',
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_cek_group ON consolidation_exception_keywords(group_id)")
+                migrations_run += 1
+                print("    ✅ Created table: consolidation_exception_keywords")
+            except Exception as e:
+                print(f"    ⚠️ Could not create consolidation_exception_keywords table: {e}")
+            conn.commit()
+
+        # 13b. Add exception_keyword column to managed_channels
+        add_columns_if_missing("managed_channels", [
+            ("exception_keyword", "TEXT"),
+        ])
+
+        # 13c. Add exception_keyword column to managed_channel_streams
+        add_columns_if_missing("managed_channel_streams", [
+            ("exception_keyword", "TEXT"),
+        ])
+
+        conn.commit()
 
     # =========================================================================
     # UPDATE SCHEMA VERSION
@@ -1878,7 +1916,8 @@ def create_managed_channel(
     sport: str = None,
     venue: str = None,
     broadcast: str = None,
-    sync_status: str = 'created'
+    sync_status: str = 'created',
+    exception_keyword: str = None  # For keyword-based consolidation exceptions
 ) -> int:
     """
     Create a new managed channel record.
@@ -1961,6 +2000,7 @@ def create_managed_channel(
             ('venue', venue),
             ('broadcast', broadcast),
             ('sync_status', sync_status),
+            ('exception_keyword', exception_keyword),
         ]
 
         for col_name, col_value in optional_columns:
@@ -2505,7 +2545,8 @@ def add_stream_to_channel(
     source_group_type: str = 'parent',
     priority: int = None,
     m3u_account_id: int = None,
-    m3u_account_name: str = None
+    m3u_account_name: str = None,
+    exception_keyword: str = None
 ) -> int:
     """
     Add a stream to a managed channel.
@@ -2519,6 +2560,7 @@ def add_stream_to_channel(
         priority: Stream priority (0=primary, higher=failover). Auto-assigned if None.
         m3u_account_id: M3U account ID
         m3u_account_name: M3U account name
+        exception_keyword: Keyword that matched this stream (for keyword-based consolidation)
 
     Returns:
         ID of the created stream record
@@ -2535,15 +2577,30 @@ def add_stream_to_channel(
             """, (managed_channel_id,)).fetchone()
             priority = (result['max_p'] or -1) + 1 if result and result['max_p'] is not None else 0
 
-        cursor.execute("""
-            INSERT INTO managed_channel_streams
-            (managed_channel_id, dispatcharr_stream_id, stream_name,
-             source_group_id, source_group_type, priority,
-             m3u_account_id, m3u_account_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (managed_channel_id, dispatcharr_stream_id, stream_name,
-              source_group_id, source_group_type, priority,
-              m3u_account_id, m3u_account_name))
+        # Check if exception_keyword column exists (backward compatibility)
+        cursor.execute("PRAGMA table_info(managed_channel_streams)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        if 'exception_keyword' in existing_columns:
+            cursor.execute("""
+                INSERT INTO managed_channel_streams
+                (managed_channel_id, dispatcharr_stream_id, stream_name,
+                 source_group_id, source_group_type, priority,
+                 m3u_account_id, m3u_account_name, exception_keyword)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (managed_channel_id, dispatcharr_stream_id, stream_name,
+                  source_group_id, source_group_type, priority,
+                  m3u_account_id, m3u_account_name, exception_keyword))
+        else:
+            cursor.execute("""
+                INSERT INTO managed_channel_streams
+                (managed_channel_id, dispatcharr_stream_id, stream_name,
+                 source_group_id, source_group_type, priority,
+                 m3u_account_id, m3u_account_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (managed_channel_id, dispatcharr_stream_id, stream_name,
+                  source_group_id, source_group_type, priority,
+                  m3u_account_id, m3u_account_name))
 
         conn.commit()
         return cursor.lastrowid
@@ -2691,7 +2748,8 @@ def find_existing_channel(
     group_id: int,
     event_id: str,
     stream_id: int = None,
-    mode: str = 'consolidate'
+    mode: str = 'consolidate',
+    exception_keyword: str = None
 ) -> Optional[Dict[str, Any]]:
     """
     Find existing channel based on duplicate handling mode.
@@ -2701,6 +2759,7 @@ def find_existing_channel(
         event_id: ESPN event ID
         stream_id: Stream ID (only used for 'separate' mode)
         mode: Duplicate handling mode ('ignore', 'consolidate', 'separate')
+        exception_keyword: Canonical keyword for keyword-based consolidation
 
     Returns:
         Managed channel dict if found, None otherwise
@@ -2714,12 +2773,24 @@ def find_existing_channel(
               AND primary_stream_id = ?
               AND deleted_at IS NULL
         """, (group_id, event_id, stream_id))
-    else:
-        # Any channel for this event in this group
+    elif exception_keyword:
+        # Keyword-based consolidation: find channel for this event+keyword
         return db_fetch_one("""
             SELECT * FROM managed_channels
             WHERE event_epg_group_id = ?
               AND espn_event_id = ?
+              AND exception_keyword = ?
+              AND deleted_at IS NULL
+        """, (group_id, event_id, exception_keyword))
+    else:
+        # Any channel for this event in this group (without exception_keyword)
+        # When in consolidate mode without keywords, find a channel without a keyword
+        # This ensures keyword streams and non-keyword streams don't mix
+        return db_fetch_one("""
+            SELECT * FROM managed_channels
+            WHERE event_epg_group_id = ?
+              AND espn_event_id = ?
+              AND (exception_keyword IS NULL OR exception_keyword = '')
               AND deleted_at IS NULL
         """, (group_id, event_id))
 
@@ -2868,3 +2939,129 @@ def get_potential_parents_for_sport(sport: str, exclude_group_id: int = None) ->
 
     query += " ORDER BY group_name"
     return db_fetch_all(query, tuple(params))
+
+
+# =============================================================================
+# CONSOLIDATION EXCEPTION KEYWORDS
+# =============================================================================
+
+def get_consolidation_exception_keywords(group_id: int) -> List[Dict[str, Any]]:
+    """
+    Get exception keywords for a group, including inherited from parent.
+
+    Args:
+        group_id: Event EPG group ID
+
+    Returns:
+        List of dicts: [{'id': 1, 'keywords': 'Prime Vision, Primevision', 'behavior': 'separate'}, ...]
+    """
+    # Check if this is a child group
+    group = db_fetch_one(
+        "SELECT parent_group_id FROM event_epg_groups WHERE id = ?",
+        (group_id,)
+    )
+
+    # Use parent's keywords if child group
+    effective_group_id = group['parent_group_id'] if group and group.get('parent_group_id') else group_id
+
+    return db_fetch_all(
+        "SELECT id, keywords, behavior FROM consolidation_exception_keywords WHERE group_id = ? ORDER BY id",
+        (effective_group_id,)
+    )
+
+
+def add_consolidation_exception_keyword(group_id: int, keywords: str, behavior: str = 'consolidate') -> int:
+    """
+    Add a new exception keyword entry.
+
+    Args:
+        group_id: Event EPG group ID
+        keywords: Comma-separated keyword variants
+        behavior: 'consolidate', 'separate', or 'ignore'
+
+    Returns:
+        New entry ID
+    """
+    if behavior not in ('consolidate', 'separate', 'ignore'):
+        raise ValueError(f"Invalid behavior: {behavior}")
+
+    return db_insert(
+        "INSERT INTO consolidation_exception_keywords (group_id, keywords, behavior) VALUES (?, ?, ?)",
+        (group_id, keywords.strip(), behavior)
+    )
+
+
+def update_consolidation_exception_keyword(keyword_id: int, keywords: str = None, behavior: str = None) -> bool:
+    """
+    Update an existing exception keyword entry.
+
+    Args:
+        keyword_id: ID of the keyword entry
+        keywords: New keywords (optional)
+        behavior: New behavior (optional)
+
+    Returns:
+        True if updated, False if not found
+    """
+    if behavior and behavior not in ('consolidate', 'separate', 'ignore'):
+        raise ValueError(f"Invalid behavior: {behavior}")
+
+    updates = []
+    params = []
+    if keywords is not None:
+        updates.append("keywords = ?")
+        params.append(keywords.strip())
+    if behavior is not None:
+        updates.append("behavior = ?")
+        params.append(behavior)
+
+    if not updates:
+        return False
+
+    params.append(keyword_id)
+
+    with db_connection() as conn:
+        cursor = conn.execute(
+            f"UPDATE consolidation_exception_keywords SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_consolidation_exception_keyword(keyword_id: int) -> bool:
+    """
+    Delete an exception keyword entry.
+
+    Args:
+        keyword_id: ID of the keyword entry
+
+    Returns:
+        True if deleted, False if not found
+    """
+    with db_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM consolidation_exception_keywords WHERE id = ?",
+            (keyword_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_all_consolidation_exception_keywords(group_id: int) -> int:
+    """
+    Delete all exception keywords for a group.
+
+    Args:
+        group_id: Event EPG group ID
+
+    Returns:
+        Number of entries deleted
+    """
+    with db_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM consolidation_exception_keywords WHERE group_id = ?",
+            (group_id,)
+        )
+        conn.commit()
+        return cursor.rowcount

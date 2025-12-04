@@ -942,9 +942,14 @@ class ChannelLifecycleManager:
             log_channel_history
         )
         from epg.event_template_engine import EventTemplateEngine
+        from database import get_consolidation_exception_keywords
+        from utils.keyword_matcher import check_exception_keyword
 
         # Create template engine for channel name resolution
         template_engine = EventTemplateEngine()
+
+        # Load exception keywords for this group (may be inherited from parent)
+        exception_keywords = get_consolidation_exception_keywords(group['id'])
 
         results = {
             'created': [],
@@ -1000,17 +1005,41 @@ class ChannelLifecycleManager:
                 })
                 continue
 
+            # Check for exception keyword match (only relevant when base mode is 'consolidate')
+            matched_keyword = None
+            effective_mode = duplicate_mode  # Default to group's duplicate mode
+
+            if exception_keywords and duplicate_mode == 'consolidate':
+                keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                if keyword:
+                    matched_keyword = keyword
+                    effective_mode = exception_behavior
+                    logger.debug(
+                        f"Stream '{stream['name']}' matched exception keyword '{keyword}' "
+                        f"→ behavior: {exception_behavior}"
+                    )
+
             # V2: Check for existing channel based on duplicate handling mode
-            existing = find_existing_channel(
-                group_id=group['id'],
-                event_id=espn_event_id,
-                stream_id=stream.get('id') if duplicate_mode == 'separate' else None,
-                mode=duplicate_mode
-            )
+            # For keyword-based consolidation, we need a different lookup strategy
+            if matched_keyword and effective_mode == 'consolidate':
+                # Find existing channel for this event+keyword combination
+                existing = find_existing_channel(
+                    group_id=group['id'],
+                    event_id=espn_event_id,
+                    exception_keyword=matched_keyword,
+                    mode='consolidate'
+                )
+            else:
+                existing = find_existing_channel(
+                    group_id=group['id'],
+                    event_id=espn_event_id,
+                    stream_id=stream.get('id') if effective_mode == 'separate' else None,
+                    mode=effective_mode
+                )
 
             if existing:
-                # Handle based on duplicate mode
-                if duplicate_mode == 'ignore':
+                # Handle based on effective mode (may differ from group default due to keyword)
+                if effective_mode == 'ignore':
                     # Skip - don't add stream
                     results['existing'].append({
                         'stream': stream['name'],
@@ -1019,7 +1048,7 @@ class ChannelLifecycleManager:
                         'action': 'ignored'
                     })
 
-                elif duplicate_mode == 'consolidate':
+                elif effective_mode == 'consolidate':
                     # V2: Add stream to existing channel if not already present
                     if not stream_exists_on_channel(existing['id'], stream['id']):
                         try:
@@ -1043,14 +1072,16 @@ class ChannelLifecycleManager:
                                                 stream_name=stream.get('name'),
                                                 source_group_type='parent',
                                                 m3u_account_id=stream.get('m3u_account_id'),
-                                                m3u_account_name=stream.get('m3u_account_name')
+                                                m3u_account_name=stream.get('m3u_account_name'),
+                                                exception_keyword=matched_keyword
                                             )
                                             # Log history
+                                            keyword_note = f" [keyword: {matched_keyword}]" if matched_keyword else ""
                                             log_channel_history(
                                                 managed_channel_id=existing['id'],
                                                 change_type='stream_added',
                                                 change_source='epg_generation',
-                                                notes=f"Added stream '{stream.get('name')}' (consolidate mode)"
+                                                notes=f"Added stream '{stream.get('name')}' (consolidate mode){keyword_note}"
                                             )
                                             results['streams_added'].append({
                                                 'stream': stream['name'],
@@ -1244,7 +1275,7 @@ class ChannelLifecycleManager:
                     channel_profile_ids=added_to_profiles if added_to_profiles else None,
                     dispatcharr_uuid=dispatcharr_uuid,
                     # V2 fields
-                    primary_stream_id=stream['id'] if duplicate_mode == 'separate' else None,
+                    primary_stream_id=stream['id'] if effective_mode == 'separate' else None,
                     channel_group_id=channel_group_id,
                     stream_profile_id=stream_profile_id,
                     logo_url=logo_url_source,
@@ -1257,7 +1288,8 @@ class ChannelLifecycleManager:
                     sport=sport,
                     venue=venue,
                     broadcast=broadcast,
-                    sync_status='created'
+                    sync_status='created',
+                    exception_keyword=matched_keyword  # Store keyword for keyword-based consolidation
                 )
 
                 # V2: Also track stream in managed_channel_streams
@@ -1269,7 +1301,8 @@ class ChannelLifecycleManager:
                     source_group_type='parent',
                     priority=0,  # Primary stream
                     m3u_account_id=stream.get('m3u_account_id'),
-                    m3u_account_name=stream.get('m3u_account_name')
+                    m3u_account_name=stream.get('m3u_account_name'),
+                    exception_keyword=matched_keyword
                 )
 
                 # V2: Log channel creation in history

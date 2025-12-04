@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS settings (
     soccer_cache_refresh_frequency TEXT DEFAULT 'weekly',  -- daily, every_3_days, weekly, manual
 
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 12,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 13,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -760,7 +760,10 @@ CREATE TABLE IF NOT EXISTS managed_channels (
     -- ========== SYNC STATE ==========
     last_verified_at TEXT,
     sync_status TEXT DEFAULT 'created',      -- created, in_sync, drifted, orphaned
-    sync_notes TEXT
+    sync_notes TEXT,
+
+    -- ========== EXCEPTION KEYWORDS ==========
+    exception_keyword TEXT                   -- Keyword that created this channel (for keyword-based grouping)
 );
 
 CREATE INDEX IF NOT EXISTS idx_managed_channels_group ON managed_channels(event_epg_group_id);
@@ -808,6 +811,9 @@ CREATE TABLE IF NOT EXISTS managed_channel_streams (
     -- ========== SYNC STATE ==========
     last_verified_at TEXT,
     in_dispatcharr INTEGER DEFAULT 1,        -- 1=confirmed, 0=missing
+
+    -- ========== EXCEPTION KEYWORDS ==========
+    exception_keyword TEXT,                  -- Keyword that matched this stream
 
     FOREIGN KEY (managed_channel_id) REFERENCES managed_channels(id) ON DELETE CASCADE,
     FOREIGN KEY (source_group_id) REFERENCES event_epg_groups(id)
@@ -905,6 +911,22 @@ CREATE TABLE IF NOT EXISTS soccer_cache_meta (
 );
 
 INSERT OR IGNORE INTO soccer_cache_meta (id) VALUES (1);
+
+-- =============================================================================
+-- CONSOLIDATION EXCEPTION KEYWORDS TABLE
+-- Per-group keywords that override default duplicate_event_handling
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS consolidation_exception_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    keywords TEXT NOT NULL,              -- Comma-separated variants, case-insensitive
+    behavior TEXT NOT NULL DEFAULT 'consolidate',  -- 'consolidate', 'separate', 'ignore'
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cek_group ON consolidation_exception_keywords(group_id);
 
 -- =============================================================================
 -- END OF SCHEMA
