@@ -723,6 +723,20 @@ class ESPNClient:
         league = url_info['league']
         team_slug = url_info['team_slug']
 
+        # For soccer URLs, detect the correct league using the multi-league cache
+        # Soccer URLs don't include league info, so we need to look it up
+        if sport == 'soccer' and team_slug.isdigit():
+            try:
+                from epg.soccer_multi_league import SoccerMultiLeague
+                # Get team's default (primary) league from ESPN
+                default_league = SoccerMultiLeague.get_team_default_league(team_slug, league)
+                if default_league:
+                    logger.debug(f"Soccer team {team_slug}: detected default league {default_league}")
+                    league = default_league
+            except Exception as e:
+                logger.warning(f"Could not detect soccer league for team {team_slug}: {e}")
+                # Continue with fallback league
+
         # Fetch team data from ESPN API
         # Try by slug first, fall back to ID if slug is numeric
         team_data = self.get_team_info(sport, league, team_slug)
