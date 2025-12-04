@@ -293,10 +293,11 @@ class TeamMatcher:
 
     def _fetch_college_teams(self, sport: str, league: str) -> List[Dict]:
         """
-        Fetch all teams for a college league using the teams endpoint with limit=500.
+        Fetch all teams for a college league using get_all_teams_by_conference().
 
-        This is much faster than the old conference-by-conference approach.
-        ESPN's /teams?limit=500 returns all teams in a single call.
+        This combines teams from both /groups and /teams endpoints to ensure
+        we don't miss any teams. ESPN's /teams?limit=500 returns 362 teams but
+        misses ~3 recently-transitioned D1 schools that only appear in /groups.
 
         Args:
             sport: Sport (e.g., 'basketball', 'football')
@@ -305,13 +306,24 @@ class TeamMatcher:
         Returns:
             List of all team dicts
         """
-        logger.info(f"Fetching college teams for {league} via get_league_teams")
+        logger.info(f"Fetching college teams for {league} via get_all_teams_by_conference")
 
-        # Use the fast endpoint - get_league_teams now includes ?limit=500
-        teams = self.espn.get_league_teams(sport, league)
-        if not teams:
-            logger.warning(f"No teams found for {league}")
-            return []
+        # Use get_all_teams_by_conference which merges /groups and /teams endpoints
+        # This ensures we get ALL teams including recently-transitioned schools
+        conferences = self.espn.get_all_teams_by_conference(sport, league)
+        if not conferences:
+            # Fall back to simple teams list
+            logger.warning(f"No conference data for {league}, falling back to get_league_teams")
+            teams = self.espn.get_league_teams(sport, league)
+            if not teams:
+                logger.warning(f"No teams found for {league}")
+                return []
+            return teams
+
+        # Flatten conference structure to single list
+        teams = []
+        for conf in conferences:
+            teams.extend(conf.get('teams', []))
 
         logger.info(f"Fetched {len(teams)} college teams for {league}")
         return teams
