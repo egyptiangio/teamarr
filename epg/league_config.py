@@ -2,7 +2,7 @@
 Shared League Configuration Module
 
 Centralizes league configuration lookups used by both TeamMatcher and EventMatcher.
-Eliminates duplicate code and provides a single source of truth for league mappings.
+Single source of truth: the league_config database table.
 """
 
 from typing import Optional, Dict, Tuple, Callable
@@ -11,29 +11,6 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-# Fallback league configurations when database is not available
-# Maps league_code -> {sport, api_path}
-LEAGUE_FALLBACKS: Dict[str, Dict[str, str]] = {
-    # Pro US leagues
-    'nfl': {'sport': 'football', 'api_path': 'football/nfl'},
-    'nba': {'sport': 'basketball', 'api_path': 'basketball/nba'},
-    'nhl': {'sport': 'hockey', 'api_path': 'hockey/nhl'},
-    'mlb': {'sport': 'baseball', 'api_path': 'baseball/mlb'},
-    'mls': {'sport': 'soccer', 'api_path': 'soccer/usa.1'},
-
-    # European soccer
-    'epl': {'sport': 'soccer', 'api_path': 'soccer/eng.1'},
-    'laliga': {'sport': 'soccer', 'api_path': 'soccer/esp.1'},
-    'bundesliga': {'sport': 'soccer', 'api_path': 'soccer/ger.1'},
-    'seriea': {'sport': 'soccer', 'api_path': 'soccer/ita.1'},
-    'ligue1': {'sport': 'soccer', 'api_path': 'soccer/fra.1'},
-
-    # College sports
-    'ncaam': {'sport': 'basketball', 'api_path': 'basketball/mens-college-basketball'},
-    'ncaaw': {'sport': 'basketball', 'api_path': 'basketball/womens-college-basketball'},
-    'ncaaf': {'sport': 'football', 'api_path': 'football/college-football'},
-}
 
 # College leagues that need conference-based team fetching
 COLLEGE_LEAGUES = {
@@ -48,12 +25,11 @@ def get_league_config(
     cache: Optional[Dict[str, Dict]] = None
 ) -> Optional[Dict[str, str]]:
     """
-    Get league configuration (sport, api_path) from database or fallback.
+    Get league configuration (sport, api_path) from database.
 
     Args:
         league_code: League code (e.g., 'nfl', 'epl', 'ncaam')
         db_connection_func: Function that returns a database connection.
-                           If None, uses fallback mappings only.
         cache: Optional cache dict to store results. If provided, will
                check cache first and store results for future lookups.
 
@@ -67,7 +43,7 @@ def get_league_config(
     if cache is not None and league_lower in cache:
         return cache[league_lower]
 
-    # Try database lookup
+    # Database lookup
     if db_connection_func:
         try:
             conn = db_connection_func()
@@ -85,13 +61,6 @@ def get_league_config(
                 return config
         except Exception as e:
             logger.error(f"Error fetching league config for {league_code}: {e}")
-
-    # Fall back to hardcoded mappings
-    fallback = LEAGUE_FALLBACKS.get(league_lower)
-    if fallback:
-        if cache is not None:
-            cache[league_lower] = fallback
-        return fallback
 
     logger.warning(f"No league config found for {league_code}")
     return None
