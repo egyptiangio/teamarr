@@ -199,7 +199,7 @@ class TeamMatcher:
     """
 
     # Team vs team separators (order matters - check longer ones first)
-    SEPARATORS = [' vs. ', ' vs ', ' at ', ' @ ', ' v. ', ' v ']
+    SEPARATORS = [' vs. ', ' vs ', ' at ', ' @ ', ' v. ', ' v ', ' x ']
 
     # Cache duration for team lists (1 hour)
     CACHE_DURATION = timedelta(hours=1)
