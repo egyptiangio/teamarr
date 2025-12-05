@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
 from zoneinfo import ZoneInfo
 
-from epg.league_config import get_league_config, parse_api_path, is_college_league
+from epg.league_config import get_league_config, parse_api_path, is_college_league, is_soccer_league
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -283,6 +283,77 @@ class EventMatcher:
 
         return matching_events, skip_reason, None
 
+    def _search_scoreboard(
+        self,
+        team1_id: str,
+        team2_id: str,
+        sport: str,
+        api_league: str,
+        include_final_events: bool
+    ) -> Tuple[List[Dict], Optional[str], Optional[str]]:
+        """
+        Search scoreboard for games between two teams.
+
+        Used as fallback for soccer leagues where the schedule API only returns
+        past results, not future fixtures. The scoreboard API has upcoming games.
+
+        Args:
+            team1_id: First team ID
+            team2_id: Second team ID
+            sport: Sport type for API call
+            api_league: League code for API call
+            include_final_events: Whether to include completed events
+
+        Returns:
+            Tuple of (matching_events, skip_reason, error_reason)
+        """
+        now_utc = datetime.now(ZoneInfo('UTC'))
+
+        # Collect events from scoreboard that involve BOTH teams
+        candidate_events = []
+
+        # Search scoreboard for each day in the lookahead window
+        for day_offset in range(self.lookahead_days):
+            check_date = now_utc + timedelta(days=day_offset)
+            date_str = check_date.strftime('%Y%m%d')
+
+            logger.debug(f"[TRACE] _search_scoreboard | checking {date_str} for teams {team1_id} vs {team2_id}")
+
+            try:
+                scoreboard_data = self.espn.get_scoreboard(sport, api_league, date_str)
+                if not scoreboard_data or 'events' not in scoreboard_data:
+                    continue
+
+                for sb_event in scoreboard_data.get('events', []):
+                    # Check if this event involves both teams
+                    competitions = sb_event.get('competitions', [])
+                    if not competitions:
+                        continue
+
+                    competitors = competitions[0].get('competitors', [])
+                    team_ids_in_event = {str(c.get('team', {}).get('id', '')) for c in competitors}
+
+                    if str(team1_id) in team_ids_in_event and str(team2_id) in team_ids_in_event:
+                        candidate_events.append(sb_event)
+                        logger.debug(f"[TRACE] _search_scoreboard | candidate: {sb_event.get('name')} on {sb_event.get('date')}")
+
+            except Exception as e:
+                logger.warning(f"[TRACE] _search_scoreboard | error fetching scoreboard for {date_str}: {e}")
+                continue
+
+        if not candidate_events:
+            logger.debug(f"[TRACE] _search_scoreboard | no candidates found for {team1_id} vs {team2_id}")
+            return [], None, None
+
+        # Use existing filter logic (pass team2_id but events already contain both teams)
+        matching_events, skip_reason = self._filter_matching_events(
+            candidate_events, team2_id, include_final_events
+        )
+
+        logger.debug(f"[TRACE] _search_scoreboard | team1={team1_id} vs team2={team2_id} | {len(matching_events)} matches found | skip_reason={skip_reason}")
+
+        return matching_events, skip_reason, None
+
     def find_event(
         self,
         team1_id: str,
@@ -347,6 +418,15 @@ class EventMatcher:
             )
             if matching_events:
                 logger.info(f"[TRACE] Found game via team2 ({team2_id}) schedule fallback")
+
+        # Soccer fallback: schedule API only returns past results, use scoreboard for future games
+        if not matching_events and not skip_reason and is_soccer_league(league):
+            logger.debug(f"[TRACE] No match in schedule, trying scoreboard fallback for soccer league {league}")
+            matching_events, skip_reason, error = self._search_scoreboard(
+                team1_id, team2_id, sport, api_league, include_final_events
+            )
+            if matching_events:
+                logger.info(f"[TRACE] Found game via scoreboard fallback for soccer league {league}")
 
         if error and not matching_events:
             result['reason'] = error
