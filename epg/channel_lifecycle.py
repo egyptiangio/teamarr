@@ -1859,7 +1859,11 @@ class ChannelLifecycleManager:
         """
         Clean up channels for streams that no longer exist.
 
-        Only applies if group's delete_timing is 'stream_removed'.
+        ALWAYS runs regardless of delete_timing - if a stream no longer exists,
+        the channel should be deleted immediately. This ensures channels are
+        cleaned up at the EARLIEST of:
+        - Stream removed from M3U provider
+        - Scheduled delete time (end of day for 'same_day', etc.)
 
         Args:
             group: Event EPG group configuration
@@ -1868,40 +1872,95 @@ class ChannelLifecycleManager:
         Returns:
             Dict with deleted and error counts
         """
-        from database import get_managed_channels_for_group
+        from database import get_managed_channels_for_group, get_channel_streams
 
         results = {
             'deleted': [],
             'errors': []
         }
 
-        # Get delete timing - always use global settings (no per-group overrides)
-        global_settings = get_global_lifecycle_settings()
-        delete_timing = global_settings['channel_delete_timing']
-        if delete_timing != 'stream_removed':
-            return results
-
         # Get all active managed channels for this group
         managed_channels = get_managed_channels_for_group(group['id'])
         current_ids_set = set(current_stream_ids)
 
         for channel in managed_channels:
-            if channel['dispatcharr_stream_id'] not in current_ids_set:
-                # Stream no longer exists - use unified delete method
-                delete_result = self.delete_managed_channel(channel, reason='stream removed')
+            # V2: Check all streams on the channel, not just primary
+            channel_streams = get_channel_streams(channel['id'])
+            if channel_streams:
+                # Check if ALL streams are gone (channel should be deleted)
+                # vs just SOME streams gone (remove those streams but keep channel)
+                valid_streams = [s for s in channel_streams if s['dispatcharr_stream_id'] in current_ids_set]
+                missing_streams = [s for s in channel_streams if s['dispatcharr_stream_id'] not in current_ids_set]
 
-                if delete_result.get('success'):
-                    results['deleted'].append({
-                        'channel_id': channel['dispatcharr_channel_id'],
-                        'channel_number': channel['channel_number'],
-                        'channel_name': channel['channel_name'],
-                        'logo_deleted': delete_result.get('logo_deleted')
-                    })
-                else:
-                    results['errors'].append({
-                        'channel_id': channel['dispatcharr_channel_id'],
-                        'error': delete_result.get('error')
-                    })
+                if not valid_streams:
+                    # All streams are gone - delete channel
+                    delete_result = self.delete_managed_channel(channel, reason='all streams removed')
+
+                    if delete_result.get('success'):
+                        results['deleted'].append({
+                            'channel_id': channel['dispatcharr_channel_id'],
+                            'channel_number': channel['channel_number'],
+                            'channel_name': channel['channel_name'],
+                            'logo_deleted': delete_result.get('logo_deleted')
+                        })
+                    else:
+                        results['errors'].append({
+                            'channel_id': channel['dispatcharr_channel_id'],
+                            'error': delete_result.get('error')
+                        })
+                elif missing_streams:
+                    # Some streams are gone - remove them from channel but keep channel
+                    from database import remove_stream_from_channel, log_channel_history
+                    for stream in missing_streams:
+                        try:
+                            # Remove from Teamarr DB
+                            remove_stream_from_channel(channel['id'], stream['dispatcharr_stream_id'])
+
+                            # Also update Dispatcharr - remove the missing stream from the channel
+                            # (the stream may already be gone from Dispatcharr, but we still need to
+                            # update the channel's stream list to remove the stale reference)
+                            with self._dispatcharr_lock:
+                                current_channel = self.channel_api.get_channel(channel['dispatcharr_channel_id'])
+                                if current_channel:
+                                    current_streams = current_channel.get('streams', [])
+                                    if stream['dispatcharr_stream_id'] in current_streams:
+                                        new_streams = [s for s in current_streams if s != stream['dispatcharr_stream_id']]
+                                        self.channel_api.update_channel(
+                                            channel['dispatcharr_channel_id'],
+                                            {'streams': new_streams}
+                                        )
+
+                            log_channel_history(
+                                managed_channel_id=channel['id'],
+                                change_type='stream_removed',
+                                change_source='epg_generation',
+                                notes=f"Stream '{stream.get('stream_name', stream['dispatcharr_stream_id'])}' no longer exists"
+                            )
+                            logger.debug(
+                                f"Removed missing stream {stream['dispatcharr_stream_id']} from channel "
+                                f"'{channel['channel_name']}'"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to remove missing stream from channel: {e}")
+            else:
+                # Legacy: Check primary stream ID (V1 channels without stream records)
+                primary_stream_id = channel.get('dispatcharr_stream_id')
+                if primary_stream_id and primary_stream_id not in current_ids_set:
+                    # Stream no longer exists - delete channel
+                    delete_result = self.delete_managed_channel(channel, reason='stream removed')
+
+                    if delete_result.get('success'):
+                        results['deleted'].append({
+                            'channel_id': channel['dispatcharr_channel_id'],
+                            'channel_number': channel['channel_number'],
+                            'channel_name': channel['channel_name'],
+                            'logo_deleted': delete_result.get('logo_deleted')
+                        })
+                    else:
+                        results['errors'].append({
+                            'channel_id': channel['dispatcharr_channel_id'],
+                            'error': delete_result.get('error')
+                        })
 
         return results
 
