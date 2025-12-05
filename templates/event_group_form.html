@@ -115,7 +115,7 @@
                     <div class="form-row" style="margin-top: 1rem;">
                         <div class="form-group">
                             <label for="channel_sort_order">Channel Sort Order</label>
-                            <select id="channel_sort_order" name="channel_sort_order" class="form-control panel-select">
+                            <select id="channel_sort_order" name="channel_sort_order" class="form-control">
                                 <option value="time" {% if not group or group.channel_sort_order == 'time' %}selected{% endif %}>By Time (chronological)</option>
                                 <option value="sport_time" {% if group and group.channel_sort_order == 'sport_time' %}selected{% endif %}>By Sport, then Time</option>
                                 <option value="league_time" {% if group and group.channel_sort_order == 'league_time' %}selected{% endif %}>By League, then Time</option>
@@ -125,7 +125,7 @@
 
                         <div class="form-group">
                             <label for="overlap_handling">Duplicate Stream Handling</label>
-                            <select id="overlap_handling" name="overlap_handling" class="form-control panel-select">
+                            <select id="overlap_handling" name="overlap_handling" class="form-control">
                                 <option value="add_stream" {% if not group or group.overlap_handling == 'add_stream' %}selected{% endif %}>Add stream to existing channel (consolidate)</option>
                                 <option value="skip" {% if group and group.overlap_handling == 'skip' %}selected{% endif %}>Skip (don't create or modify)</option>
                                 <option value="create_all" {% if group and group.overlap_handling == 'create_all' %}selected{% endif %}>Create separate channel</option>
@@ -1708,23 +1708,23 @@ select.form-control {
     font-weight: 600;
 }
 
-/* Multi-Sport Panel - use lighter background so controls have contrast */
+/* Multi-Sport Panel - use tertiary (lighter in dark mode) for nested panel */
 .multi-sport-panel {
     margin-top: 1rem;
     padding: 1rem;
-    background: var(--bg-secondary);
+    background: var(--bg-tertiary);
     border-radius: 6px;
     border: 1px solid var(--border);
 }
 
-/* Selects inside the panel use darker background for contrast */
-.multi-sport-panel .panel-select {
-    background: var(--bg-tertiary);
+/* Form controls inside panel use secondary (darker) for contrast */
+.multi-sport-panel .form-control {
+    background: var(--bg-secondary);
 }
 
-/* Leagues picker groups inside panel */
+/* Leagues picker groups inside panel - use secondary for contrast */
 .multi-sport-panel .leagues-sport-group {
-    background: var(--bg-tertiary);
+    background: var(--bg-secondary);
 }
 </style>
 {% endblock %}

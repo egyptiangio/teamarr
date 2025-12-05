@@ -685,6 +685,11 @@ select.form-control {
     margin-bottom: 1rem;
 }
 
+/* Form controls inside cache section need darker background for contrast */
+.cache-section .form-control {
+    background: var(--bg-secondary);
+}
+
 .cache-section h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1rem;
@@ -720,7 +725,7 @@ select.form-control {
 
 /* Cache Status Box */
 .cache-status-box {
-    background: var(--bg-tertiary);
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
