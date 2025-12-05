@@ -1381,6 +1381,160 @@ class ChannelLifecycleManager:
 
         return results
 
+    def process_child_group_streams(
+        self,
+        child_group: Dict,
+        matched_streams: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        Process streams from a child group - add them to parent's channels.
+
+        Child groups don't create new channels. Instead, they add their matched
+        streams to the parent group's existing channels for the same events.
+
+        This method handles exception keyword matching so that child streams
+        go to the correct sub-consolidated channel (if applicable).
+
+        Args:
+            child_group: The child event EPG group configuration
+            matched_streams: List of matched streams with events
+
+        Returns:
+            Dict with streams_added, skipped, and errors
+        """
+        from database import (
+            find_parent_channel_for_event,
+            add_stream_to_channel,
+            stream_exists_on_channel,
+            log_channel_history,
+            get_consolidation_exception_keywords
+        )
+        from utils.keyword_matcher import check_exception_keyword
+
+        results = {
+            'streams_added': [],
+            'skipped': [],
+            'errors': []
+        }
+
+        parent_group_id = child_group.get('parent_group_id')
+        if not parent_group_id:
+            logger.error(f"Child group {child_group['id']} has no parent_group_id")
+            return results
+
+        # Load global exception keywords (same as parent uses)
+        exception_keywords = get_consolidation_exception_keywords()
+
+        for matched in matched_streams:
+            stream = matched['stream']
+            event = matched['event']
+            event_id = event.get('id')
+
+            if not event_id:
+                results['errors'].append({
+                    'stream': stream['name'],
+                    'error': 'No ESPN event ID'
+                })
+                continue
+
+            # Check for exception keyword match (child should route to same channel as parent would)
+            matched_keyword = None
+            if exception_keywords:
+                keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                if keyword:
+                    # For 'ignore' behavior, skip this stream
+                    if exception_behavior == 'ignore':
+                        results['skipped'].append({
+                            'stream': stream['name'],
+                            'reason': f"exception keyword '{keyword}' set to ignore"
+                        })
+                        continue
+                    matched_keyword = keyword
+                    logger.debug(
+                        f"Child stream '{stream['name']}' matched exception keyword '{keyword}'"
+                    )
+
+            # Find parent's channel for this event (with matching keyword if applicable)
+            parent_channel = find_parent_channel_for_event(parent_group_id, event_id, matched_keyword)
+
+            if not parent_channel:
+                # If keyword matched but no keyword channel exists, try main channel
+                if matched_keyword:
+                    parent_channel = find_parent_channel_for_event(parent_group_id, event_id, None)
+
+                if not parent_channel:
+                    logger.debug(
+                        f"No parent channel for event {event_id} "
+                        f"(keyword: {matched_keyword}) - skipping stream '{stream['name']}'"
+                    )
+                    results['skipped'].append({
+                        'stream': stream['name'],
+                        'reason': 'no parent channel for event'
+                    })
+                    continue
+
+            # Check if stream already attached
+            if stream_exists_on_channel(parent_channel['id'], stream['id']):
+                continue
+
+            # Add stream to parent channel in Dispatcharr
+            try:
+                current_channel = self.channel_api.get_channel(parent_channel['dispatcharr_channel_id'])
+                if current_channel:
+                    current_streams = current_channel.get('streams', [])
+                    if stream['id'] not in current_streams:
+                        new_streams = current_streams + [stream['id']]
+                        with self._dispatcharr_lock:
+                            update_result = self.channel_api.update_channel(
+                                parent_channel['dispatcharr_channel_id'],
+                                {'streams': new_streams}
+                            )
+                        if update_result.get('success'):
+                            # Track in database
+                            add_stream_to_channel(
+                                managed_channel_id=parent_channel['id'],
+                                dispatcharr_stream_id=stream['id'],
+                                source_group_id=child_group['id'],
+                                stream_name=stream.get('name'),
+                                source_group_type='child',
+                                m3u_account_id=stream.get('m3u_account_id'),
+                                m3u_account_name=stream.get('m3u_account_name')
+                            )
+                            log_channel_history(
+                                managed_channel_id=parent_channel['id'],
+                                change_type='stream_added',
+                                change_source='epg_generation',
+                                notes=f"Added stream '{stream.get('name')}' from child group {child_group.get('group_name')}"
+                            )
+                            results['streams_added'].append({
+                                'stream': stream['name'],
+                                'channel': parent_channel['channel_name'],
+                                'keyword': matched_keyword
+                            })
+                            logger.debug(
+                                f"Added child stream '{stream['name']}' to parent channel "
+                                f"'{parent_channel['channel_name']}' (keyword: {matched_keyword})"
+                            )
+                        else:
+                            results['errors'].append({
+                                'stream': stream['name'],
+                                'error': update_result.get('error', 'Failed to update channel')
+                            })
+            except Exception as e:
+                logger.warning(f"Failed to add child stream to parent channel: {e}")
+                results['errors'].append({
+                    'stream': stream['name'],
+                    'error': str(e)
+                })
+
+        if results['streams_added']:
+            logger.info(
+                f"Child group '{child_group.get('group_name')}': "
+                f"added {len(results['streams_added'])} streams to parent channels"
+            )
+
+        return results
+
     def cleanup_deleted_streams(
         self,
         group: Dict,

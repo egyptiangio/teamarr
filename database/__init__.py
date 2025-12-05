@@ -2857,14 +2857,35 @@ def find_existing_channel(
         """, (group_id, event_id))
 
 
-def find_parent_channel_for_event(parent_group_id: int, event_id: str) -> Optional[Dict[str, Any]]:
-    """Find a parent group's channel for a given event (used by child groups)."""
-    return db_fetch_one("""
-        SELECT * FROM managed_channels
-        WHERE event_epg_group_id = ?
-          AND espn_event_id = ?
-          AND deleted_at IS NULL
-    """, (parent_group_id, event_id))
+def find_parent_channel_for_event(parent_group_id: int, event_id: str, exception_keyword: str = None) -> Optional[Dict[str, Any]]:
+    """Find a parent group's channel for a given event (used by child groups).
+
+    Args:
+        parent_group_id: The parent group ID
+        event_id: The ESPN event ID
+        exception_keyword: Optional exception keyword to match (for sub-consolidated channels)
+
+    Returns:
+        The matching managed channel record, or None if not found
+    """
+    if exception_keyword:
+        # Look for channel with matching keyword
+        return db_fetch_one("""
+            SELECT * FROM managed_channels
+            WHERE event_epg_group_id = ?
+              AND espn_event_id = ?
+              AND exception_keyword = ?
+              AND deleted_at IS NULL
+        """, (parent_group_id, event_id, exception_keyword))
+    else:
+        # Look for main channel (no keyword)
+        return db_fetch_one("""
+            SELECT * FROM managed_channels
+            WHERE event_epg_group_id = ?
+              AND espn_event_id = ?
+              AND (exception_keyword IS NULL OR exception_keyword = '')
+              AND deleted_at IS NULL
+        """, (parent_group_id, event_id))
 
 
 def get_channels_by_sync_status(status: str) -> List[Dict[str, Any]]:

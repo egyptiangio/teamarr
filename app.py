@@ -534,79 +534,22 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             # Step 5: Channel Lifecycle Management
             if is_child_group:
                 # Child group: Add streams to parent group's channels
+                # Uses process_child_group_streams() which handles exception keywords
                 from epg.channel_lifecycle import get_lifecycle_manager
-                from database import find_parent_channel_for_event, add_stream_to_channel, stream_exists_on_channel, log_channel_history
 
                 lifecycle_mgr = get_lifecycle_manager()
                 if lifecycle_mgr:
                     app.logger.debug(f"Processing child group {group_id} - adding streams to parent channels")
 
-                    parent_group_id = group['parent_group_id']
-                    streams_added = 0
-                    streams_skipped = 0
-
-                    for matched in matched_streams:
-                        event_id = matched['event'].get('id')
-                        stream = matched['stream']
-
-                        if not event_id:
-                            continue
-
-                        # Find parent's channel for this event
-                        parent_channel = find_parent_channel_for_event(parent_group_id, event_id)
-                        if not parent_channel:
-                            app.logger.debug(f"No parent channel for event {event_id} - skipping stream '{stream['name']}'")
-                            streams_skipped += 1
-                            continue
-
-                        # Check if stream already attached
-                        if stream_exists_on_channel(parent_channel['id'], stream['id']):
-                            continue
-
-                        # Add stream to parent channel in Dispatcharr
-                        try:
-                            current_channel = lifecycle_mgr.channel_api.get_channel(parent_channel['dispatcharr_channel_id'])
-                            if current_channel:
-                                current_streams = current_channel.get('streams', [])
-                                if stream['id'] not in current_streams:
-                                    new_streams = current_streams + [stream['id']]
-                                    with lifecycle_mgr._dispatcharr_lock:
-                                        update_result = lifecycle_mgr.channel_api.update_channel(
-                                            parent_channel['dispatcharr_channel_id'],
-                                            {'streams': new_streams}
-                                        )
-                                    if update_result.get('success'):
-                                        # Track in database
-                                        add_stream_to_channel(
-                                            managed_channel_id=parent_channel['id'],
-                                            dispatcharr_stream_id=stream['id'],
-                                            source_group_id=group_id,
-                                            stream_name=stream.get('name'),
-                                            source_group_type='child',
-                                            m3u_account_id=stream.get('m3u_account_id'),
-                                            m3u_account_name=stream.get('m3u_account_name')
-                                        )
-                                        log_channel_history(
-                                            managed_channel_id=parent_channel['id'],
-                                            change_type='stream_added',
-                                            change_source='epg_generation',
-                                            notes=f"Added stream '{stream.get('name')}' from child group {group.get('group_name')}"
-                                        )
-                                        streams_added += 1
-                                        app.logger.debug(f"Added stream '{stream['name']}' to parent channel '{parent_channel['channel_name']}'")
-                        except Exception as e:
-                            app.logger.warning(f"Failed to add stream to parent channel: {e}")
+                    child_results = lifecycle_mgr.process_child_group_streams(group, matched_streams)
 
                     channel_results = {
                         'created': [],
                         'existing': [],
-                        'skipped': [{'stream': 'N/A', 'reason': 'child group'}] * streams_skipped,
-                        'errors': [],
-                        'streams_added': [{'count': streams_added}]
+                        'skipped': child_results.get('skipped', []),
+                        'errors': child_results.get('errors', []),
+                        'streams_added': child_results.get('streams_added', [])
                     }
-
-                    if streams_added > 0:
-                        app.logger.info(f"Child group '{group['group_name']}': added {streams_added} streams to parent channels")
 
             elif group.get('channel_start'):
                 # Parent group: Normal channel creation
