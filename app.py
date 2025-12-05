@@ -1000,7 +1000,17 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                 if scheduled_deleted:
                     app.logger.info(f"🗑️ Processed {scheduled_deleted} scheduled channel deletions")
 
+                # 3d: Enforce stream keyword placement
+                keyword_results = lifecycle_mgr.enforce_stream_keyword_placement()
+                streams_moved = keyword_results.get('moved', 0)
+
+                # 3e: Enforce keyword channel ordering (keyword channels after main)
+                ordering_results = lifecycle_mgr.enforce_keyword_channel_ordering()
+                channels_reordered = ordering_results.get('reordered', 0)
+
                 lifecycle_stats['channels_deleted'] = disabled_deleted + scheduled_deleted
+                lifecycle_stats['streams_moved'] = streams_moved
+                lifecycle_stats['channels_reordered'] = channels_reordered
                 lifecycle_stats['reconciliation'] = reconciliation_stats
         except Exception as e:
             app.logger.warning(f"Channel lifecycle processing error: {e}")

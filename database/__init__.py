@@ -2585,6 +2585,26 @@ def get_epg_stats_summary() -> Dict[str, Any]:
 # Channel Lifecycle V2 - Stream Management Functions
 # =============================================================================
 
+def get_all_managed_channel_streams() -> List[Dict[str, Any]]:
+    """Get all streams across all active channels with channel info for keyword enforcement.
+
+    Returns stream records joined with channel info needed for keyword placement checks.
+    """
+    return db_fetch_all("""
+        SELECT
+            mcs.*,
+            mc.espn_event_id,
+            mc.event_epg_group_id,
+            mc.exception_keyword as channel_exception_keyword,
+            mc.channel_name,
+            mc.dispatcharr_channel_id
+        FROM managed_channel_streams mcs
+        JOIN managed_channels mc ON mcs.managed_channel_id = mc.id
+        WHERE mcs.removed_at IS NULL
+          AND mc.deleted_at IS NULL
+    """)
+
+
 def get_channel_streams(managed_channel_id: int, include_removed: bool = False) -> List[Dict[str, Any]]:
     """Get all streams attached to a managed channel, ordered by priority."""
     query = """
@@ -2792,6 +2812,52 @@ def get_recent_channel_changes(hours: int = 24, change_types: List[str] = None) 
     query += " ORDER BY mch.changed_at DESC"
 
     return db_fetch_all(query, tuple(params))
+
+
+def get_channels_needing_reorder() -> List[Dict[str, Any]]:
+    """Find events where keyword channel has a lower number than main channel.
+
+    Returns list of dicts with 'main_channel' and 'keyword_channel' that need swapping.
+    """
+    # Find all events with both main and keyword channels
+    rows = db_fetch_all("""
+        SELECT
+            m.id as main_id,
+            m.channel_number as main_number,
+            m.dispatcharr_channel_id as main_dispatcharr_id,
+            m.espn_event_id,
+            k.id as keyword_id,
+            k.channel_number as keyword_number,
+            k.dispatcharr_channel_id as keyword_dispatcharr_id,
+            k.exception_keyword
+        FROM managed_channels m
+        JOIN managed_channels k ON m.espn_event_id = k.espn_event_id
+                               AND m.event_epg_group_id = k.event_epg_group_id
+        WHERE m.deleted_at IS NULL
+          AND k.deleted_at IS NULL
+          AND (m.exception_keyword IS NULL OR m.exception_keyword = '')
+          AND k.exception_keyword IS NOT NULL
+          AND k.exception_keyword != ''
+          AND k.channel_number < m.channel_number
+    """)
+
+    results = []
+    for row in rows:
+        results.append({
+            'main_channel': {
+                'id': row['main_id'],
+                'channel_number': row['main_number'],
+                'dispatcharr_channel_id': row['main_dispatcharr_id'],
+                'espn_event_id': row['espn_event_id']
+            },
+            'keyword_channel': {
+                'id': row['keyword_id'],
+                'channel_number': row['keyword_number'],
+                'dispatcharr_channel_id': row['keyword_dispatcharr_id'],
+                'exception_keyword': row['exception_keyword']
+            }
+        })
+    return results
 
 
 def cleanup_old_channel_history(days: int = 90) -> int:
