@@ -22,6 +22,7 @@ class ESPNClient:
 
         # Cache for team stats (refreshes every 6 hours)
         self._stats_cache = {}
+        self._stats_cache_lock = threading.Lock()  # Thread-safe cache access
         self._cache_duration = timedelta(hours=6)
 
         # Cache for team schedules (cleared each EPG generation run)
@@ -216,14 +217,32 @@ class ESPNClient:
                 'division_record': '3-1'
             }
         """
-        # Check cache first
+        # Check cache first (fast path without lock)
         cache_key = f"{sport}_{league}_{team_id}"
         if cache_key in self._stats_cache:
             cached_data, cached_time = self._stats_cache[cache_key]
             if datetime.now() - cached_time < self._cache_duration:
                 return cached_data
 
-        # Fetch fresh data
+        # Slow path: acquire lock for cache miss
+        with self._stats_cache_lock:
+            # Double-check after acquiring lock (another thread may have populated)
+            if cache_key in self._stats_cache:
+                cached_data, cached_time = self._stats_cache[cache_key]
+                if datetime.now() - cached_time < self._cache_duration:
+                    return cached_data
+
+            # Fetch fresh data (inside lock to prevent duplicate fetches)
+            return self._fetch_team_stats_uncached(sport, league, team_id, cache_key)
+
+    def _fetch_team_stats_uncached(
+        self,
+        sport: str,
+        league: str,
+        team_id: str,
+        cache_key: str
+    ) -> Dict:
+        """Internal method to fetch team stats without cache check. Called with lock held."""
         team_data = self.get_team_info(sport, league, team_id)
 
         # Default empty stats

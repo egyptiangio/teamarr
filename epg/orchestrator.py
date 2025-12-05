@@ -34,10 +34,47 @@ class EPGOrchestrator:
         self.api_calls = 0
         self._api_calls_lock = threading.Lock()  # Thread-safe counter
 
+        # Scoreboard cache by (sport, league, date) - cleared each generation
+        # Prevents duplicate fetches for same date across different methods
+        self._scoreboard_cache = {}
+        self._scoreboard_cache_lock = threading.Lock()
+
     def _increment_api_calls(self, count: int = 1):
         """Thread-safe increment of API call counter"""
         with self._api_calls_lock:
             self.api_calls += count
+
+    def _get_scoreboard_cached(self, api_sport: str, api_league: str, date_str: str) -> Optional[Dict]:
+        """
+        Get scoreboard with caching to avoid duplicate fetches.
+
+        Caches by (sport, league, date). Cache is cleared at start of each EPG generation.
+        """
+        cache_key = f"{api_sport}:{api_league}:{date_str}"
+
+        # Fast path: check cache without lock
+        if cache_key in self._scoreboard_cache:
+            return self._scoreboard_cache[cache_key]
+
+        # Slow path: acquire lock
+        with self._scoreboard_cache_lock:
+            # Double-check after lock
+            if cache_key in self._scoreboard_cache:
+                return self._scoreboard_cache[cache_key]
+
+            # Fetch from ESPN
+            scoreboard_data = self.espn.get_scoreboard(api_sport, api_league, date_str)
+            self._increment_api_calls()
+
+            # Cache result (even None to avoid re-fetching failures)
+            self._scoreboard_cache[cache_key] = scoreboard_data
+
+            return scoreboard_data
+
+    def _clear_scoreboard_cache(self):
+        """Clear scoreboard cache. Call at start of each EPG generation."""
+        with self._scoreboard_cache_lock:
+            self._scoreboard_cache.clear()
 
     def _round_to_last_hour(self, dt: datetime) -> datetime:
         """Round datetime down to the last top of hour"""
@@ -129,6 +166,9 @@ class EPGOrchestrator:
         logger.info(f"Starting EPG generation: days_ahead={days_ahead}, timezone={epg_timezone}")
         start_time = datetime.now()
         self.api_calls = 0
+
+        # Clear caches at start of generation
+        self._clear_scoreboard_cache()
 
         # Get active teams with templates
         teams_list = self._get_teams_with_templates()
@@ -451,8 +491,8 @@ class EPGOrchestrator:
             Enriched event dict, or None if scoreboard data not found
         """
         try:
-            # Fetch scoreboard for date
-            scoreboard_data = self.espn.get_scoreboard(api_sport, api_league, date_str)
+            # Fetch scoreboard for date (cached to avoid duplicate fetches)
+            scoreboard_data = self._get_scoreboard_cached(api_sport, api_league, date_str)
 
             if not scoreboard_data or 'events' not in scoreboard_data:
                 return None
@@ -564,9 +604,9 @@ class EPGOrchestrator:
         # Use api_path from league_config if available, otherwise fall back to team's sport/league
         api_sport, api_league = self._get_api_path(team)
 
-        # Fetch team stats (record, standings, etc.)
+        # Fetch team info (logos, colors) and stats (record, standings, streaks, PPG, etc.)
         team_data = self.espn.get_team_info(api_sport, api_league, team['espn_team_id'])
-        team_stats_basic = self.espn.get_team_stats(api_sport, api_league, team['espn_team_id'])
+        team_stats = self.espn.get_team_stats(api_sport, api_league, team['espn_team_id'])
         self._increment_api_calls()
 
         # Extract team logo from ESPN data if not already set
@@ -574,13 +614,6 @@ class EPGOrchestrator:
             logos = team_data['team'].get('logos', [])
             if logos and len(logos) > 0:
                 team['team_logo_url'] = logos[0].get('href', '')
-
-        # Fetch enhanced team stats (streaks, PPG, standings, home/away records)
-        enhanced_stats = self.espn.get_team_stats(api_sport, api_league, team['espn_team_id'])
-        self._increment_api_calls()
-
-        # Merge basic and enhanced stats
-        team_stats = {**team_stats_basic, **enhanced_stats}
 
         # Check if this is a soccer team - if so, use multi-league schedule fetching
         team_league = team.get('league', '')
@@ -875,8 +908,7 @@ class EPGOrchestrator:
             check_date = start_local + timedelta(days=day_offset)
             date_str = check_date.strftime('%Y%m%d')
 
-            scoreboard_data = self.espn.get_scoreboard(api_sport, api_league, date_str)
-            self._increment_api_calls()
+            scoreboard_data = self._get_scoreboard_cached(api_sport, api_league, date_str)
 
             if not scoreboard_data or 'events' not in scoreboard_data:
                 continue
@@ -995,8 +1027,7 @@ class EPGOrchestrator:
 
         # Fetch scoreboards for last 7 days (to control API calls)
         for date_str in sorted(past_by_date.keys(), reverse=True)[:7]:
-            scoreboard_data = self.espn.get_scoreboard(api_sport, api_league, date_str)
-            self._increment_api_calls()
+            scoreboard_data = self._get_scoreboard_cached(api_sport, api_league, date_str)
 
             if scoreboard_data and 'events' in scoreboard_data:
                 # Parse scoreboard events
