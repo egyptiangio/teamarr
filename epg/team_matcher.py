@@ -413,6 +413,12 @@ class TeamMatcher:
 
         text = text.lower()
 
+        # Normalize special characters (handles ESPN stream name quirks)
+        # Backtick → apostrophe (e.g., "Hawai`i" → "Hawai'i")
+        text = text.replace('`', "'")
+        # Underscore → space (e.g., "Gardner_Webb" → "Gardner Webb")
+        text = text.replace('_', ' ')
+
         # Remove parenthetical content
         text = re.sub(r'\([^)]*\)', '', text)
 

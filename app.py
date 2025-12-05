@@ -313,8 +313,25 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
         time_enabled = bool(group.get('custom_regex_time_enabled'))
         any_custom_enabled = teams_enabled or date_enabled or time_enabled
 
-        def match_single_stream(stream):
-            """Match a single stream to ESPN event - called in parallel"""
+        # Check for multi-sport mode
+        is_multi_sport = bool(group.get('is_multi_sport', 0))
+        enabled_leagues = None
+        if is_multi_sport:
+            # Parse enabled_leagues JSON if present
+            import json
+            enabled_leagues_json = group.get('enabled_leagues', '[]')
+            try:
+                enabled_leagues = json.loads(enabled_leagues_json) if enabled_leagues_json else []
+            except (json.JSONDecodeError, TypeError):
+                enabled_leagues = []
+            if enabled_leagues:
+                app.logger.debug(f"Multi-sport mode enabled with leagues: {enabled_leagues}")
+            else:
+                app.logger.warning(f"Multi-sport mode enabled but no leagues configured")
+                is_multi_sport = False  # Fall back to single-league mode
+
+        def match_single_stream_single_league(stream):
+            """Match a single stream to ESPN event in assigned league - called in parallel"""
             # Create matchers per-thread for thread safety
             thread_team_matcher = create_matcher()
             thread_event_matcher = create_event_matcher(lookahead_days=lookahead_days)
@@ -363,6 +380,175 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             except Exception as e:
                 app.logger.warning(f"Error matching stream '{stream['name']}': {e}")
                 return {'type': 'error', 'stream': stream, 'error': str(e)}
+
+        def match_single_stream_multi_sport(stream):
+            """Match a single stream using multi-sport league detection - called in parallel"""
+            from epg.league_detector import LeagueDetector
+            from database import find_any_channel_for_event
+
+            # Create per-thread instances
+            thread_team_matcher = create_matcher()
+            thread_event_matcher = create_event_matcher(lookahead_days=lookahead_days)
+            thread_league_detector = LeagueDetector(
+                espn_client=thread_event_matcher.espn,
+                enabled_leagues=enabled_leagues,
+                lookahead_days=lookahead_days
+            )
+
+            try:
+                # Step 1: Extract teams without assuming a league
+                # Try each enabled league until we find matching teams
+                team_result = None
+                detected_league = None
+
+                # First, try to detect league from stream name indicators
+                detection = thread_league_detector.detect(
+                    stream_name=stream['name'],
+                    team1=None,  # Don't have teams yet
+                    team2=None,
+                    team1_id=None,
+                    team2_id=None,
+                    game_date=None,
+                    game_time=None
+                )
+
+                if detection.detected and detection.tier == 1:
+                    # Tier 1: Explicit league indicator found (e.g., "NHL:", "NBA:")
+                    # Try to match teams in that league directly
+                    detected_league = detection.league
+                    if any_custom_enabled:
+                        team_result = thread_team_matcher.extract_teams_with_selective_regex(
+                            stream['name'],
+                            detected_league,
+                            teams_pattern=group.get('custom_regex_teams'),
+                            teams_enabled=teams_enabled,
+                            date_pattern=group.get('custom_regex_date'),
+                            date_enabled=date_enabled,
+                            time_pattern=group.get('custom_regex_time'),
+                            time_enabled=time_enabled
+                        )
+                    else:
+                        team_result = thread_team_matcher.extract_teams(stream['name'], detected_league)
+
+                # If no Tier 1 detection or no team match, try each enabled league
+                if not team_result or not team_result.get('matched'):
+                    for league in enabled_leagues:
+                        if any_custom_enabled:
+                            candidate_result = thread_team_matcher.extract_teams_with_selective_regex(
+                                stream['name'],
+                                league,
+                                teams_pattern=group.get('custom_regex_teams'),
+                                teams_enabled=teams_enabled,
+                                date_pattern=group.get('custom_regex_date'),
+                                date_enabled=date_enabled,
+                                time_pattern=group.get('custom_regex_time'),
+                                time_enabled=time_enabled
+                            )
+                        else:
+                            candidate_result = thread_team_matcher.extract_teams(stream['name'], league)
+
+                        if candidate_result.get('matched'):
+                            team_result = candidate_result
+                            detected_league = league
+                            break
+
+                if not team_result or not team_result.get('matched'):
+                    return {'type': 'no_teams', 'stream': stream}
+
+                # Step 2: If multiple leagues could match these teams, use disambiguation
+                # (Only needed if we found teams but no clear league indicator)
+                if not detection.detected or detection.tier != 1:
+                    # Try full detection with team info
+                    full_detection = thread_league_detector.detect(
+                        stream_name=stream['name'],
+                        team1=team_result.get('away_team_name', ''),
+                        team2=team_result.get('home_team_name', ''),
+                        team1_id=team_result.get('away_team_id'),
+                        team2_id=team_result.get('home_team_id'),
+                        game_date=team_result.get('game_date'),
+                        game_time=team_result.get('game_time')
+                    )
+
+                    if full_detection.detected:
+                        detected_league = full_detection.league
+                        # Re-extract teams with the detected league if different
+                        if detected_league != team_result.get('league'):
+                            if any_custom_enabled:
+                                team_result = thread_team_matcher.extract_teams_with_selective_regex(
+                                    stream['name'],
+                                    detected_league,
+                                    teams_pattern=group.get('custom_regex_teams'),
+                                    teams_enabled=teams_enabled,
+                                    date_pattern=group.get('custom_regex_date'),
+                                    date_enabled=date_enabled,
+                                    time_pattern=group.get('custom_regex_time'),
+                                    time_enabled=time_enabled
+                                )
+                            else:
+                                team_result = thread_team_matcher.extract_teams(stream['name'], detected_league)
+
+                if not detected_league:
+                    # Still no league detected - skip stream
+                    return {
+                        'type': 'filtered',
+                        'reason': 'NO_LEAGUE_DETECTED',
+                        'stream': stream
+                    }
+
+                # Step 3: Find event in the detected league
+                event_result = thread_event_matcher.find_and_enrich(
+                    team_result['away_team_id'],
+                    team_result['home_team_id'],
+                    detected_league,
+                    game_date=team_result.get('game_date'),
+                    game_time=team_result.get('game_time'),
+                    include_final_events=include_final_events
+                )
+
+                if event_result.get('found'):
+                    event = event_result['event']
+                    event_id = event.get('id')
+
+                    # Step 4: Check overlap handling for multi-sport groups
+                    overlap_handling = group.get('overlap_handling', 'consolidate')
+
+                    if overlap_handling == 'consolidate' and event_id:
+                        # Check if another group already has a channel for this event
+                        existing_channel = find_any_channel_for_event(
+                            event_id,
+                            exclude_group_id=group_id
+                        )
+
+                        if existing_channel:
+                            # Another group owns this event - skip (or could add stream to their channel)
+                            return {
+                                'type': 'filtered',
+                                'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
+                                'stream': stream,
+                                'existing_channel': existing_channel
+                            }
+
+                    # Store detected league in the result for channel creation
+                    team_result['detected_league'] = detected_league
+
+                    return {
+                        'type': 'matched',
+                        'stream': stream,
+                        'teams': team_result,
+                        'event': event,
+                        'detected_league': detected_league
+                    }
+                else:
+                    reason = event_result.get('reason', '')
+                    normalized = INTERNAL_REASONS.get(reason, reason)
+                    return {'type': 'filtered', 'reason': normalized, 'stream': stream}
+
+            except Exception as e:
+                app.logger.warning(f"Error matching multi-sport stream '{stream['name']}': {e}")
+                return {'type': 'error', 'stream': stream, 'error': str(e)}
+
+        # Select the matching function based on mode
+        match_single_stream = match_single_stream_multi_sport if is_multi_sport else match_single_stream_single_league
 
         # Process streams in parallel (max 10 workers to avoid overwhelming ESPN API)
         matched_streams = []
@@ -794,10 +980,22 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
             if g.get('event_template_id') or g.get('parent_group_id')
         ]
 
-        # Sort groups: parent groups (parent_group_id IS NULL) first, then child groups
-        # This ensures parent channels exist before child groups try to add streams to them
-        parent_groups = [g for g in event_groups_with_templates if not g.get('parent_group_id')]
+        # Sort groups for processing order:
+        # 1. Single-league parent groups (regular event groups) - process first
+        # 2. Multi-sport parent groups - process last (need to check other groups' channels)
+        # 3. Child groups - process after parents (add streams to parent channels)
+        # This ensures parent channels exist before children try to add streams to them,
+        # and multi-sport groups can check if events are already handled by single-league groups
+        parent_groups_all = [g for g in event_groups_with_templates if not g.get('parent_group_id')]
         child_groups = [g for g in event_groups_with_templates if g.get('parent_group_id')]
+
+        # Split parent groups: single-league first, multi-sport last
+        single_league_parents = [g for g in parent_groups_all if not g.get('is_multi_sport')]
+        multi_sport_parents = [g for g in parent_groups_all if g.get('is_multi_sport')]
+        parent_groups = single_league_parents + multi_sport_parents
+
+        if multi_sport_parents:
+            app.logger.debug(f"Processing order: {len(single_league_parents)} single-league, {len(multi_sport_parents)} multi-sport, {len(child_groups)} child groups")
 
         if event_groups_with_templates:
             # Get M3U manager
@@ -1291,6 +1489,31 @@ def _check_soccer_cache_refresh(settings: dict):
         app.logger.info("⚽ Soccer league cache refreshed by scheduler")
 
 
+def _check_team_league_cache_refresh(settings: dict):
+    """
+    Check if team-league cache needs refresh based on settings.
+    Uses same frequency setting as soccer cache.
+    Called from scheduler loop once per day.
+    """
+    from epg.team_league_cache import TeamLeagueCache
+
+    # Uses same frequency setting as soccer cache
+    frequency = settings.get('soccer_cache_refresh_frequency', 'weekly')
+
+    # Map frequency to max age in days
+    frequency_days = {
+        'daily': 1,
+        'every_3_days': 3,
+        'weekly': 7,
+        'manual': 9999  # Never auto-refresh
+    }
+
+    max_age = frequency_days.get(frequency, 7)
+
+    if TeamLeagueCache.refresh_if_needed(max_age):
+        app.logger.info("🏈 Team-league cache refreshed by scheduler")
+
+
 def scheduler_loop():
     """Background thread that runs the scheduler"""
     global scheduler_running, last_run_time
@@ -1379,13 +1602,18 @@ def scheduler_loop():
                 run_scheduled_generation()
                 last_run_time = now
 
-            # Check soccer cache refresh once per day at midnight UTC
+            # Check cache refresh once per day at midnight UTC
             # This is separate from EPG generation frequency
             if now.hour == 0 and now.minute < 1:  # First minute of the day
                 try:
                     _check_soccer_cache_refresh(settings)
                 except Exception as e:
                     app.logger.warning(f"Soccer cache check failed: {e}")
+
+                try:
+                    _check_team_league_cache_refresh(settings)
+                except Exception as e:
+                    app.logger.warning(f"Team-league cache check failed: {e}")
 
             time.sleep(30)  # Check every 30 seconds
 
@@ -3529,6 +3757,129 @@ def api_soccer_team_leagues(team_id):
         })
     except Exception as e:
         app.logger.error(f"Error getting soccer team leagues: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# TEAM-LEAGUE CACHE API ENDPOINTS (Non-Soccer Sports)
+# =============================================================================
+
+@app.route('/api/cache/team-league/status', methods=['GET'])
+def api_team_league_cache_status():
+    """Get team-league cache status and statistics."""
+    from epg.team_league_cache import TeamLeagueCache
+
+    try:
+        stats = TeamLeagueCache.get_cache_stats()
+        return jsonify({
+            'success': True,
+            'last_refresh': stats.last_refresh.isoformat() if stats.last_refresh else None,
+            'leagues_processed': stats.leagues_processed,
+            'teams_indexed': stats.teams_indexed,
+            'is_stale': stats.is_stale,
+            'staleness_days': stats.staleness_days
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting team-league cache status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cache/team-league/refresh', methods=['POST'])
+def api_team_league_cache_refresh():
+    """Manually trigger team-league cache refresh."""
+    from epg.team_league_cache import TeamLeagueCache
+
+    try:
+        result = TeamLeagueCache.refresh_cache()
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error refreshing team-league cache: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cache/status', methods=['GET'])
+def api_combined_cache_status():
+    """Get combined status for both soccer and team-league caches."""
+    from epg.soccer_multi_league import SoccerMultiLeague
+    from epg.team_league_cache import TeamLeagueCache
+
+    try:
+        soccer_stats = SoccerMultiLeague.get_cache_stats()
+        team_stats = TeamLeagueCache.get_cache_stats()
+
+        return jsonify({
+            'success': True,
+            'soccer': {
+                'last_refresh': soccer_stats.last_refresh.isoformat() if soccer_stats.last_refresh else None,
+                'leagues_processed': soccer_stats.leagues_processed,
+                'teams_indexed': soccer_stats.teams_indexed,
+                'is_stale': soccer_stats.is_stale,
+                'staleness_days': soccer_stats.staleness_days
+            },
+            'team_league': {
+                'last_refresh': team_stats.last_refresh.isoformat() if team_stats.last_refresh else None,
+                'leagues_processed': team_stats.leagues_processed,
+                'teams_indexed': team_stats.teams_indexed,
+                'is_stale': team_stats.is_stale,
+                'staleness_days': team_stats.staleness_days
+            }
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting combined cache status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cache/refresh-all', methods=['POST'])
+def api_refresh_all_caches():
+    """Refresh both soccer and team-league caches."""
+    from epg.soccer_multi_league import SoccerMultiLeague
+    from epg.team_league_cache import TeamLeagueCache
+
+    try:
+        soccer_result = SoccerMultiLeague.refresh_cache()
+        team_result = TeamLeagueCache.refresh_cache()
+
+        return jsonify({
+            'success': soccer_result.get('success', False) and team_result.get('success', False),
+            'soccer': soccer_result,
+            'team_league': team_result
+        })
+    except Exception as e:
+        app.logger.error(f"Error refreshing caches: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cache/team-league/lookup', methods=['GET'])
+def api_team_league_lookup():
+    """Find candidate leagues for a team pair."""
+    from epg.team_league_cache import TeamLeagueCache
+
+    team1 = request.args.get('team1', '')
+    team2 = request.args.get('team2', '')
+
+    if not team1:
+        return jsonify({'error': 'team1 parameter required'}), 400
+
+    try:
+        # Single team lookup
+        if not team2:
+            leagues = TeamLeagueCache.get_leagues_for_team(team1)
+            return jsonify({
+                'success': True,
+                'team': team1,
+                'leagues': list(leagues)
+            })
+
+        # Team pair lookup - find intersection
+        candidates = TeamLeagueCache.find_candidate_leagues(team1, team2)
+        return jsonify({
+            'success': True,
+            'team1': team1,
+            'team2': team2,
+            'candidate_leagues': candidates
+        })
+    except Exception as e:
+        app.logger.error(f"Error in team-league lookup: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -6625,6 +6976,35 @@ def initialize_soccer_cache():
         app.logger.warning(f"⚠️ Soccer cache initialization skipped: {e}")
 
 
+def initialize_team_league_cache():
+    """
+    Initialize team-league cache on startup.
+    Builds cache if empty, logs status for existing cache.
+    """
+    from epg.team_league_cache import TeamLeagueCache
+
+    try:
+        # Check if cache is empty
+        if TeamLeagueCache.is_cache_empty():
+            app.logger.info("🏈 Team-league cache is empty, building initial cache...")
+            result = TeamLeagueCache.refresh_cache()
+
+            if result['success']:
+                app.logger.info(f"✅ Team-league cache built: {result['teams_indexed']} teams across {result['leagues_processed']} leagues ({result['duration_seconds']:.1f}s)")
+            else:
+                app.logger.warning(f"⚠️ Team-league cache build failed: {result.get('error', 'Unknown error')}")
+        else:
+            # Cache exists - log status
+            stats = TeamLeagueCache.get_cache_stats()
+            if stats.is_stale:
+                app.logger.info(f"🏈 Team-league cache is {stats.staleness_days} days old (will refresh per schedule)")
+            else:
+                app.logger.info(f"🏈 Team-league cache ready: {stats.teams_indexed} teams, {stats.leagues_processed} leagues")
+
+    except Exception as e:
+        app.logger.warning(f"⚠️ Team-league cache initialization skipped: {e}")
+
+
 # =============================================================================
 # RUN APPLICATION
 # =============================================================================
@@ -6633,8 +7013,9 @@ if __name__ == '__main__':
     # Sync timezone from environment variable (Docker)
     sync_timezone_from_env()
 
-    # Initialize soccer multi-league cache (runs in background if empty)
+    # Initialize caches (runs in background if empty)
     initialize_soccer_cache()
+    initialize_team_league_cache()
 
     # Start the auto-generation scheduler
     # Only start in main process, not in werkzeug reloader process

@@ -94,6 +94,56 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- Multi-Sport Toggle -->
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="is_multi_sport" name="is_multi_sport" value="1"
+                               onchange="toggleMultiSportSettings()"
+                               {% if group and group.is_multi_sport %}checked{% endif %}>
+                        <span>Multi-Sport Mode</span>
+                        <span class="badge badge-info" style="font-size: 0.7rem;">BETA</span>
+                    </label>
+                    <small class="form-help">
+                        Enable to detect leagues automatically per stream. Useful for groups like ESPN+ that have multiple sports.
+                    </small>
+                </div>
+
+                <!-- Multi-Sport Settings (shown when toggle enabled) -->
+                <div id="multi-sport-settings" style="display: none; margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid var(--border);">
+                    <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem;">Multi-Sport Configuration</h4>
+
+                    <div class="form-group">
+                        <label for="enabled_leagues">Enabled Leagues</label>
+                        <div id="enabled-leagues-picker" class="leagues-picker">
+                            <span class="loading-spinner"></span> Loading leagues...
+                        </div>
+                        <input type="hidden" id="enabled_leagues" name="enabled_leagues"
+                               value="{{ group.enabled_leagues if group and group.enabled_leagues else '[]' }}">
+                        <small class="form-help">Select which leagues to search when detecting events. Leave empty for all leagues.</small>
+                    </div>
+
+                    <div class="form-row" style="margin-top: 1rem;">
+                        <div class="form-group">
+                            <label for="channel_sort_order">Channel Sort Order</label>
+                            <select id="channel_sort_order" name="channel_sort_order" class="form-control">
+                                <option value="time" {% if not group or group.channel_sort_order == 'time' %}selected{% endif %}>By Time (chronological)</option>
+                                <option value="sport_time" {% if group and group.channel_sort_order == 'sport_time' %}selected{% endif %}>By Sport, then Time</option>
+                                <option value="league_time" {% if group and group.channel_sort_order == 'league_time' %}selected{% endif %}>By League, then Time</option>
+                            </select>
+                            <small class="form-help">How to order channels within this group</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="overlap_handling">Overlap Handling</label>
+                            <select id="overlap_handling" name="overlap_handling" class="form-control">
+                                <option value="consolidate" {% if not group or group.overlap_handling == 'consolidate' %}selected{% endif %}>Skip if covered by other group</option>
+                                <option value="create_all" {% if group and group.overlap_handling == 'create_all' %}selected{% endif %}>Create channel anyway</option>
+                            </select>
+                            <small class="form-help">What to do when another group already has a channel for the same event</small>
+                        </div>
+                    </div>
+                </div>
             {% endif %}
 
             {% if mode == 'edit' %}
@@ -997,7 +1047,8 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
         'stream_exclude_regex_enabled',
         'custom_regex_teams_enabled',
         'custom_regex_date_enabled',
-        'custom_regex_time_enabled'
+        'custom_regex_time_enabled',
+        'is_multi_sport'
     ];
 
     formData.forEach((value, key) => {
@@ -1063,6 +1114,140 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
         }
     } catch (error) {
         alert('Error: ' + error.message);
+    }
+});
+
+// ============================================================================
+// Multi-Sport Mode Functions
+// ============================================================================
+
+// League definitions for the picker (non-soccer leagues used by TeamLeagueCache)
+const multiSportLeagues = {
+    'hockey': [
+        { value: 'nhl', label: 'NHL' },
+        { value: 'ncaah', label: 'NCAA Hockey' },
+    ],
+    'basketball': [
+        { value: 'nba', label: 'NBA' },
+        { value: 'nba-g', label: 'NBA G-League' },
+        { value: 'wnba', label: 'WNBA' },
+        { value: 'ncaam', label: 'NCAA Men\'s Basketball' },
+        { value: 'ncaaw', label: 'NCAA Women\'s Basketball' },
+    ],
+    'football': [
+        { value: 'nfl', label: 'NFL' },
+        { value: 'ncaaf', label: 'NCAA Football' },
+    ],
+    'baseball': [
+        { value: 'mlb', label: 'MLB' },
+    ],
+    'volleyball': [
+        { value: 'ncaavb-m', label: 'NCAA Men\'s Volleyball' },
+        { value: 'ncaavb-w', label: 'NCAA Women\'s Volleyball' },
+    ]
+};
+
+function toggleMultiSportSettings() {
+    const checkbox = document.getElementById('is_multi_sport');
+    const settingsDiv = document.getElementById('multi-sport-settings');
+    const sportLeagueRow = document.getElementById('sport-league-row');
+    const sportSelect = document.getElementById('assigned_sport');
+    const leagueSelect = document.getElementById('assigned_league');
+
+    if (checkbox.checked) {
+        settingsDiv.style.display = 'block';
+        // Hide single sport/league selection when multi-sport is enabled
+        if (sportLeagueRow) {
+            sportLeagueRow.style.opacity = '0.5';
+            sportLeagueRow.title = 'Multi-sport mode uses enabled leagues instead';
+        }
+        // Remove required from single selects
+        if (sportSelect) sportSelect.removeAttribute('required');
+        if (leagueSelect) leagueSelect.removeAttribute('required');
+
+        // Load the leagues picker
+        loadLeaguesPicker();
+    } else {
+        settingsDiv.style.display = 'none';
+        // Show single sport/league selection
+        if (sportLeagueRow) {
+            sportLeagueRow.style.opacity = '1';
+            sportLeagueRow.title = '';
+        }
+        // Re-add required to single selects
+        if (sportSelect) sportSelect.setAttribute('required', 'required');
+        if (leagueSelect) leagueSelect.setAttribute('required', 'required');
+    }
+}
+
+function loadLeaguesPicker() {
+    const pickerDiv = document.getElementById('enabled-leagues-picker');
+    const hiddenInput = document.getElementById('enabled_leagues');
+
+    // Parse current selection
+    let selected = [];
+    try {
+        selected = JSON.parse(hiddenInput.value || '[]');
+    } catch (e) {
+        selected = [];
+    }
+
+    // Build the picker HTML
+    let html = '<div class="leagues-picker-grid">';
+
+    Object.entries(multiSportLeagues).forEach(([sport, leagues]) => {
+        html += `<div class="leagues-sport-group">`;
+        html += `<div class="leagues-sport-header">${sport.charAt(0).toUpperCase() + sport.slice(1)}</div>`;
+        html += `<div class="leagues-list">`;
+
+        leagues.forEach(league => {
+            const checked = selected.includes(league.value) ? 'checked' : '';
+            html += `
+                <label class="league-checkbox">
+                    <input type="checkbox" value="${league.value}" ${checked} onchange="updateEnabledLeagues()">
+                    <span>${league.label}</span>
+                </label>
+            `;
+        });
+
+        html += `</div></div>`;
+    });
+
+    html += '</div>';
+    html += `<div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+        Selected: <span id="selected-leagues-count">${selected.length}</span> leagues
+        ${selected.length === 0 ? '(all leagues will be searched)' : ''}
+    </div>`;
+
+    pickerDiv.innerHTML = html;
+}
+
+function updateEnabledLeagues() {
+    const checkboxes = document.querySelectorAll('#enabled-leagues-picker input[type="checkbox"]');
+    const hiddenInput = document.getElementById('enabled_leagues');
+    const countSpan = document.getElementById('selected-leagues-count');
+
+    const selected = [];
+    checkboxes.forEach(cb => {
+        if (cb.checked) {
+            selected.push(cb.value);
+        }
+    });
+
+    hiddenInput.value = JSON.stringify(selected);
+
+    if (countSpan) {
+        countSpan.textContent = selected.length;
+        const hint = selected.length === 0 ? ' (all leagues will be searched)' : '';
+        countSpan.parentElement.innerHTML = `Selected: <span id="selected-leagues-count">${selected.length}</span> leagues${hint}`;
+    }
+}
+
+// Initialize multi-sport settings on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const checkbox = document.getElementById('is_multi_sport');
+    if (checkbox && checkbox.checked) {
+        toggleMultiSportSettings();
     }
 });
 </script>
@@ -1382,6 +1567,62 @@ select.form-control {
     .form-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* Multi-Sport Leagues Picker */
+.leagues-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.leagues-sport-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.75rem;
+}
+
+.leagues-sport-header {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.leagues-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.league-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.league-checkbox:hover {
+    color: var(--text-primary);
+}
+
+.league-checkbox input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--primary);
+}
+
+.badge-info {
+    background: var(--info);
+    color: white;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
 }
 </style>
 {% endblock %}

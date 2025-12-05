@@ -258,11 +258,12 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Default Settings for New Groups
     default_duplicate_event_handling TEXT DEFAULT 'consolidate',  -- ignore, consolidate, separate
 
-    -- Soccer Multi-League Settings
+    -- Local Caching Settings
     soccer_cache_refresh_frequency TEXT DEFAULT 'weekly',  -- daily, every_3_days, weekly, manual
+    team_cache_refresh_frequency TEXT DEFAULT 'weekly',    -- daily, every_3_days, weekly, manual
 
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 14,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 16,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -665,6 +666,12 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     parent_group_id INTEGER REFERENCES event_epg_groups(id),  -- NULL = parent, set = child
     duplicate_event_handling TEXT DEFAULT 'consolidate',       -- ignore, consolidate, separate
 
+    -- Multi-Sport Mode (v16)
+    is_multi_sport INTEGER DEFAULT 0,              -- 1 = detect league per-stream
+    enabled_leagues TEXT,                          -- JSON array of league codes (NULL = all)
+    channel_sort_order TEXT DEFAULT 'time',        -- time, sport_time, league_time
+    overlap_handling TEXT DEFAULT 'consolidate',   -- consolidate, create_all
+
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated
     stream_count INTEGER DEFAULT 0,                -- Number of streams in group
@@ -682,6 +689,22 @@ FOR EACH ROW
 BEGIN
     UPDATE event_epg_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
+
+-- =============================================================================
+-- CONSOLIDATION EXCEPTION KEYWORDS TABLE (Multi-Sport Feature v16)
+-- Keyword patterns with configurable behavior for alternate broadcasts
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS consolidation_exception_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,                     -- Event group this applies to
+    keywords TEXT NOT NULL,                        -- Comma-separated keyword variants (case-insensitive)
+    behavior TEXT NOT NULL DEFAULT 'consolidate',  -- consolidate, separate, ignore
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_consolidation_keywords_group ON consolidation_exception_keywords(group_id);
 
 -- =============================================================================
 -- TEAM ALIASES TABLE (Event Channel EPG Feature)
@@ -911,6 +934,42 @@ CREATE TABLE IF NOT EXISTS soccer_cache_meta (
 );
 
 INSERT OR IGNORE INTO soccer_cache_meta (id) VALUES (1);
+
+-- =============================================================================
+-- TEAM LEAGUE CACHE (Non-Soccer Sports)
+-- Maps team names to leagues for multi-sport event groups
+-- Parallel structure to soccer_team_leagues but for NHL, NBA, NFL, etc.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS team_league_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_code TEXT NOT NULL,               -- 'nhl', 'nba', 'ncaam', etc.
+    espn_team_id TEXT NOT NULL,              -- ESPN team ID
+    team_name TEXT NOT NULL,                 -- "Nashville Predators"
+    team_abbrev TEXT,                        -- "NSH"
+    team_short_name TEXT,                    -- "Predators"
+    sport TEXT NOT NULL,                     -- "hockey", "basketball", etc.
+    UNIQUE(league_code, espn_team_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tlc_name ON team_league_cache(team_name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_tlc_abbrev ON team_league_cache(team_abbrev COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_tlc_short ON team_league_cache(team_short_name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_tlc_league ON team_league_cache(league_code);
+
+-- =============================================================================
+-- TEAM LEAGUE CACHE METADATA
+-- Tracks cache refresh status (single row)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS team_league_cache_meta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_refresh TEXT,                       -- ISO datetime of last refresh
+    leagues_processed INTEGER DEFAULT 0,     -- 12
+    teams_indexed INTEGER DEFAULT 0          -- ~1847
+);
+
+INSERT OR IGNORE INTO team_league_cache_meta (id) VALUES (1);
 
 -- =============================================================================
 -- CONSOLIDATION EXCEPTION KEYWORDS TABLE

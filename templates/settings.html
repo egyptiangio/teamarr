@@ -389,41 +389,90 @@
             </div>
         </div>
 
-        <!-- Soccer Multi-League Settings -->
+        <!-- Local Caching Section -->
         <div class="form-section">
-            <h2>Soccer Multi-League</h2>
+            <h2>Local Caching</h2>
             <p class="section-description">
-                Soccer teams often play in multiple competitions (league, cups, European competitions).
-                This cache maps teams to all their competitions for comprehensive EPG coverage.
+                Team-to-league lookup caches enable multi-sport event groups to detect which league a stream belongs to.
+                These caches map team names to their leagues for fast lookups during stream matching.
             </p>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="soccer_cache_refresh_frequency">Cache Refresh Frequency</label>
-                    <select id="soccer_cache_refresh_frequency" name="soccer_cache_refresh_frequency" class="form-control">
-                        <option value="daily" {% if settings.soccer_cache_refresh_frequency == 'daily' %}selected{% endif %}>Daily</option>
-                        <option value="every_3_days" {% if settings.soccer_cache_refresh_frequency == 'every_3_days' %}selected{% endif %}>Every 3 Days</option>
-                        <option value="weekly" {% if settings.soccer_cache_refresh_frequency == 'weekly' or not settings.soccer_cache_refresh_frequency %}selected{% endif %}>Weekly (Recommended)</option>
-                        <option value="manual" {% if settings.soccer_cache_refresh_frequency == 'manual' %}selected{% endif %}>Manual Only</option>
-                    </select>
-                    <small class="form-help">How often to refresh the league mappings cache</small>
-                </div>
+            <!-- Soccer Multi-League Cache -->
+            <div class="cache-section">
+                <h3>Soccer Multi-League Cache</h3>
+                <p class="cache-description">
+                    Maps soccer teams to all their competitions (domestic league, cups, European competitions).
+                    Required for soccer team matching and multi-league EPG coverage.
+                </p>
 
-                <div class="form-group">
-                    <label>Cache Status</label>
-                    <div id="soccer-cache-status" class="cache-status-box">
-                        <span class="loading-spinner"></span> Loading...
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="soccer_cache_refresh_frequency">Refresh Frequency</label>
+                        <select id="soccer_cache_refresh_frequency" name="soccer_cache_refresh_frequency" class="form-control">
+                            <option value="daily" {% if settings.soccer_cache_refresh_frequency == 'daily' %}selected{% endif %}>Daily</option>
+                            <option value="every_3_days" {% if settings.soccer_cache_refresh_frequency == 'every_3_days' %}selected{% endif %}>Every 3 Days</option>
+                            <option value="weekly" {% if settings.soccer_cache_refresh_frequency == 'weekly' or not settings.soccer_cache_refresh_frequency %}selected{% endif %}>Weekly (Recommended)</option>
+                            <option value="manual" {% if settings.soccer_cache_refresh_frequency == 'manual' %}selected{% endif %}>Manual Only</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Status</label>
+                        <div id="soccer-cache-status" class="cache-status-box">
+                            <span class="loading-spinner"></span> Loading...
+                        </div>
+                    </div>
+
+                    <div class="form-group cache-action">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="refreshSoccerCache()" id="soccer-refresh-btn">
+                            🔄 Refresh
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="form-row" style="grid-template-columns: 1fr;">
+            <!-- Team-League Cache (Non-Soccer) -->
+            <div class="cache-section">
+                <h3>Team-League Cache (Non-Soccer)</h3>
+                <p class="cache-description">
+                    Maps teams to their leagues for NHL, NBA, NFL, MLB, and college sports.
+                    Required for multi-sport event groups to detect leagues from team names.
+                </p>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="team_cache_refresh_frequency">Refresh Frequency</label>
+                        <select id="team_cache_refresh_frequency" name="team_cache_refresh_frequency" class="form-control">
+                            <option value="daily" {% if settings.team_cache_refresh_frequency == 'daily' %}selected{% endif %}>Daily</option>
+                            <option value="every_3_days" {% if settings.team_cache_refresh_frequency == 'every_3_days' %}selected{% endif %}>Every 3 Days</option>
+                            <option value="weekly" {% if settings.team_cache_refresh_frequency == 'weekly' or not settings.team_cache_refresh_frequency %}selected{% endif %}>Weekly (Recommended)</option>
+                            <option value="manual" {% if settings.team_cache_refresh_frequency == 'manual' %}selected{% endif %}>Manual Only</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Status</label>
+                        <div id="team-cache-status" class="cache-status-box">
+                            <span class="loading-spinner"></span> Loading...
+                        </div>
+                    </div>
+
+                    <div class="form-group cache-action">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="refreshTeamCache()" id="team-refresh-btn">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Refresh All Button -->
+            <div class="form-row" style="grid-template-columns: 1fr; margin-top: 1rem;">
                 <div class="form-group">
-                    <button type="button" class="btn btn-secondary" onclick="refreshSoccerCache()" id="soccer-refresh-btn">
-                        🔄 Refresh Cache Now
+                    <button type="button" class="btn btn-secondary" onclick="refreshAllCaches()" id="refresh-all-btn">
+                        🔄 Refresh All Caches
                     </button>
                     <small class="form-help" style="display: block; margin-top: 0.5rem;">
-                        Manually refresh the soccer league cache (~5 seconds)
+                        Refresh both caches (~10-15 seconds total)
                     </small>
                 </div>
             </div>
@@ -627,7 +676,48 @@ select.form-control {
     margin-left: 0.25rem;
 }
 
-/* Soccer Cache Status Box */
+/* Cache Section Styles */
+.cache-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.cache-section h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.cache-section .cache-description {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.cache-section .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.cache-section .form-group {
+    margin-bottom: 0;
+}
+
+.cache-section .cache-action {
+    padding-top: 1.5rem;
+}
+
+.cache-section .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+}
+
+/* Cache Status Box */
 .cache-status-box {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
@@ -979,8 +1069,8 @@ async function refreshSoccerCache() {
     const statusDiv = document.getElementById('soccer-cache-status');
 
     btn.disabled = true;
-    btn.textContent = '⏳ Refreshing...';
-    statusDiv.innerHTML = '<span class="loading-spinner"></span> Building cache (fetching ~244 leagues)...';
+    btn.textContent = '⏳ ...';
+    statusDiv.innerHTML = '<span class="loading-spinner"></span> Building cache (~244 leagues)...';
 
     try {
         const response = await fetch('/api/soccer/cache/refresh', {
@@ -994,7 +1084,7 @@ async function refreshSoccerCache() {
             statusDiv.innerHTML = `
                 <div class="cache-status-item success">
                     <span class="status-icon">✅</span>
-                    <span>Cache refreshed: ${result.teams_indexed.toLocaleString()} teams across ${result.leagues_processed} leagues (${result.duration_seconds.toFixed(1)}s)</span>
+                    <span>Refreshed: ${result.teams_indexed.toLocaleString()} teams (${result.duration_seconds.toFixed(1)}s)</span>
                 </div>
             `;
             // Reload full status after a moment
@@ -1006,12 +1096,121 @@ async function refreshSoccerCache() {
         statusDiv.innerHTML = `<div class="cache-status-item error">❌ Error: ${error.message}</div>`;
     } finally {
         btn.disabled = false;
-        btn.textContent = '🔄 Refresh Cache Now';
+        btn.textContent = '🔄 Refresh';
     }
 }
 
-// Load soccer cache status on page load
-document.addEventListener('DOMContentLoaded', loadSoccerCacheStatus);
+// Team-League Cache Functions
+async function loadTeamCacheStatus() {
+    const statusDiv = document.getElementById('team-cache-status');
+
+    try {
+        const response = await fetch('/api/cache/team-league/status');
+        const data = await response.json();
+
+        if (data.success) {
+            if (!data.last_refresh) {
+                statusDiv.innerHTML = `
+                    <div class="cache-status-item warning">
+                        <span class="status-icon">⚠️</span>
+                        <span>Cache is empty - click "Refresh" to build</span>
+                    </div>
+                `;
+            } else {
+                const lastRefresh = new Date(data.last_refresh);
+                const formattedDate = lastRefresh.toLocaleDateString() + ' ' + lastRefresh.toLocaleTimeString();
+                const stalenessClass = data.is_stale ? 'warning' : 'success';
+                const stalenessIcon = data.is_stale ? '⚠️' : '✅';
+                const stalenessText = data.is_stale ? ` (${data.staleness_days}d ago - stale)` : '';
+
+                statusDiv.innerHTML = `
+                    <div class="cache-status-item ${stalenessClass}">
+                        <span class="status-icon">${stalenessIcon}</span>
+                        <span>Last refresh: ${formattedDate}${stalenessText}</span>
+                    </div>
+                    <div class="cache-status-item">
+                        <span class="status-icon">📊</span>
+                        <span>${data.teams_indexed.toLocaleString()} teams across ${data.leagues_processed} leagues</span>
+                    </div>
+                `;
+            }
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">Error loading status: ${error.message}</div>`;
+    }
+}
+
+async function refreshTeamCache() {
+    const btn = document.getElementById('team-refresh-btn');
+    const statusDiv = document.getElementById('team-cache-status');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ ...';
+    statusDiv.innerHTML = '<span class="loading-spinner"></span> Building cache (fetching team rosters)...';
+
+    try {
+        const response = await fetch('/api/cache/team-league/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusDiv.innerHTML = `
+                <div class="cache-status-item success">
+                    <span class="status-icon">✅</span>
+                    <span>Refreshed: ${result.teams_indexed.toLocaleString()} teams (${result.duration_seconds.toFixed(1)}s)</span>
+                </div>
+            `;
+            // Reload full status after a moment
+            setTimeout(loadTeamCacheStatus, 1500);
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">❌ ${result.error || 'Refresh failed'}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">❌ Error: ${error.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Refresh';
+    }
+}
+
+async function refreshAllCaches() {
+    const btn = document.getElementById('refresh-all-btn');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Refreshing All...';
+
+    try {
+        const response = await fetch('/api/cache/refresh-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        // Reload both cache statuses
+        await Promise.all([loadSoccerCacheStatus(), loadTeamCacheStatus()]);
+
+        if (!result.success) {
+            console.warn('Cache refresh partial failure:', result);
+        }
+    } catch (error) {
+        console.error('Error refreshing caches:', error);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Refresh All Caches';
+    }
+}
+
+// Load both cache statuses on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSoccerCacheStatus();
+    loadTeamCacheStatus();
+});
 
 // ============================================================================
 // Exception Keywords (Consolidation Exceptions) - Global Settings

@@ -155,9 +155,11 @@ def db_insert(query: str, params: tuple = ()) -> int:
 #   8: Channel Lifecycle V2 (multi-stream, history, reconciliation, parent groups)
 #   9-11: Various enhancements (see schema.sql comments)
 #   12: Soccer multi-league cache tables (with league_tags JSON array)
+#   15: Team-league cache tables for non-soccer sports
+#   16: Multi-sport event groups (is_multi_sport, enabled_leagues, etc.)
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 16
 
 
 def get_schema_version(conn) -> int:
@@ -928,6 +930,109 @@ def run_migrations(conn):
             except Exception as e:
                 print(f"    ⚠️ Could not migrate exception keywords table: {e}")
             conn.commit()
+
+    # =========================================================================
+    # 15. TEAM LEAGUE CACHE TABLES (Multi-Sport Support)
+    # =========================================================================
+    if current_version < 15:
+        print("  🔄 Running migration 15: Create team league cache tables...")
+
+        # Create team_league_cache table
+        if not table_exists("team_league_cache"):
+            try:
+                cursor.execute("""
+                    CREATE TABLE team_league_cache (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        league_code TEXT NOT NULL,
+                        espn_team_id TEXT NOT NULL,
+                        team_name TEXT NOT NULL,
+                        team_abbrev TEXT,
+                        team_short_name TEXT,
+                        sport TEXT NOT NULL,
+                        UNIQUE(league_code, espn_team_id)
+                    )
+                """)
+                migrations_run += 1
+                print("    ✅ Created team_league_cache table")
+            except Exception as e:
+                print(f"    ⚠️ Could not create team_league_cache table: {e}")
+
+        # Create indexes for team_league_cache
+        create_index_if_not_exists("idx_tlc_name", "team_league_cache", "team_name COLLATE NOCASE")
+        create_index_if_not_exists("idx_tlc_abbrev", "team_league_cache", "team_abbrev COLLATE NOCASE")
+        create_index_if_not_exists("idx_tlc_short", "team_league_cache", "team_short_name COLLATE NOCASE")
+        create_index_if_not_exists("idx_tlc_league", "team_league_cache", "league_code")
+
+        # Create team_league_cache_meta table
+        if not table_exists("team_league_cache_meta"):
+            try:
+                cursor.execute("""
+                    CREATE TABLE team_league_cache_meta (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        last_refresh TEXT,
+                        leagues_processed INTEGER DEFAULT 0,
+                        teams_indexed INTEGER DEFAULT 0
+                    )
+                """)
+                cursor.execute("INSERT OR IGNORE INTO team_league_cache_meta (id) VALUES (1)")
+                migrations_run += 1
+                print("    ✅ Created team_league_cache_meta table")
+            except Exception as e:
+                print(f"    ⚠️ Could not create team_league_cache_meta table: {e}")
+
+        conn.commit()
+
+    # =========================================================================
+    # 16. MULTI-SPORT EVENT GROUPS
+    # =========================================================================
+    if current_version < 16:
+        print("  📦 Running migration 16: Multi-sport event groups...")
+        cursor = conn.cursor()
+
+        # Add multi-sport columns to event_epg_groups
+        add_columns_if_missing('event_epg_groups', [
+            ('is_multi_sport', 'INTEGER DEFAULT 0'),
+            ('enabled_leagues', 'TEXT'),  # JSON array, NULL = all leagues
+            ('channel_sort_order', "TEXT DEFAULT 'time'"),  # time, sport_time, league_time
+            ('overlap_handling', "TEXT DEFAULT 'consolidate'"),  # consolidate, create_all
+        ])
+        migrations_run += 1
+        print("    ✅ Added multi-sport columns to event_epg_groups")
+
+        # Create consolidation_exception_keywords table
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS consolidation_exception_keywords (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    keywords TEXT NOT NULL,
+                    behavior TEXT NOT NULL DEFAULT 'consolidate',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+                )
+            """)
+            migrations_run += 1
+            print("    ✅ Created consolidation_exception_keywords table")
+        except Exception as e:
+            print(f"    ⚠️ Could not create consolidation_exception_keywords table: {e}")
+
+        # Create index for efficient lookup
+        try:
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_consolidation_keywords_group
+                ON consolidation_exception_keywords(group_id)
+            """)
+            print("    ✅ Created index on consolidation_exception_keywords(group_id)")
+        except Exception as e:
+            print(f"    ⚠️ Could not create index: {e}")
+
+        # Add team_cache_refresh_frequency to settings
+        add_columns_if_missing('settings', [
+            ('team_cache_refresh_frequency', "TEXT DEFAULT 'weekly'"),
+        ])
+        print("    ✅ Added team_cache_refresh_frequency to settings")
+
+        conn.commit()
 
     # =========================================================================
     # UPDATE SCHEMA VERSION
@@ -2952,6 +3057,63 @@ def find_parent_channel_for_event(parent_group_id: int, event_id: str, exception
               AND (exception_keyword IS NULL OR exception_keyword = '')
               AND deleted_at IS NULL
         """, (parent_group_id, event_id))
+
+
+def find_any_channel_for_event(event_id: str, exception_keyword: str = None, exclude_group_id: int = None) -> Optional[Dict[str, Any]]:
+    """Find any group's channel for a given event (used by multi-sport groups for overlap handling).
+
+    Unlike find_parent_channel_for_event which only searches within a parent group,
+    this searches across ALL groups to find if an event already has a channel.
+
+    Args:
+        event_id: The ESPN event ID
+        exception_keyword: Optional exception keyword to match
+        exclude_group_id: Optional group ID to exclude from search (usually the current group)
+
+    Returns:
+        The matching managed channel record, or None if not found
+    """
+    if exception_keyword:
+        if exclude_group_id:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND mc.exception_keyword = ?
+                  AND mc.event_epg_group_id != ?
+                  AND mc.deleted_at IS NULL
+            """, (event_id, exception_keyword, exclude_group_id))
+        else:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND mc.exception_keyword = ?
+                  AND mc.deleted_at IS NULL
+            """, (event_id, exception_keyword))
+    else:
+        # Look for main channel (no keyword)
+        if exclude_group_id:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND (mc.exception_keyword IS NULL OR mc.exception_keyword = '')
+                  AND mc.event_epg_group_id != ?
+                  AND mc.deleted_at IS NULL
+            """, (event_id, exclude_group_id))
+        else:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND (mc.exception_keyword IS NULL OR mc.exception_keyword = '')
+                  AND mc.deleted_at IS NULL
+            """, (event_id,))
 
 
 def get_channels_by_sync_status(status: str) -> List[Dict[str, Any]]:
