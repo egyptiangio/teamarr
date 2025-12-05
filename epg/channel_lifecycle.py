@@ -108,7 +108,10 @@ def generate_channel_name(
     template: Optional[Dict] = None,
     template_engine = None,
     timezone: str = None,
-    exception_keyword: str = None
+    exception_keyword: str = None,
+    group_info: Dict = None,
+    detected_league: str = None,
+    detected_sport: str = None
 ) -> str:
     """
     Generate channel name for an event.
@@ -122,6 +125,9 @@ def generate_channel_name(
         template_engine: Optional template engine for variable resolution
         timezone: User's timezone for date/time formatting
         exception_keyword: Optional matched exception keyword for sub-consolidation
+        group_info: Event EPG group configuration
+        detected_league: Per-stream detected league (for multi-sport groups)
+        detected_sport: Per-stream detected sport (for multi-sport groups)
 
     Returns:
         Channel name string
@@ -129,7 +135,15 @@ def generate_channel_name(
     # If template has channel_name and we have an engine, use it
     if template and template.get('channel_name') and template_engine:
         from epg.event_template_engine import build_event_context
-        ctx = build_event_context(event, {}, {}, timezone, exception_keyword=exception_keyword)
+
+        # Build effective group_info with per-stream overrides for multi-sport
+        effective_group_info = dict(group_info) if group_info else {}
+        if detected_league:
+            effective_group_info['assigned_league'] = detected_league
+        if detected_sport:
+            effective_group_info['assigned_sport'] = detected_sport
+
+        ctx = build_event_context(event, {}, effective_group_info, timezone, exception_keyword=exception_keyword)
         return template_engine.resolve(template['channel_name'], ctx)
 
     # Default format: "Away @ Home" (with keyword suffix if present)
@@ -739,12 +753,21 @@ class ChannelLifecycleManager:
             if event and template and template_engine:
                 # Get exception_keyword from existing channel for proper name resolution
                 channel_exception_keyword = existing.get('exception_keyword')
+
+                # For multi-sport groups, use the stored league/sport from when channel was created
+                # This ensures template variables resolve correctly even during sync
+                stored_league = existing.get('league')
+                stored_sport = existing.get('sport')
+
                 new_channel_name = generate_channel_name(
                     event,
                     template=template,
                     template_engine=template_engine,
                     timezone=self.timezone,
-                    exception_keyword=channel_exception_keyword
+                    exception_keyword=channel_exception_keyword,
+                    group_info=group,
+                    detected_league=stored_league,
+                    detected_sport=stored_sport
                 )
                 current_dispatcharr_name = current_channel.get('name', '')
 
@@ -1193,17 +1216,31 @@ class ChannelLifecycleManager:
                 })
                 continue
 
+            # Get detected league/sport for multi-sport groups
+            # detected_league is stored both in teams dict and at top level of matched
+            stream_detected_league = matched.get('detected_league') or teams.get('detected_league')
+            stream_detected_sport = None
+            if stream_detected_league:
+                from epg.league_detector import LEAGUE_TO_SPORT
+                stream_detected_sport = LEAGUE_TO_SPORT.get(stream_detected_league)
+
             # Generate channel name using template
             channel_name = generate_channel_name(
                 event,
                 template=template,
                 template_engine=template_engine,
                 timezone=self.timezone,
-                exception_keyword=matched_keyword
+                exception_keyword=matched_keyword,
+                group_info=group,
+                detected_league=stream_detected_league,
+                detected_sport=stream_detected_sport
             )
 
             # Calculate scheduled delete time (uses template duration if custom)
-            delete_at = calculate_delete_time(event, delete_timing, self.timezone, sport, self.settings, template)
+            # Use detected sport for multi-sport groups, otherwise group's assigned sport
+            effective_sport = stream_detected_sport or sport
+            effective_league = stream_detected_league or league
+            delete_at = calculate_delete_time(event, delete_timing, self.timezone, effective_sport, self.settings, template)
 
             # Generate tvg_id for channel-EPG association
             # This must match the channel id in the generated XMLTV
@@ -1215,7 +1252,15 @@ class ChannelLifecycleManager:
                 logo_id = None
                 if template and template.get('channel_logo_url'):
                     from epg.event_template_engine import build_event_context
-                    logo_ctx = build_event_context(event, stream, group, self.timezone)
+
+                    # Build effective group_info with per-stream overrides for multi-sport
+                    effective_group_info = dict(group) if group else {}
+                    if stream_detected_league:
+                        effective_group_info['assigned_league'] = stream_detected_league
+                    if stream_detected_sport:
+                        effective_group_info['assigned_sport'] = stream_detected_sport
+
+                    logo_ctx = build_event_context(event, stream, effective_group_info, self.timezone)
                     logo_url = template_engine.resolve(template['channel_logo_url'], logo_ctx)
 
                     if logo_url:
@@ -1297,7 +1342,15 @@ class ChannelLifecycleManager:
                 logo_url_source = None
                 if template and template.get('channel_logo_url'):
                     from epg.event_template_engine import build_event_context
-                    logo_ctx = build_event_context(event, stream, group, self.timezone)
+
+                    # Build effective group_info with per-stream overrides for multi-sport
+                    logo_effective_group = dict(group) if group else {}
+                    if stream_detected_league:
+                        logo_effective_group['assigned_league'] = stream_detected_league
+                    if stream_detected_sport:
+                        logo_effective_group['assigned_sport'] = stream_detected_sport
+
+                    logo_ctx = build_event_context(event, stream, logo_effective_group, self.timezone)
                     logo_url_source = template_engine.resolve(template['channel_logo_url'], logo_ctx)
 
                 managed_id = create_managed_channel(
@@ -1325,8 +1378,8 @@ class ChannelLifecycleManager:
                     away_team_abbrev=away_team_abbrev,
                     away_team_logo=away_team_logo,
                     event_name=event_name,
-                    league=league,
-                    sport=sport,
+                    league=effective_league,  # Use detected league for multi-sport
+                    sport=effective_sport,    # Use detected sport for multi-sport
                     venue=venue,
                     broadcast=broadcast,
                     sync_status='created',
