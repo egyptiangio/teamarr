@@ -137,13 +137,14 @@
             {% endif %}
 
             {% if mode == 'edit' %}
-            <!-- Parent Group Selection for edit mode -->
-            <div class="form-group" style="margin-top: 1rem;">
+            <!-- Parent Group Selection for edit mode (disabled for multi-sport) -->
+            <div class="form-group" style="margin-top: 1rem;{% if group.is_multi_sport %} opacity: 0.5;{% endif %}">
                 <label for="parent_group_id">Group Type</label>
-                <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()">
+                <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()"
+                        {% if group.is_multi_sport %}disabled title="Multi-sport groups cannot be child groups"{% endif %}>
                     <option value="">Independent Group (creates its own channels)</option>
                 </select>
-                <small class="form-help">Child groups add streams to their parent's channels instead of creating new ones.</small>
+                <small class="form-help">{% if group.is_multi_sport %}Multi-sport groups must be independent.{% else %}Child groups add streams to their parent's channels instead of creating new ones.{% endif %}</small>
             </div>
 
             <!-- Child Group Notice - shown when parent selected -->
