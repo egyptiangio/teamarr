@@ -250,14 +250,15 @@
                                      title="{{ group.assigned_league.upper() }}">
                                 {% endif %}
                             </td>
-                            <td style="font-size: 1.5rem; text-align: center; vertical-align: middle;" title="{{ group.assigned_sport|title if not group.is_multi_sport else 'Multi-Sport' }}">
-                                {% if group.is_multi_sport %}🎯
-                                {% elif group.assigned_sport == 'basketball' %}🏀
-                                {% elif group.assigned_sport == 'football' %}🏈
-                                {% elif group.assigned_sport == 'baseball' %}⚾
-                                {% elif group.assigned_sport == 'hockey' %}🏒
-                                {% elif group.assigned_sport == 'soccer' %}⚽
-                                {% else %}🏆
+                            <td style="text-align: center; vertical-align: middle;" title="{{ group.assigned_sport|title if not group.is_multi_sport else 'Multi-Sport' }}">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge">MUL</span>
+                                {% elif group.assigned_sport == 'basketball' %}<span style="font-size: 1.5rem;">🏀</span>
+                                {% elif group.assigned_sport == 'football' %}<span style="font-size: 1.5rem;">🏈</span>
+                                {% elif group.assigned_sport == 'baseball' %}<span style="font-size: 1.5rem;">⚾</span>
+                                {% elif group.assigned_sport == 'hockey' %}<span style="font-size: 1.5rem;">🏒</span>
+                                {% elif group.assigned_sport == 'soccer' %}<span style="font-size: 1.5rem;">⚽</span>
+                                {% else %}<span style="font-size: 1.5rem;">🏆</span>
                                 {% endif %}
                             </td>
                             <td>
