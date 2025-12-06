@@ -1221,8 +1221,8 @@ class ChannelLifecycleManager:
             stream_detected_league = matched.get('detected_league') or teams.get('detected_league')
             stream_detected_sport = None
             if stream_detected_league:
-                from epg.league_detector import LEAGUE_TO_SPORT
-                stream_detected_sport = LEAGUE_TO_SPORT.get(stream_detected_league)
+                from epg.league_detector import get_sport_for_league
+                stream_detected_sport = get_sport_for_league(stream_detected_league)
 
             # Generate channel name using template
             channel_name = generate_channel_name(

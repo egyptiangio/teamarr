@@ -453,7 +453,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
               Tier 3b: Teams + Time only → Infer today, schedule match
               Tier 3c: Teams only → Closest game to now
             """
-            from epg.league_detector import LeagueDetector, LEAGUE_TO_SPORT
+            from epg.league_detector import LeagueDetector, get_sport_for_league
             from database import find_any_channel_for_event
 
             # Create per-thread instances
@@ -516,7 +516,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                         slug_to_code = get_soccer_slug_mapping()
                         sport_leagues = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
                     else:
-                        sport_leagues = [l for l in enabled_leagues if LEAGUE_TO_SPORT.get(l) == indicator_sport]
+                        from epg.league_detector import get_sport_for_league
+                        sport_leagues = [l for l in enabled_leagues if get_sport_for_league(l) == indicator_sport]
 
                     for league in sport_leagues:
                         if any_custom_enabled:
@@ -4616,7 +4617,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                           Tier 2: Sport indicator + Teams → Match within sport's leagues
                           Tier 3: Cache lookup + schedule disambiguation
                         """
-                        from epg.league_detector import LeagueDetector, LEAGUE_TO_SPORT
+                        from epg.league_detector import LeagueDetector, get_sport_for_league
                         from database import get_soccer_slug_mapping
 
                         # Create per-thread instances
@@ -4703,7 +4704,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                     slug_to_code = get_soccer_slug_mapping()
                                     sport_leagues = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
                                 else:
-                                    sport_leagues = [l for l in enabled_leagues if LEAGUE_TO_SPORT.get(l) == indicator_sport]
+                                    sport_leagues = [l for l in enabled_leagues if get_sport_for_league(l) == indicator_sport]
 
                                 for try_league in sport_leagues:
                                     if any_custom_enabled:

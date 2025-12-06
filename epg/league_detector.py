@@ -190,34 +190,139 @@ SPORT_INDICATORS = {
     r'\bSoccer\b': ['ncaas', 'ncaaws'],  # NCAA soccer handled like other college sports
 }
 
-# Map league codes to their sport for grouping
-LEAGUE_TO_SPORT = {
-    'nhl': 'hockey',
-    'ncaah': 'hockey',
-    'nba': 'basketball',
-    'nba-g': 'basketball',
-    'wnba': 'basketball',
-    'ncaam': 'basketball',
-    'ncaaw': 'basketball',
-    'nfl': 'football',
-    'ncaaf': 'football',
-    'mlb': 'baseball',
-    'ncaavb-m': 'volleyball',
-    'ncaavb-w': 'volleyball',
-    # Soccer (professional)
-    'epl': 'soccer',
-    'laliga': 'soccer',
-    'bundesliga': 'soccer',
-    'seriea': 'soccer',
-    'ligue1': 'soccer',
-    'mls': 'soccer',
-    'nwsl': 'soccer',
-    'efl': 'soccer',
-    'efl1': 'soccer',
-    # Soccer (NCAA - treated like other college sports)
-    'ncaas': 'soccer',
-    'ncaaws': 'soccer',
-}
+# =============================================================================
+# LEAGUE TO SPORT MAPPING - Single source of truth: league_config table
+# =============================================================================
+
+# Cache for league_code -> sport mapping (loaded from database)
+_LEAGUE_TO_SPORT_CACHE: Dict[str, str] = {}
+_LEAGUE_TO_SPORT_LOADED = False
+
+
+def _load_league_to_sport_cache() -> Dict[str, str]:
+    """
+    Load league_code -> sport mapping from league_config database.
+
+    This is the single source of truth for which leagues belong to which sport.
+    Called once on first access, then cached.
+
+    Returns:
+        Dict mapping league_code to sport name
+    """
+    global _LEAGUE_TO_SPORT_CACHE, _LEAGUE_TO_SPORT_LOADED
+
+    if _LEAGUE_TO_SPORT_LOADED:
+        return _LEAGUE_TO_SPORT_CACHE
+
+    try:
+        from database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT league_code, sport FROM league_config")
+        for row in cursor.fetchall():
+            _LEAGUE_TO_SPORT_CACHE[row[0]] = row[1]
+        conn.close()
+        _LEAGUE_TO_SPORT_LOADED = True
+        logger.debug(f"Loaded {len(_LEAGUE_TO_SPORT_CACHE)} leagues from league_config")
+    except Exception as e:
+        logger.error(f"Failed to load league_config: {e}")
+        # Fallback to minimal static mapping if DB fails
+        _LEAGUE_TO_SPORT_CACHE = {
+            'nhl': 'hockey', 'nba': 'basketball', 'nfl': 'football', 'mlb': 'baseball'
+        }
+        _LEAGUE_TO_SPORT_LOADED = True
+
+    return _LEAGUE_TO_SPORT_CACHE
+
+
+def get_league_to_sport() -> Dict[str, str]:
+    """
+    Get the league_code -> sport mapping.
+
+    Loads from database on first call, cached thereafter.
+    """
+    return _load_league_to_sport_cache()
+
+
+class _LazyLeagueToSport(dict):
+    """Dict that loads from database on first access for backwards compatibility."""
+
+    def __init__(self):
+        self._loaded = False
+
+    def _ensure_loaded(self):
+        if not self._loaded:
+            self.update(_load_league_to_sport_cache())
+            self._loaded = True
+
+    def __getitem__(self, key):
+        self._ensure_loaded()
+        return super().__getitem__(key)
+
+    def __contains__(self, key):
+        self._ensure_loaded()
+        return super().__contains__(key)
+
+    def get(self, key, default=None):
+        self._ensure_loaded()
+        return super().get(key, default)
+
+    def keys(self):
+        self._ensure_loaded()
+        return super().keys()
+
+    def values(self):
+        self._ensure_loaded()
+        return super().values()
+
+    def items(self):
+        self._ensure_loaded()
+        return super().items()
+
+    def __iter__(self):
+        self._ensure_loaded()
+        return super().__iter__()
+
+    def __len__(self):
+        self._ensure_loaded()
+        return super().__len__()
+
+
+LEAGUE_TO_SPORT = _LazyLeagueToSport()
+
+
+def get_sport_for_league(league_code: str) -> Optional[str]:
+    """
+    Get the sport for a league code.
+
+    Uses league_config database as single source of truth.
+    Also handles soccer leagues not yet in league_config via pattern matching.
+
+    Args:
+        league_code: ESPN API league slug (e.g., 'ger.1', 'nhl')
+
+    Returns:
+        Sport name or None if not found
+    """
+    sport = LEAGUE_TO_SPORT.get(league_code)
+    if sport:
+        return sport
+
+    # For soccer leagues not in league_config, check if it looks like a soccer slug
+    # ESPN soccer slugs follow patterns like: eng.1, ger.dfb_pokal, uefa.champions
+    soccer_patterns = [
+        '.1', '.2', '.3', '.4',  # Division numbers
+        'uefa.', 'conmebol.', 'concacaf.', 'afc.', 'caf.',  # Continental
+        'club.', 'fifa.',  # Club/international
+        'cup', 'pokal', 'copa', 'super_cup',  # Cup competitions
+        '.league', '.friendly',
+    ]
+    league_lower = league_code.lower()
+    for pattern in soccer_patterns:
+        if pattern in league_lower:
+            return 'soccer'
+
+    return None
 
 # Time tolerance for schedule matching (±30 minutes)
 TIME_TOLERANCE_MINUTES = 30
@@ -957,7 +1062,7 @@ class LeagueDetector:
                     candidates_checked=[detected_league]
                 )
 
-        sport = LEAGUE_TO_SPORT.get(detected_league)
+        sport = get_sport_for_league(detected_league)
 
         return DetectionResult(
             detected=True,
@@ -1006,7 +1111,7 @@ class LeagueDetector:
                 return DetectionResult(
                     detected=True,
                     league=league,
-                    sport=LEAGUE_TO_SPORT.get(league),
+                    sport=get_sport_for_league(league),
                     tier=2,
                     tier_detail='2',
                     method=f"Sport indicator '{detected_sport}' + teams in {league.upper()}",
@@ -1066,7 +1171,7 @@ class LeagueDetector:
             return DetectionResult(
                 detected=True,
                 league=league,
-                sport=LEAGUE_TO_SPORT.get(league),
+                sport=get_sport_for_league(league),
                 tier=3,
                 tier_detail='3c',  # Single candidate, no schedule check needed
                 method=f"Only league with both teams: {league.upper()}",
@@ -1137,7 +1242,7 @@ class LeagueDetector:
             return DetectionResult(
                 detected=True,
                 league=match.league,
-                sport=LEAGUE_TO_SPORT.get(match.league),
+                sport=get_sport_for_league(match.league),
                 tier=3,
                 tier_detail='3a',
                 method=f"Schedule match: {match.league.upper()} at {match.event_date}",
@@ -1190,7 +1295,7 @@ class LeagueDetector:
             return DetectionResult(
                 detected=True,
                 league=match.league,
-                sport=LEAGUE_TO_SPORT.get(match.league),
+                sport=get_sport_for_league(match.league),
                 tier=3,
                 tier_detail='3b',
                 method=f"Schedule match (inferred today): {match.league.upper()} at {match.event_date}",
@@ -1257,7 +1362,7 @@ class LeagueDetector:
         return DetectionResult(
             detected=True,
             league=closest.league,
-            sport=LEAGUE_TO_SPORT.get(closest.league),
+            sport=get_sport_for_league(closest.league),
             tier=3,
             tier_detail='3c',
             method=f"Closest game: {closest.league.upper()} at {closest.event_date}",

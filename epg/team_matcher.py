@@ -1478,13 +1478,13 @@ class TeamMatcher:
             result['game_time'] = extract_time_from_text(stream_name)
 
         # Try to detect league from indicators in stream name
-        from epg.league_detector import LEAGUE_INDICATORS, SPORT_INDICATORS, LEAGUE_TO_SPORT
+        from epg.league_detector import LEAGUE_INDICATORS, SPORT_INDICATORS, get_sport_for_league
         import re
 
         for pattern, league in LEAGUE_INDICATORS.items():
             if re.search(pattern, stream_name, re.IGNORECASE):
                 result['detected_league'] = league
-                result['detected_sport'] = LEAGUE_TO_SPORT.get(league)
+                result['detected_sport'] = get_sport_for_league(league)
                 break
 
         if not result['detected_league']:
