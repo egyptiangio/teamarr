@@ -178,19 +178,23 @@ class TemplateEngine:
         # Use league_name (e.g., "NBA") instead of league code (e.g., "nba")
         variables['league'] = team_config.get('league_name', '') or team_config.get('league', '').upper()
         variables['league_name'] = team_config.get('league_name', '')
-        # League code in lowercase for channel IDs (e.g., "nba", "nhl")
-        variables['league_id'] = team_config.get('league', '').lower()
+        # League code - convert ESPN slug to friendly alias for display
+        # e.g., 'womens-college-basketball' -> 'ncaaw'
+        from database import get_league_alias
+        league_code = team_config.get('league', '').lower()
+        variables['league_id'] = get_league_alias(league_code)
 
         # Soccer Match League (for multi-league soccer teams)
         # These track which specific competition THIS GAME is from (changes per match)
         # Falls back to team's primary league if not set (non-soccer or single league)
         variables['soccer_match_league'] = game.get('_source_league_name', '') or variables['league_name']
-        variables['soccer_match_league_id'] = game.get('_source_league', '') or variables['league_id']
+        source_league = game.get('_source_league', '') or league_code
+        variables['soccer_match_league_id'] = get_league_alias(source_league)
         variables['soccer_match_league_logo'] = game.get('_source_league_logo', '')
         # Primary league (constant - team's home league, doesn't change per game)
         # Equivalent to league_name/league_id but with soccer_* naming for consistency
         variables['soccer_primary_league'] = team_config.get('league_name', '') or team_config.get('league', '').upper()
-        variables['soccer_primary_league_id'] = team_config.get('league', '').lower()
+        variables['soccer_primary_league_id'] = get_league_alias(league_code)
 
         # Conference/Division variables
         # - college_conference: Conference name for college sports (e.g., "Sun Belt", "ACC")

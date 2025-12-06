@@ -202,22 +202,9 @@ class EventTemplateEngine:
 
         # {league_id} - Check aliases table for friendly name, fallback to ESPN slug
         # This ensures consistent output whether from single-sport or multi-sport groups
-        league_id_value = event_league.lower()
-        if event_league:
-            from database import get_connection
-            try:
-                conn = get_connection()
-                cursor = conn.cursor()
-                result = cursor.execute(
-                    "SELECT alias FROM league_id_aliases WHERE espn_slug = ?",
-                    (event_league.lower(),)
-                ).fetchone()
-                conn.close()
-                if result and result[0]:
-                    league_id_value = result[0]
-            except Exception:
-                pass
-        variables['league_id'] = league_id_value
+        # Convert ESPN slug to friendly alias for display (e.g., 'womens-college-basketball' -> 'ncaaw')
+        from database import get_league_alias
+        variables['league_id'] = get_league_alias(event_league.lower()) if event_league else ''
 
         # Look up the display name for the league
         # For soccer: use soccer_leagues_cache (e.g., 'aus.1' -> 'Australian A-League Men')

@@ -138,6 +138,181 @@ def db_insert(query: str, params: tuple = ()) -> int:
         return cursor.lastrowid
 
 # =============================================================================
+# LEAGUE CODE NORMALIZATION
+# =============================================================================
+# ESPN slugs are the single source of truth (stored in league_config.league_code).
+# The league_id_aliases table maps friendly aliases back to ESPN slugs.
+# These helpers ensure we always work with ESPN slugs internally.
+
+# Cache for alias -> slug mapping (populated on first use)
+_alias_to_slug_cache: Optional[Dict[str, str]] = None
+
+# Hardcoded alias variants that map to ESPN slugs
+# This handles cases where multiple aliases should map to the same slug
+# (the DB table only stores one alias per slug for template variable output)
+_ALIAS_VARIANTS = {
+    # College basketball
+    'ncaam': 'mens-college-basketball',
+    'ncaaw': 'womens-college-basketball',
+    # College football
+    'ncaaf': 'college-football',
+    # College hockey
+    'ncaah': 'mens-college-hockey',
+    # College volleyball (multiple alias formats)
+    'ncaavbm': 'mens-college-volleyball',
+    'ncaavb-m': 'mens-college-volleyball',
+    'ncaavb': 'mens-college-volleyball',
+    'ncaavbw': 'womens-college-volleyball',
+    'ncaavb-w': 'womens-college-volleyball',
+    'ncaawvb': 'womens-college-volleyball',
+    # College soccer
+    'ncaas': 'usa.ncaa.m.1',
+    'ncaaws': 'usa.ncaa.w.1',
+    # NBA G-League (multiple alias formats)
+    'nbag': 'nba-development',
+    'nba-g': 'nba-development',
+    # Soccer leagues
+    'epl': 'eng.1',
+    'laliga': 'esp.1',
+    'bundesliga': 'ger.1',
+    'seriea': 'ita.1',
+    'ligue1': 'fra.1',
+    'mls': 'usa.1',
+    'nwsl': 'usa.nwsl',
+    'efl': 'eng.2',
+    'efl1': 'eng.3',
+    'ucl': 'uefa.champions',
+}
+
+
+def get_alias_to_slug_mapping() -> Dict[str, str]:
+    """
+    Get mapping from aliases to ESPN slugs.
+
+    Combines hardcoded aliases (for variant handling) with DB aliases.
+    DB aliases take precedence if there's a conflict.
+
+    Returns:
+        Dict mapping alias -> espn_slug (e.g., {'ncaaw': 'womens-college-basketball'})
+    """
+    global _alias_to_slug_cache
+    if _alias_to_slug_cache is not None:
+        return _alias_to_slug_cache
+
+    # Start with hardcoded variants
+    _alias_to_slug_cache = _ALIAS_VARIANTS.copy()
+
+    # Add DB aliases (reverse the slug->alias to alias->slug)
+    try:
+        rows = db_fetch_all("SELECT espn_slug, alias FROM league_id_aliases")
+        for row in rows:
+            _alias_to_slug_cache[row['alias']] = row['espn_slug']
+    except Exception:
+        pass
+
+    return _alias_to_slug_cache
+
+
+def normalize_league_code(code: str) -> str:
+    """
+    Normalize a league code to its ESPN slug.
+
+    If the code is an alias, returns the ESPN slug.
+    If already an ESPN slug (or unknown), returns as-is.
+
+    Args:
+        code: League code (alias or ESPN slug)
+
+    Returns:
+        ESPN slug
+    """
+    if not code:
+        return code
+
+    mapping = get_alias_to_slug_mapping()
+    return mapping.get(code, code)
+
+
+def normalize_league_codes(codes: List[str]) -> List[str]:
+    """
+    Normalize a list of league codes to ESPN slugs.
+
+    Args:
+        codes: List of league codes (aliases or ESPN slugs)
+
+    Returns:
+        List of ESPN slugs (preserves order, deduplicates)
+    """
+    if not codes:
+        return codes
+
+    mapping = get_alias_to_slug_mapping()
+    seen = set()
+    result = []
+    for code in codes:
+        normalized = mapping.get(code, code)
+        if normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
+def clear_alias_cache():
+    """Clear the alias cache (call after modifying league_id_aliases)."""
+    global _alias_to_slug_cache, _slug_to_alias_cache
+    _alias_to_slug_cache = None
+    _slug_to_alias_cache = None
+
+
+# Cache for slug -> alias mapping (for display purposes)
+_slug_to_alias_cache: Optional[Dict[str, str]] = None
+
+
+def get_slug_to_alias_mapping() -> Dict[str, str]:
+    """
+    Get mapping from ESPN slugs to canonical aliases.
+
+    This is used for display purposes (e.g., {league_id} template variable).
+    Returns the canonical alias from the league_id_aliases table.
+
+    Returns:
+        Dict mapping espn_slug -> alias (e.g., {'womens-college-basketball': 'ncaaw'})
+    """
+    global _slug_to_alias_cache
+    if _slug_to_alias_cache is not None:
+        return _slug_to_alias_cache
+
+    _slug_to_alias_cache = {}
+    try:
+        rows = db_fetch_all("SELECT espn_slug, alias FROM league_id_aliases")
+        for row in rows:
+            _slug_to_alias_cache[row['espn_slug']] = row['alias']
+    except Exception:
+        pass
+
+    return _slug_to_alias_cache
+
+
+def get_league_alias(slug: str) -> str:
+    """
+    Get the friendly alias for an ESPN slug.
+
+    If no alias exists, returns the slug as-is.
+
+    Args:
+        slug: ESPN slug (e.g., 'womens-college-basketball')
+
+    Returns:
+        Alias (e.g., 'ncaaw') or original slug if no alias exists
+    """
+    if not slug:
+        return slug
+
+    mapping = get_slug_to_alias_mapping()
+    return mapping.get(slug, slug)
+
+
+# =============================================================================
 # SCHEMA VERSIONING
 # =============================================================================
 # Each migration has a version number. Migrations only run if current version < target version.
@@ -1102,6 +1277,8 @@ def run_migrations(conn):
         conn.commit()
 
         # 18f. Seed league_id_aliases with friendly names
+        # This table stores ONE canonical alias per ESPN slug (for {league_id} template variable)
+        # Additional alias variants are handled by _ALIAS_VARIANTS dict in the code
         aliases = [
             # Soccer
             ('eng.1', 'epl'),
@@ -1120,8 +1297,8 @@ def run_migrations(conn):
             ('college-football', 'ncaaf'),
             ('mens-college-hockey', 'ncaah'),
             ('nba-development', 'nbag'),
-            ('mens-college-volleyball', 'ncaavb'),
-            ('womens-college-volleyball', 'ncaawvb'),
+            ('mens-college-volleyball', 'ncaavbm'),
+            ('womens-college-volleyball', 'ncaavbw'),
             ('usa.ncaa.m.1', 'ncaas'),
             ('usa.ncaa.w.1', 'ncaaws'),
         ]
@@ -1877,14 +2054,28 @@ def bulk_create_aliases(aliases: List[Dict[str, str]]) -> int:
 # =============================================================================
 
 def _parse_event_group_json_fields(group: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse JSON fields in an event EPG group dict."""
-    if group and 'channel_profile_ids' in group and group['channel_profile_ids']:
+    """Parse JSON fields in an event EPG group dict and normalize league codes."""
+    if not group:
+        return group
+
+    # Parse channel_profile_ids JSON
+    if 'channel_profile_ids' in group and group['channel_profile_ids']:
         try:
             group['channel_profile_ids'] = json.loads(group['channel_profile_ids'])
         except (json.JSONDecodeError, TypeError):
             group['channel_profile_ids'] = []
-    elif group:
+    else:
         group['channel_profile_ids'] = []
+
+    # Parse and normalize enabled_leagues JSON (alias -> ESPN slug)
+    if 'enabled_leagues' in group and group['enabled_leagues']:
+        try:
+            leagues = json.loads(group['enabled_leagues'])
+            # Normalize aliases to ESPN slugs (single source of truth)
+            group['enabled_leagues'] = json.dumps(normalize_league_codes(leagues))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return group
 
 
@@ -1999,6 +2190,15 @@ def create_event_epg_group(
         # Convert channel_profile_ids list to JSON string
         channel_profile_ids_json = json.dumps(channel_profile_ids) if channel_profile_ids else None
 
+        # Normalize enabled_leagues to ESPN slugs (single source of truth)
+        enabled_leagues_normalized = enabled_leagues
+        if enabled_leagues:
+            try:
+                leagues = json.loads(enabled_leagues) if isinstance(enabled_leagues, str) else enabled_leagues
+                enabled_leagues_normalized = json.dumps(normalize_league_codes(leagues))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         cursor.execute(
             """
             INSERT INTO event_epg_groups
@@ -2027,7 +2227,7 @@ def create_event_epg_group(
                 stream_include_regex, 1 if stream_include_regex_enabled else 0,
                 stream_exclude_regex, 1 if stream_exclude_regex_enabled else 0,
                 1 if skip_builtin_filter else 0, parent_group_id,
-                1 if is_multi_sport else 0, enabled_leagues, channel_sort_order, overlap_handling
+                1 if is_multi_sport else 0, enabled_leagues_normalized, channel_sort_order, overlap_handling
             )
         )
         conn.commit()
@@ -2053,6 +2253,14 @@ def update_event_epg_group(group_id: int, data: Dict[str, Any]) -> bool:
             if isinstance(data['channel_profile_ids'], list):
                 data['channel_profile_ids'] = json.dumps(data['channel_profile_ids']) if data['channel_profile_ids'] else None
             # If it's already a string (JSON), leave it as is
+
+        # Normalize enabled_leagues to ESPN slugs (single source of truth)
+        if 'enabled_leagues' in data and data['enabled_leagues']:
+            try:
+                leagues = json.loads(data['enabled_leagues']) if isinstance(data['enabled_leagues'], str) else data['enabled_leagues']
+                data['enabled_leagues'] = json.dumps(normalize_league_codes(leagues))
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         # Exclude fields that aren't actual columns
         exclude_fields = {'id', 'group_id'}

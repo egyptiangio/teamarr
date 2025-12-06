@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 # Non-soccer leagues to index (uses ESPN API slugs)
 # These must match league_config.league_code values
 NON_SOCCER_LEAGUES = [
-    'nhl', 'nba', 'nba-g', 'wnba',
+    'nhl', 'nba', 'nba-development', 'wnba',
     'nfl', 'college-football',
     'mens-college-basketball', 'womens-college-basketball',
     'mlb',

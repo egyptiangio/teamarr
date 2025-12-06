@@ -771,22 +771,14 @@ class ESPNClient:
         if team.get('logos') and len(team['logos']) > 0:
             logo_url = team['logos'][0].get('href', '')
 
-        # Map internal league codes back to display codes for storage
-        # e.g., mens-college-basketball -> ncaam for consistency
-        league_code_mapping = {
-            'mens-college-basketball': 'ncaam',
-            'womens-college-basketball': 'ncaaw',
-            'college-football': 'ncaaf',
-            'usa.1': 'mls',
-            'eng.1': 'epl',
-        }
-        stored_league = league_code_mapping.get(league, league)
+        # Store ESPN slugs directly (single source of truth)
+        # Aliases are handled by normalize_league_code() when reading
 
         return {
             'team_name': team.get('displayName') or team.get('name', ''),
             'team_abbrev': team.get('abbreviation', ''),
             'team_slug': team.get('slug', team_slug),
-            'league': stored_league,
+            'league': league,
             'sport': sport,
             'espn_team_id': str(team.get('id', '')),
             'team_logo_url': logo_url or '',

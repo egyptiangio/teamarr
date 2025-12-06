@@ -1622,11 +1622,13 @@ class TeamMatcher:
 
         # Try to detect league from indicators in stream name
         from epg.league_detector import LEAGUE_INDICATORS, SPORT_INDICATORS, get_sport_for_league
+        from database import normalize_league_code
         import re
 
         for pattern, league in LEAGUE_INDICATORS.items():
             if re.search(pattern, stream_name, re.IGNORECASE):
-                result['detected_league'] = league
+                # Normalize alias to ESPN slug (single source of truth)
+                result['detected_league'] = normalize_league_code(league)
                 result['detected_sport'] = get_sport_for_league(league)
                 break
 
