@@ -220,9 +220,18 @@ class MultiSportMatcher:
                 return result
 
             # Step 6: Find event in the detected league (with enrichment)
+            # Defensive check: ensure team_result has required keys
+            away_team_id = team_result.get('away_team_id') if team_result else None
+            home_team_id = team_result.get('home_team_id') if team_result else None
+
+            if not away_team_id or not home_team_id:
+                logger.warning(f"Missing team IDs: away={away_team_id}, home={home_team_id} for stream '{stream_name}'")
+                result.reason = 'MISSING_TEAM_IDS'
+                return result
+
             event_result = self.event_matcher.find_and_enrich(
-                team_result['away_team_id'],
-                team_result['home_team_id'],
+                away_team_id,
+                home_team_id,
                 detected_league,
                 game_date=team_result.get('game_date'),
                 game_time=team_result.get('game_time'),
@@ -230,12 +239,22 @@ class MultiSportMatcher:
                 api_path_override=detected_api_path_override
             )
 
+            # Defensive check: ensure event_result is a dict
+            if event_result is None:
+                logger.warning(f"find_and_enrich returned None for stream '{stream_name}'")
+                event_result = {'found': False, 'reason': 'Enricher returned None'}
+
             # Step 7: If no game found, try alternate team combinations (disambiguation)
             if not event_result.get('found'):
                 event_result, team_result = self._try_team_disambiguation(
                     team_result, raw_team1, raw_team2, detected_league,
                     detected_api_path_override
                 )
+
+            # Defensive check after disambiguation
+            if event_result is None:
+                logger.warning(f"Team disambiguation returned None event_result for stream '{stream_name}'")
+                event_result = {'found': False, 'reason': 'Disambiguation returned None'}
 
             if event_result.get('found'):
                 # Success!
@@ -257,7 +276,9 @@ class MultiSportMatcher:
                 return result
 
         except Exception as e:
+            import traceback
             logger.warning(f"Error matching multi-sport stream '{stream_name}': {e}")
+            logger.debug(f"Full traceback for '{stream_name}':\n{traceback.format_exc()}")
             result.error = True
             result.error_message = str(e)
             return result
