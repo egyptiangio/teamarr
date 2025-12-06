@@ -49,6 +49,45 @@ def strip_team_numbers(name: str) -> str:
     return stripped
 
 
+def normalize_team_name(name: str, strip_articles: bool = False) -> str:
+    """
+    Normalize team name for fuzzy matching.
+
+    - Strips numbers (SV 07 Elversberg -> SV Elversberg)
+    - Optionally removes common articles/prepositions (Atlético de Madrid -> Atlético Madrid)
+    - Normalizes whitespace
+
+    Note: Article stripping is OFF by default because it can break team names like
+    "El Salvador", "Los Angeles FC", etc. Only use as a last-resort fallback.
+
+    Args:
+        name: Team name to normalize
+        strip_articles: If True, also remove articles (de, del, la, el, etc.)
+                       Default False - only strip numbers and normalize whitespace.
+    """
+    normalized = name.lower().strip()
+
+    if strip_articles:
+        # Remove common articles/prepositions that vary between sources
+        # Only standalone short words that are commonly omitted
+        # Spanish: de (of), del (of the)
+        # Portuguese: do, da (of the)
+        # Italian: di (of)
+        # French: de (of), du (of the)
+        # Note: Excludes "el", "la", "los", "las", "le", "les" as these are often
+        # integral to team names (El Salvador, Los Angeles, La Galaxy, etc.)
+        articles = r'\b(de|del|da|do|di|du)\b'
+        normalized = re.sub(articles, '', normalized, flags=re.I)
+
+    # Strip numbers
+    normalized = re.sub(r'\b\d+\b', '', normalized)
+
+    # Normalize whitespace
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+
+    return normalized
+
+
 # SQL expression to strip numbers and normalize spaces from team_name
 # Used in WHERE clauses for fuzzy matching
 SQL_STRIP_NUMBERS = """
@@ -427,8 +466,8 @@ class LeagueDetector:
             team2_lower = team2.lower().strip()
 
             def find_leagues_for_team(team_name: str) -> set:
-                """Find leagues for a team with fallback to number-stripped search"""
-                # Primary search: direct match
+                """Find leagues for a team with fallback to number-stripped and article-stripped search"""
+                # Tier 1: Direct match
                 cursor.execute("""
                     SELECT DISTINCT league_slug FROM soccer_team_leagues
                     WHERE LOWER(team_name) LIKE ?
@@ -440,26 +479,35 @@ class LeagueDetector:
                 if leagues:
                     return leagues
 
-                # Fallback: strip numbers from DB values and search again
+                # Tier 2: Strip numbers from both search term and DB values
                 # Handles "SV Elversberg" matching "SV 07 Elversberg"
-                # Also strip numbers from search term for consistency
-                import re
-                stripped = re.sub(r'\b\d+\b', '', team_name)
-                stripped = re.sub(r'\s+', ' ', stripped).strip()
+                stripped = normalize_team_name(team_name, strip_articles=False)
 
-                if stripped:
-                    # Use TRIM and REPLACE to normalize double spaces after digit removal
-                    cursor.execute("""
+                if stripped and stripped != team_name:
+                    cursor.execute(f"""
                         SELECT DISTINCT league_slug FROM soccer_team_leagues
-                        WHERE TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                    LOWER(team_name), '0', ''), '1', ''), '2', ''), '3', ''), '4', ''),
-                                '5', ''), '6', ''), '7', ''), '8', ''), '9', ''), '  ', ' '))
-                              LIKE ?
+                        WHERE {SQL_STRIP_NUMBERS} LIKE ?
                     """, (f"%{stripped}%",))
                     leagues = {row[0] for row in cursor.fetchall()}
                     if leagues:
                         logger.debug(f"Found leagues via number-stripped search: '{team_name}' -> '{stripped}'")
+                        return leagues
+
+                # Tier 3: Also strip common articles (de, del, da, do, di, du)
+                # Handles "Atlético de Madrid" matching "Atlético Madrid"
+                # This is conservative - only strips prepositions, not "el/la/los/las"
+                normalized = normalize_team_name(team_name, strip_articles=True)
+
+                if normalized and normalized != stripped:
+                    # Search for normalized name anywhere in DB team name
+                    cursor.execute("""
+                        SELECT DISTINCT league_slug FROM soccer_team_leagues
+                        WHERE LOWER(team_name) LIKE ?
+                    """, (f"%{normalized}%",))
+                    leagues = {row[0] for row in cursor.fetchall()}
+                    if leagues:
+                        logger.debug(f"Found leagues via article-stripped search: '{team_name}' -> '{normalized}'")
+                        return leagues
 
                 return leagues
 
@@ -504,6 +552,11 @@ class LeagueDetector:
         This is used for disambiguation when teams with the same name exist
         in multiple leagues with different IDs (e.g., Arsenal in EPL vs WSL).
 
+        Uses tiered matching:
+        1. Direct match (exact or substring)
+        2. Number-stripped match (SV 07 Elversberg -> SV Elversberg)
+        3. Article-stripped match (Atlético de Madrid -> Atlético Madrid)
+
         Args:
             team1: First team name
             team2: Second team name
@@ -521,75 +574,66 @@ class LeagueDetector:
         try:
             cursor = conn.cursor()
 
-            team1_lower = team1.lower().strip()
-            team2_lower = team2.lower().strip()
-            team1_stripped = strip_team_numbers(team1_lower)
-            team2_stripped = strip_team_numbers(team2_lower)
+            def find_team_in_league(team_name: str, league: str) -> Optional[tuple]:
+                """Find a team in a league with tiered fallback matching"""
+                team_lower = team_name.lower().strip()
+                team_stripped = normalize_team_name(team_lower, strip_articles=False)
+                team_normalized = normalize_team_name(team_lower, strip_articles=True)
 
-            # Find team1 in this league (bidirectional match)
-            # Handles "Central Coast Mariners FC" matching "Central Coast Mariners"
-            cursor.execute("""
-                SELECT espn_team_id, team_name FROM soccer_team_leagues
-                WHERE league_slug = ? AND (
-                    LOWER(team_name) LIKE ?
-                    OR LOWER(team_name) LIKE ?
-                    OR INSTR(?, LOWER(team_name)) > 0
-                )
-                ORDER BY LENGTH(team_name) ASC
-                LIMIT 1
-            """, (league_slug, f"%{team1_lower}%", f"{team1_lower}%", team1_lower))
-            row1 = cursor.fetchone()
-
-            # Fallback: try with numbers stripped from DB values
-            # Handles "SV Elversberg" matching "SV 07 Elversberg" in DB
-            if not row1:
-                cursor.execute(f"""
+                # Tier 1: Direct match (bidirectional substring)
+                cursor.execute("""
                     SELECT espn_team_id, team_name FROM soccer_team_leagues
                     WHERE league_slug = ? AND (
-                        {SQL_STRIP_NUMBERS} LIKE ?
-                        OR {SQL_STRIP_NUMBERS} LIKE ?
-                        OR INSTR(?, {SQL_STRIP_NUMBERS}) > 0
+                        LOWER(team_name) LIKE ?
+                        OR LOWER(team_name) LIKE ?
+                        OR INSTR(?, LOWER(team_name)) > 0
                     )
                     ORDER BY LENGTH(team_name) ASC
                     LIMIT 1
-                """, (league_slug, f"%{team1_stripped}%", f"{team1_stripped}%", team1_stripped))
-                row1 = cursor.fetchone()
-                if row1:
-                    logger.debug(f"Team '{team1}' matched via number-stripping: {row1[1]}")
+                """, (league, f"%{team_lower}%", f"{team_lower}%", team_lower))
+                row = cursor.fetchone()
+                if row:
+                    return row
 
+                # Tier 2: Number-stripped match
+                if team_stripped != team_lower:
+                    cursor.execute(f"""
+                        SELECT espn_team_id, team_name FROM soccer_team_leagues
+                        WHERE league_slug = ? AND (
+                            {SQL_STRIP_NUMBERS} LIKE ?
+                            OR {SQL_STRIP_NUMBERS} LIKE ?
+                            OR INSTR(?, {SQL_STRIP_NUMBERS}) > 0
+                        )
+                        ORDER BY LENGTH(team_name) ASC
+                        LIMIT 1
+                    """, (league, f"%{team_stripped}%", f"{team_stripped}%", team_stripped))
+                    row = cursor.fetchone()
+                    if row:
+                        logger.debug(f"Team '{team_name}' matched via number-stripping: {row[1]}")
+                        return row
+
+                # Tier 3: Article-stripped match (de, del, da, do, di, du)
+                if team_normalized != team_stripped:
+                    cursor.execute("""
+                        SELECT espn_team_id, team_name FROM soccer_team_leagues
+                        WHERE league_slug = ? AND LOWER(team_name) LIKE ?
+                        ORDER BY LENGTH(team_name) ASC
+                        LIMIT 1
+                    """, (league, f"%{team_normalized}%"))
+                    row = cursor.fetchone()
+                    if row:
+                        logger.debug(f"Team '{team_name}' matched via article-stripping: {row[1]}")
+                        return row
+
+                return None
+
+            # Find both teams
+            row1 = find_team_in_league(team1, league_slug)
             if not row1:
                 logger.debug(f"Team '{team1}' not found in {league_slug}")
                 return None
 
-            # Find team2 in this league (bidirectional match)
-            cursor.execute("""
-                SELECT espn_team_id, team_name FROM soccer_team_leagues
-                WHERE league_slug = ? AND (
-                    LOWER(team_name) LIKE ?
-                    OR LOWER(team_name) LIKE ?
-                    OR INSTR(?, LOWER(team_name)) > 0
-                )
-                ORDER BY LENGTH(team_name) ASC
-                LIMIT 1
-            """, (league_slug, f"%{team2_lower}%", f"{team2_lower}%", team2_lower))
-            row2 = cursor.fetchone()
-
-            # Fallback: try with numbers stripped from DB values
-            if not row2:
-                cursor.execute(f"""
-                    SELECT espn_team_id, team_name FROM soccer_team_leagues
-                    WHERE league_slug = ? AND (
-                        {SQL_STRIP_NUMBERS} LIKE ?
-                        OR {SQL_STRIP_NUMBERS} LIKE ?
-                        OR INSTR(?, {SQL_STRIP_NUMBERS}) > 0
-                    )
-                    ORDER BY LENGTH(team_name) ASC
-                    LIMIT 1
-                """, (league_slug, f"%{team2_stripped}%", f"{team2_stripped}%", team2_stripped))
-                row2 = cursor.fetchone()
-                if row2:
-                    logger.debug(f"Team '{team2}' matched via number-stripping: {row2[1]}")
-
+            row2 = find_team_in_league(team2, league_slug)
             if not row2:
                 logger.debug(f"Team '{team2}' not found in {league_slug}")
                 return None
