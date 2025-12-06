@@ -575,6 +575,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                         # Multiple leagues have these teams - check ALL for games
                         # Then pick the one with the best time match (Tier 3 disambiguation)
                         leagues_with_games = []
+                        leagues_with_final_games = []  # Track leagues that have final/past games
                         for league, candidate in matched_candidates:
                             test_result = thread_event_matcher.find_event(
                                 candidate['away_team_id'],
@@ -600,6 +601,11 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                                     except Exception:
                                         pass
                                 leagues_with_games.append((league, candidate, test_result, time_diff))
+                            else:
+                                # Track if the game was found but is final/past
+                                reason = test_result.get('reason', '')
+                                if 'completed' in reason.lower() or 'past' in reason.lower() or 'final' in reason.lower():
+                                    leagues_with_final_games.append((league, candidate, test_result))
 
                         if len(leagues_with_games) == 1:
                             # Only one league has a game - use it
@@ -611,8 +617,12 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                             logger.debug(f"Multi-league disambiguation: {len(leagues_with_games)} leagues have games, "
                                        f"selected {detected_league} (time_diff={leagues_with_games[0][3]} mins)")
 
+                        # If no active game found but we found final games, use that league
+                        # This ensures we return "game final" instead of "no game in lookahead"
+                        if not detected_league and leagues_with_final_games:
+                            detected_league, team_result, _ = leagues_with_final_games[0]
                         # If no game found in any league, fall back to first match
-                        if not detected_league and matched_candidates:
+                        elif not detected_league and matched_candidates:
                             detected_league, team_result = matched_candidates[0]
 
                 if not team_result or not team_result.get('matched'):
@@ -4715,6 +4725,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                     # Multiple leagues have these teams - check ALL for games
                                     # Then pick the one with the best time match (Tier 3 disambiguation)
                                     leagues_with_games = []
+                                    leagues_with_final_games = []  # Track leagues that have final/past games
                                     for try_league, candidate in matched_candidates:
                                         test_result = thread_event_matcher.find_event(
                                             candidate['away_team_id'],
@@ -4740,6 +4751,11 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                                 except Exception:
                                                     pass
                                             leagues_with_games.append((try_league, candidate, test_result, time_diff))
+                                        else:
+                                            # Track if the game was found but is final/past
+                                            reason = test_result.get('reason', '')
+                                            if 'completed' in reason.lower() or 'past' in reason.lower() or 'final' in reason.lower():
+                                                leagues_with_final_games.append((try_league, candidate, test_result))
 
                                     if len(leagues_with_games) == 1:
                                         # Only one league has a game - use it
@@ -4751,8 +4767,12 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                         logger.debug(f"Multi-league disambiguation: {len(leagues_with_games)} leagues have games, "
                                                    f"selected {detected_league} (time_diff={leagues_with_games[0][3]} mins)")
 
+                                    # If no active game found but we found final games, use that league
+                                    # This ensures we return "game final" instead of "no game in lookahead"
+                                    if not detected_league and leagues_with_final_games:
+                                        detected_league, team_result, _ = leagues_with_final_games[0]
                                     # If no game found in any league, fall back to first match
-                                    if not detected_league and matched_candidates:
+                                    elif not detected_league and matched_candidates:
                                         detected_league, team_result = matched_candidates[0]
 
                             if not team_result or not team_result.get('matched'):
