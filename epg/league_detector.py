@@ -668,6 +668,43 @@ class LeagueDetector:
                         logger.debug(f"Found leagues via article-stripped search: '{team_name}' -> '{normalized}'")
                         return leagues
 
+                # Tier 5: Word-overlap matching for city name variants
+                # Handles German/English city differences:
+                #   - München vs Munich (Bayern Munich in DB, FC Bayern München in stream)
+                #   - Köln vs Cologne
+                #   - Napoli vs Naples
+                search_words = set(search_normalized.split())
+                # Filter out common prefixes AND generic words that cause false positives
+                non_significant_words = {
+                    # Soccer club prefixes
+                    'fc', 'sc', 'sv', 'vfb', 'vfl', 'tsv', 'fsv', 'bsc', '1.', 'ac', 'as', 'ss', 'us',
+                    'cd', 'cf', 'rc', 'rcd', 'ud', 'sd', 'real', 'sporting', 'athletic', 'atletico',
+                    # Generic institutional words (cause false positives)
+                    'college', 'university', 'state', 'city', 'united', 'town', 'county',
+                    # Common suffixes
+                    'afc', 'utd',
+                }
+                search_words_significant = search_words - non_significant_words
+
+                if search_words_significant:
+                    cursor.execute("""
+                        SELECT league_slug, team_name FROM soccer_team_leagues
+                    """)
+                    for row in cursor.fetchall():
+                        db_normalized = strip_accents(row[1].lower())
+                        db_words = set(db_normalized.split())
+                        db_words_significant = db_words - non_significant_words
+
+                        # Match if any significant word overlaps
+                        # This catches "Bayern" in both "FC Bayern München" and "Bayern Munich"
+                        overlap = search_words_significant & db_words_significant
+                        if overlap:
+                            leagues.add(row[0])
+
+                    if leagues:
+                        logger.debug(f"Found leagues via word-overlap search: '{team_name}' -> significant words: {search_words_significant}")
+                        return leagues
+
                 return leagues
 
             # Find leagues for team1
@@ -806,6 +843,40 @@ class LeagueDetector:
                         db_articles_stripped = re.sub(r'\s+', ' ', db_articles_stripped).strip()
                         if team_normalized in db_articles_stripped:
                             logger.debug(f"Team '{team_name}' matched via article-stripping: {row[1]}")
+                            return row
+
+                # Tier 5: Word-overlap matching for city name variants
+                # Handles German/English city differences:
+                #   - München vs Munich (Bayern Munich in DB, FC Bayern München in stream)
+                #   - Köln vs Cologne
+                # Match if significant words overlap (ignoring common prefixes like FC, VfB)
+                search_words = set(team_accent_stripped.split())
+                # Filter out common prefixes AND generic words that cause false positives
+                non_significant_words = {
+                    # Soccer club prefixes
+                    'fc', 'sc', 'sv', 'vfb', 'vfl', 'tsv', 'fsv', 'bsc', '1.', 'ac', 'as', 'ss', 'us',
+                    'cd', 'cf', 'rc', 'rcd', 'ud', 'sd', 'real', 'sporting', 'athletic', 'atletico',
+                    # Generic institutional words (cause false positives)
+                    'college', 'university', 'state', 'city', 'united', 'town', 'county',
+                    # Common suffixes
+                    'afc', 'utd',
+                }
+                search_words_significant = search_words - non_significant_words
+
+                if search_words_significant:
+                    cursor.execute("""
+                        SELECT espn_team_id, team_name FROM soccer_team_leagues
+                        WHERE league_slug = ?
+                    """, (league,))
+                    for row in cursor.fetchall():
+                        db_normalized = strip_accents(row[1].lower())
+                        db_words = set(db_normalized.split())
+                        db_words_significant = db_words - non_significant_words
+
+                        # Match if any significant word overlaps
+                        overlap = search_words_significant & db_words_significant
+                        if overlap:
+                            logger.debug(f"Team '{team_name}' matched via word-overlap: {row[1]} (shared: {overlap})")
                             return row
 
                 return None
