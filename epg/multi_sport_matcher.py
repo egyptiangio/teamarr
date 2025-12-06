@@ -161,6 +161,7 @@ class MultiSportMatcher:
             detected_league = None
             detected_api_path_override = None
             detection_tier = None
+            pre_found_event = None  # Event found during disambiguation (optimization)
 
             # Step 2: Tier 1 - If league indicator found, try that league directly
             if indicator_league and indicator_league in (
@@ -182,8 +183,9 @@ class MultiSportMatcher:
                     detection_tier = tier
 
             # Step 4: Tier 3 - Use caches to find candidate leagues from team names
+            # Also captures pre-found event from disambiguation to avoid redundant API call
             if not team_result or not team_result.get('matched'):
-                league, teams, api_override, tier = self._try_cache_lookup(
+                league, teams, api_override, tier, pre_found = self._try_cache_lookup(
                     stream_name, raw_team1, raw_team2, game_date, game_time
                 )
                 if league:
@@ -191,6 +193,7 @@ class MultiSportMatcher:
                     team_result = teams
                     detected_api_path_override = api_override
                     detection_tier = tier
+                    pre_found_event = pre_found  # May be None if single candidate or no game found
 
             # If no match yet, provide diagnostic info
             if not team_result or not team_result.get('matched'):
@@ -229,15 +232,30 @@ class MultiSportMatcher:
                 result.reason = 'MISSING_TEAM_IDS'
                 return result
 
-            event_result = self.event_matcher.find_and_enrich(
-                away_team_id,
-                home_team_id,
-                detected_league,
-                game_date=team_result.get('game_date'),
-                game_time=team_result.get('game_time'),
-                include_final_events=self.config.include_final_events,
-                api_path_override=detected_api_path_override
-            )
+            # Optimization: If disambiguation already found the event, enrich it instead
+            # of calling find_and_enrich() which would re-fetch the same event
+            if pre_found_event and pre_found_event.get('found'):
+                # Event already found during disambiguation - just enrich it
+                event_result = pre_found_event
+                if self.event_matcher.enricher and event_result.get('event'):
+                    event_result['event'] = self.event_matcher.enricher.enrich_event(
+                        event_result['event'],
+                        detected_league,
+                        include_scoreboard=True,
+                        include_team_stats=True
+                    )
+                logger.debug(f"Using pre-found event from disambiguation for '{stream_name[:40]}...'")
+            else:
+                # No pre-found event - fetch and enrich
+                event_result = self.event_matcher.find_and_enrich(
+                    away_team_id,
+                    home_team_id,
+                    detected_league,
+                    game_date=team_result.get('game_date'),
+                    game_time=team_result.get('game_time'),
+                    include_final_events=self.config.include_final_events,
+                    api_path_override=detected_api_path_override
+                )
 
             # Defensive check: ensure event_result is a dict
             if event_result is None:
@@ -325,7 +343,13 @@ class MultiSportMatcher:
         self, stream_name: str, raw_team1: str, raw_team2: str,
         game_date, game_time
     ) -> tuple:
-        """Tier 3: Use caches to find candidate leagues from team names."""
+        """
+        Tier 3: Use caches to find candidate leagues from team names.
+
+        Returns:
+            Tuple of (detected_league, team_result, api_override, detection_tier, found_event)
+            - found_event: Event dict if found during disambiguation, None otherwise
+        """
         # Find candidate leagues from TeamLeagueCache (non-soccer)
         candidate_leagues = self.league_detector.find_candidate_leagues(
             raw_team1, raw_team2, include_soccer=False
@@ -363,18 +387,26 @@ class MultiSportMatcher:
         # Disambiguate if needed
         if len(matched_candidates) == 1:
             detected_league, team_result, api_override = matched_candidates[0]
-            return detected_league, team_result, api_override, '3c'
+            # Single candidate - no event found yet, return None for found_event
+            return detected_league, team_result, api_override, '3c', None
         elif len(matched_candidates) > 1:
             return self._disambiguate_candidates(
                 matched_candidates, game_date, game_time
             )
 
-        return None, None, None, None
+        return None, None, None, None, None
 
     def _disambiguate_candidates(
         self, matched_candidates: List[tuple], game_date, game_time
     ) -> tuple:
-        """Disambiguate between multiple candidate leagues by checking schedules."""
+        """
+        Disambiguate between multiple candidate leagues by checking schedules.
+
+        Returns:
+            Tuple of (detected_league, team_result, api_override, detection_tier, found_event)
+            - found_event: Event dict from find_event() if a game was found, None otherwise
+              This allows the caller to skip a redundant find_and_enrich() call.
+        """
         leagues_with_games = []
         leagues_with_final_games = []
 
@@ -404,25 +436,29 @@ class MultiSportMatcher:
                         time_diff = abs(event_mins - target_mins)
                     except Exception:
                         pass
-                leagues_with_games.append((league, candidate, test_result, time_diff))
+                # Store test_result (contains the event) along with other data
+                leagues_with_games.append((league, candidate, api_path_override, test_result, time_diff))
             else:
                 # Track if the game was found but is final/past
                 reason = test_result.get('reason', '')
                 if 'completed' in reason.lower() or 'past' in reason.lower() or 'final' in reason.lower():
-                    leagues_with_final_games.append((league, candidate, test_result))
+                    leagues_with_final_games.append((league, candidate, api_path_override, test_result))
 
         detected_league = None
         team_result = None
         detected_api_path_override = None
         detection_tier = None
+        found_event = None  # The event found during disambiguation
 
         if len(leagues_with_games) == 1:
-            detected_league, team_result, _, _ = leagues_with_games[0]
+            detected_league, team_result, detected_api_path_override, found_result, _ = leagues_with_games[0]
+            found_event = found_result  # Preserve the full result including event
             detection_tier = '3c'
         elif len(leagues_with_games) > 1:
             # Multiple leagues have games - pick best time match
-            leagues_with_games.sort(key=lambda x: x[3])
-            detected_league, team_result, _, _ = leagues_with_games[0]
+            leagues_with_games.sort(key=lambda x: x[4])  # Sort by time_diff (index 4)
+            detected_league, team_result, detected_api_path_override, found_result, _ = leagues_with_games[0]
+            found_event = found_result  # Preserve the full result including event
 
             # Determine tier based on what data was used
             if game_date and game_time:
@@ -434,18 +470,20 @@ class MultiSportMatcher:
 
             logger.debug(
                 f"Multi-league disambiguation: {len(leagues_with_games)} leagues have games, "
-                f"selected {detected_league} (time_diff={leagues_with_games[0][3]} mins)"
+                f"selected {detected_league} (time_diff={leagues_with_games[0][4]} mins)"
             )
 
         # If no active game found but we found final games, use that league
         if not detected_league and leagues_with_final_games:
-            detected_league, team_result, _ = leagues_with_final_games[0]
+            detected_league, team_result, detected_api_path_override, found_result = leagues_with_final_games[0]
+            found_event = found_result
             detection_tier = '3c'
         # If no game found in any league, fall back to first match
         elif not detected_league and matched_candidates:
             detected_league, team_result, api_override = matched_candidates[0]
             detected_api_path_override = api_override
             detection_tier = '3c'
+            # No event found in this case
 
         # For soccer leagues detected via cache, check if we need api_path_override
         if detected_league and not detected_api_path_override:
@@ -454,7 +492,7 @@ class MultiSportMatcher:
                     detected_api_path_override = api_override
                     break
 
-        return detected_league, team_result, detected_api_path_override, detection_tier
+        return detected_league, team_result, detected_api_path_override, detection_tier, found_event
 
     def _try_full_detection(self, stream_name: str, team_result: Dict) -> tuple:
         """Step 5: Try full detection with team IDs (includes Tier 4)."""
