@@ -287,15 +287,69 @@ class MultiSportMatcher:
                 )
 
                 if event and event.get('id'):
-                    # Successfully got the event - wrap it in expected format
-                    event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+                    # Check if event is completed/past - apply same filtering as find_event()
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    from utils.time_format import get_today_in_user_tz, get_user_timezone
+                    from database import get_connection
+                    from utils.filter_reasons import FilterReason
+
+                    # Get event status - check both direct status and competitions[0].status
+                    status = event.get('status', {})
+                    # Fallback to competitions[0].status.type if status is empty
+                    if not status or not status.get('completed'):
+                        comp = event.get('competitions', [{}])[0]
+                        comp_status = comp.get('status', {})
+                        status_type = comp_status.get('type', {})
+                        if status_type.get('completed'):
+                            status = {
+                                'name': status_type.get('name', ''),
+                                'completed': status_type.get('completed', False)
+                            }
+                    is_completed = status.get('completed', False) or 'FINAL' in status.get('name', '').upper()
+
+                    if is_completed:
+                        # Check if it's a past day or today's final
+                        event_date_str = event.get('date', '')
+                        if event_date_str:
+                            try:
+                                event_dt = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
+                                user_tz_str = get_user_timezone(get_connection)
+                                user_tz = ZoneInfo(user_tz_str)
+                                event_in_user_tz = event_dt.astimezone(user_tz)
+                                event_day = event_in_user_tz.date()
+                                today = get_today_in_user_tz(get_connection)
+
+                                if event_day < today:
+                                    # Past day completed event - always excluded
+                                    event_result = {'found': False, 'reason': FilterReason.GAME_PAST}
+                                    logger.debug(f"Tier 4 event {event_id} filtered: past completed game ({event_day})")
+                                elif event_day == today and not self.config.include_final_events:
+                                    # Today's final - excluded by setting
+                                    event_result = {'found': False, 'reason': FilterReason.GAME_FINAL_EXCLUDED}
+                                    logger.debug(f"Tier 4 event {event_id} filtered: today's final (excluded)")
+                                else:
+                                    # Today's final but include_final_events=True, or future completed (rare)
+                                    event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+                            except Exception as e:
+                                logger.debug(f"Error checking Tier 4 event date: {e}")
+                                # On error, allow the event through
+                                event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+                        else:
+                            # No date - treat as found
+                            event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+                    else:
+                        # Not completed - event is valid
+                        event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+
                     # Populate team names from event for UI display (Tier 4 doesn't have team IDs)
-                    home_team = event.get('home_team', {})
-                    away_team = event.get('away_team', {})
-                    team_result['home_team_name'] = home_team.get('name', team_result.get('raw_home', '?'))
-                    team_result['away_team_name'] = away_team.get('name', team_result.get('raw_away', '?'))
-                    team_result['home_team_id'] = home_team.get('id')
-                    team_result['away_team_id'] = away_team.get('id')
+                    if event_result.get('found'):
+                        home_team = event.get('home_team', {})
+                        away_team = event.get('away_team', {})
+                        team_result['home_team_name'] = home_team.get('name', team_result.get('raw_home', '?'))
+                        team_result['away_team_name'] = away_team.get('name', team_result.get('raw_away', '?'))
+                        team_result['home_team_id'] = home_team.get('id')
+                        team_result['away_team_id'] = away_team.get('id')
                 else:
                     event_result = {'found': False, 'reason': f'Tier 4 event {event_id} not found'}
             else:
@@ -362,18 +416,29 @@ class MultiSportMatcher:
                 event_result = {'found': False, 'reason': 'Enricher returned None'}
 
             # Step 7: If no game found, try alternate team combinations (disambiguation)
-            # Preserve original reason (e.g., GAME_PAST) if disambiguation doesn't find a match
+            # BUT: Skip disambiguation if original reason was GAME_PAST or GAME_FINAL_EXCLUDED
+            # Those reasons mean we DID find the specified game, it was just filtered as past/final.
+            # We shouldn't then go find a DIFFERENT game on a different date.
             if not event_result.get('found'):
                 original_reason = event_result.get('reason')
-                disambig_result, team_result = self._try_team_disambiguation(
-                    team_result, raw_team1, raw_team2, detected_league,
-                    detected_api_path_override
+
+                # Don't disambiguate if the stream's target game was found but filtered
+                from utils.filter_reasons import FilterReason
+                skip_disambiguation = original_reason in (
+                    FilterReason.GAME_PAST,
+                    FilterReason.GAME_FINAL_EXCLUDED
                 )
-                if disambig_result.get('found'):
-                    event_result = disambig_result
-                elif not disambig_result.get('reason') and original_reason:
-                    # Preserve original reason if disambiguation returned no specific reason
-                    event_result['reason'] = original_reason
+
+                if not skip_disambiguation:
+                    disambig_result, team_result = self._try_team_disambiguation(
+                        team_result, raw_team1, raw_team2, detected_league,
+                        detected_api_path_override
+                    )
+                    if disambig_result.get('found'):
+                        event_result = disambig_result
+                    elif not disambig_result.get('reason') and original_reason:
+                        # Preserve original reason if disambiguation returned no specific reason
+                        event_result['reason'] = original_reason
 
             if event_result.get('found'):
                 # Match successful! Now check if league is enabled for this group
@@ -940,6 +1005,39 @@ class MultiSportMatcher:
         event = self.event_matcher.get_event_by_id(best_event_id, best_league)
 
         if event and event.get('id'):
+            # Check if event is completed/past - apply same filtering as find_event()
+            from utils.time_format import get_today_in_user_tz, get_user_timezone
+            from database import get_connection
+            from utils.filter_reasons import FilterReason
+
+            # Get event status
+            status = event.get('status', {})
+            is_completed = status.get('completed', False) or 'FINAL' in status.get('name', '').upper()
+
+            if is_completed:
+                # Check if it's a past day or today's final
+                event_date_str = event.get('date', '')
+                if event_date_str:
+                    try:
+                        event_dt_check = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
+                        user_tz_str = get_user_timezone(get_connection)
+                        user_tz = ZoneInfo(user_tz_str)
+                        event_in_user_tz = event_dt_check.astimezone(user_tz)
+                        event_day = event_in_user_tz.date()
+                        today = get_today_in_user_tz(get_connection)
+
+                        if event_day < today:
+                            # Past day completed event - always excluded
+                            logger.debug(f"Tier 4b+ event {best_event_id} filtered: past completed game ({event_day})")
+                            return None  # Return None to indicate no match, will continue searching
+                        elif event_day == today and not self.config.include_final_events:
+                            # Today's final - excluded by setting
+                            logger.debug(f"Tier 4b+ event {best_event_id} filtered: today's final (excluded)")
+                            return None
+                    except Exception as e:
+                        logger.debug(f"Error checking Tier 4b+ event date: {e}")
+                        # On error, allow the event through
+
             # Update team_result with Tier 4b+ info
             team_result['tier4b_plus'] = True
             team_result['tier4b_plus_via'] = via_team
