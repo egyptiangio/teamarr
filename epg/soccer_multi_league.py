@@ -46,7 +46,7 @@ def _get_soccer_session() -> requests.Session:
                 session = requests.Session()
                 adapter = HTTPAdapter(
                     pool_connections=10,
-                    pool_maxsize=50,  # Higher for parallel league fetching
+                    pool_maxsize=100,  # Match MAX_WORKERS for parallel league fetching
                     max_retries=0
                 )
                 session.mount('http://', adapter)

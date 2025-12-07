@@ -26,9 +26,9 @@ def _get_espn_session() -> requests.Session:
                 session = requests.Session()
                 # Configure connection pooling for ESPN's multiple domains
                 adapter = HTTPAdapter(
-                    pool_connections=10,  # Number of connection pools
-                    pool_maxsize=20,      # Max connections per pool
-                    max_retries=0         # We handle retries ourselves
+                    pool_connections=10,   # Number of connection pools (per host)
+                    pool_maxsize=100,      # Max connections per pool (matches ThreadPoolExecutor workers)
+                    max_retries=0          # We handle retries ourselves
                 )
                 session.mount('http://', adapter)
                 session.mount('https://', adapter)
