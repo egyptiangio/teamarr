@@ -286,6 +286,13 @@ class MultiSportMatcher:
                 if event and event.get('id'):
                     # Successfully got the event - wrap it in expected format
                     event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
+                    # Populate team names from event for UI display (Tier 4 doesn't have team IDs)
+                    home_team = event.get('home_team', {})
+                    away_team = event.get('away_team', {})
+                    team_result['home_team_name'] = home_team.get('name', team_result.get('raw_home', '?'))
+                    team_result['away_team_name'] = away_team.get('name', team_result.get('raw_away', '?'))
+                    team_result['home_team_id'] = home_team.get('id')
+                    team_result['away_team_id'] = away_team.get('id')
                 else:
                     event_result = {'found': False, 'reason': f'Tier 4 event {event_id} not found'}
             else:
@@ -892,6 +899,13 @@ class MultiSportMatcher:
             team_result['tier4b_plus_via'] = via_team
             team_result['tier4b_plus_event_id'] = best_event_id
             team_result['detected_league'] = best_league
+            # Populate team names from event for UI display
+            home_team = event.get('home_team', {})
+            away_team = event.get('away_team', {})
+            team_result['home_team_name'] = home_team.get('name', raw_home or '?')
+            team_result['away_team_name'] = away_team.get('name', raw_away or '?')
+            team_result['home_team_id'] = home_team.get('id')
+            team_result['away_team_id'] = away_team.get('id')
 
             event_result = {'found': True, 'event': event, 'event_id': event.get('id')}
             return event_result, team_result
