@@ -719,11 +719,13 @@ class LeagueDetector:
                 # Tier 1: Direct match with abbreviation variants (st/st., mt/mt.)
                 leagues = set()
                 for variant in get_abbreviation_variants(team_name):
+                    # Note: INSTR(search, db_name) checks if db_name is a substring of search.
+                    # Only allow this for db names >= 6 chars to avoid "Sport", "Port" false positives
                     cursor.execute("""
                         SELECT DISTINCT league_slug FROM soccer_team_leagues
                         WHERE LOWER(team_name) LIKE ?
                            OR LOWER(team_name) LIKE ?
-                           OR INSTR(?, LOWER(team_name)) > 0
+                           OR (INSTR(?, LOWER(team_name)) > 0 AND LENGTH(team_name) >= 6)
                     """, (f"%{variant}%", f"{variant}%", variant))
                     for row in cursor.fetchall():
                         leagues.add(row[0])
@@ -742,7 +744,13 @@ class LeagueDetector:
                 """)
                 for row in cursor.fetchall():
                     db_normalized = strip_accents(row[1].lower())
-                    if search_normalized in db_normalized or db_normalized in search_normalized:
+                    # Check if search is in DB or DB is in search
+                    # But only allow short DB names (< 6 chars) in search if they're exact word matches
+                    if search_normalized in db_normalized:
+                        leagues.add(row[0])
+                    elif db_normalized in search_normalized and len(db_normalized) >= 6:
+                        # Only allow substring match for longer team names to avoid
+                        # "Sport" or "Port" matching everything
                         leagues.add(row[0])
                 if leagues:
                     logger.debug(f"Found leagues via accent-stripped search: '{team_name}' -> '{search_normalized}'")
