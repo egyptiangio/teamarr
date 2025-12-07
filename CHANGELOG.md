@@ -5,6 +5,29 @@ All notable changes to TeamArr will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2025-12-06
+
+### Fixed
+- **Timezone handling for "today" calculation** - Games at 7pm EST on Dec 6 no longer appear as
+  "yesterday" at midnight UTC. Now uses user's configured timezone for day comparison.
+- **Improved past game messaging** - Past games now show "Event already passed" instead of
+  misleading "No game found" message.
+- **Disabled word-overlap team matching** - Removed Tier 5 word-overlap matching that caused
+  false positives (e.g., "Tampa Bay Lightning" matching "Monterey Bay F.C." via shared word 'bay').
+  The feature provided no actual value since ESPN uses English names and accent-stripping
+  already handles variants like "Bayern München".
+- **Tier 4 matches showing "? @ ?" in test modal** - Now populates team names from event data
+  after successful Tier 4/4b+ schedule search.
+- **FCS college football detection** - Team league cache now includes all college football teams
+  (FBS + FCS + DII/DIII, ~740 teams), enabling multi-sport detection for FCS playoff games
+  (e.g., Yale vs Montana State). UI team picker unchanged (still shows FBS by conference only).
+
+### Changed
+- Added `get_user_timezone()` and `get_today_in_user_tz()` helpers to `utils/time_format.py`
+- Increased ESPN team API limit from 500 to 1000 to accommodate all college football divisions
+
+---
+
 ## [1.4.0] - 2025-12-06
 
 ### Added
@@ -28,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Exact match
   - Accent-stripped (ñ→n, ü→u, é→e)
   - Number-stripped ("1. FC Heidenheim 1846" → "FC Heidenheim")
-  - Word-overlap (60%+ threshold)
+  - Article-stripped (de, del, da, do, di, du)
 - **International team support** with Unicode normalization
 - **Ranking pattern support** in stream names (`@ 4 Texas T`, `#8 Alabama`)
 - **Language prefix stripping** (En Español, Deportes, etc.)

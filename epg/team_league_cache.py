@@ -480,6 +480,21 @@ class TeamLeagueCache:
                 for conf in conferences_data:
                     conf_teams = conf.get('teams', [])
                     teams_data.extend(conf_teams)
+
+                # For college-football, also fetch FCS teams via limit=500 endpoint
+                # FBS teams come from standings API (conferences), FCS teams aren't in standings
+                if league_code == 'college-football':
+                    fbs_ids = {str(t.get('id')) for t in teams_data}
+                    all_cfb_teams = client.get_league_teams(espn_sport, espn_league)
+                    if all_cfb_teams:
+                        fcs_count = 0
+                        for team in all_cfb_teams:
+                            team_id = str(team.get('id', ''))
+                            if team_id and team_id not in fbs_ids:
+                                teams_data.append(team)
+                                fcs_count += 1
+                        if fcs_count > 0:
+                            logger.info(f"Added {fcs_count} FCS teams to college-football cache")
             else:
                 teams_data = client.get_league_teams(espn_sport, espn_league)
 

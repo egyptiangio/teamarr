@@ -946,9 +946,10 @@ class ESPNClient:
         Returns:
             List of team dictionaries with id, name, abbreviation, logo, etc.
         """
-        # ESPN defaults to 50 teams, but college sports have 300+
-        # Use limit=500 to get all teams
-        url = f"{self.base_url}/{sport}/{league}/teams?limit=500"
+        # ESPN defaults to 50 teams, but college sports have many more
+        # College football has 740+ teams (FBS + FCS + DII/DIII)
+        # Use limit=1000 to get all teams
+        url = f"{self.base_url}/{sport}/{league}/teams?limit=1000"
         logger.info(f"Fetching teams for {league.upper()}: {url}")
 
         try:
