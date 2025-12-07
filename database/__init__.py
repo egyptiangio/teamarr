@@ -1363,26 +1363,30 @@ def run_migrations(conn):
         except Exception as e:
             print(f"    ⚠️ Could not fix exception keywords table: {e}")
 
-        # 18i. Seed default language exception keywords for sub-consolidation
-        # These ensure Spanish/French/etc streams get their own channel, separate from English
-        language_keywords = [
-            ('En Español, (ESP), Spanish, Español', 'consolidate'),
-            ('En Français, (FRA), French, Français', 'consolidate'),
-            ('(GER), German, Deutsch', 'consolidate'),
-            ('(POR), Portuguese, Português', 'consolidate'),
-            ('(ITA), Italian, Italiano', 'consolidate'),
-            ('(ARA), Arabic, العربية', 'consolidate'),
-        ]
-        for keywords, behavior in language_keywords:
-            try:
+        # 18i. Clean up system keywords from DB (now defined in code)
+        # Language keywords are now managed in utils/keyword_matcher.py SYSTEM_KEYWORDS
+        # Delete all language-related entries that were incorrectly seeded
+        try:
+            language_patterns = [
+                '%Español%', '%Spanish%', '%(ESP)%',
+                '%Français%', '%French%', '%(FRA)%',
+                '%German%', '%Deutsch%', '%(GER)%',
+                '%Portuguese%', '%Português%', '%(POR)%',
+                '%Italian%', '%Italiano%', '%(ITA)%',
+                '%Arabic%', '%العربية%', '%(ARA)%',
+            ]
+            deleted_count = 0
+            for pattern in language_patterns:
                 cursor.execute(
-                    "INSERT OR IGNORE INTO consolidation_exception_keywords (keywords, behavior) VALUES (?, ?)",
-                    (keywords, behavior)
+                    "DELETE FROM consolidation_exception_keywords WHERE keywords LIKE ?",
+                    (pattern,)
                 )
-            except Exception as e:
-                print(f"    ⚠️ Could not insert language keyword: {e}")
-        conn.commit()
-        print(f"    ✅ Seeded {len(language_keywords)} language exception keywords")
+                deleted_count += cursor.rowcount
+            conn.commit()
+            if deleted_count > 0:
+                print(f"    ✅ Cleaned up {deleted_count} system keywords from DB (now in code)")
+        except Exception as e:
+            print(f"    ⚠️ Could not clean up system keywords: {e}")
 
         # 18j. Update team_league_cache to use ESPN slugs
         # This cache stores league_code which needs to match league_config

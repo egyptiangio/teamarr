@@ -976,14 +976,13 @@ class ChannelLifecycleManager:
             log_channel_history
         )
         from epg.event_template_engine import EventTemplateEngine
-        from database import get_consolidation_exception_keywords
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         # Create template engine for channel name resolution
         template_engine = EventTemplateEngine()
 
-        # Load global exception keywords
-        exception_keywords = get_consolidation_exception_keywords()
+        # Load global exception keywords (system + user)
+        exception_keywords = get_all_exception_keywords()
 
         results = {
             'created': [],
@@ -1464,10 +1463,9 @@ class ChannelLifecycleManager:
             find_parent_channel_for_event,
             add_stream_to_channel,
             stream_exists_on_channel,
-            log_channel_history,
-            get_consolidation_exception_keywords
+            log_channel_history
         )
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         results = {
             'streams_added': [],
@@ -1480,8 +1478,8 @@ class ChannelLifecycleManager:
             logger.error(f"Child group {child_group['id']} has no parent_group_id")
             return results
 
-        # Load global exception keywords (same as parent uses)
-        exception_keywords = get_consolidation_exception_keywords()
+        # Load global exception keywords (system + user)
+        exception_keywords = get_all_exception_keywords()
 
         for matched in matched_streams:
             stream = matched['stream']
@@ -1610,7 +1608,6 @@ class ChannelLifecycleManager:
             Dict with 'moved' count and 'errors' list
         """
         from database import (
-            get_consolidation_exception_keywords,
             get_all_managed_channel_streams,
             find_existing_channel,
             remove_stream_from_channel,
@@ -1618,14 +1615,14 @@ class ChannelLifecycleManager:
             stream_exists_on_channel,
             log_channel_history
         )
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         results = {
             'moved': 0,
             'errors': []
         }
 
-        exception_keywords = get_consolidation_exception_keywords()
+        exception_keywords = get_all_exception_keywords()
         if not exception_keywords:
             return results  # No keywords configured, nothing to enforce
 
