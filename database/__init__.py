@@ -335,7 +335,7 @@ def get_league_alias(slug: str) -> str:
 #   16: Multi-sport event groups (is_multi_sport, enabled_leagues, etc.)
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 21
+CURRENT_SCHEMA_VERSION = 22
 
 
 def get_schema_version(conn) -> int:
@@ -1491,6 +1491,39 @@ def run_migrations(conn):
         conn.commit()
         migrations_run += 1
         print("    ✅ Migration 21 complete: Added filtered_unsupported_sport tracking")
+
+    # =========================================================================
+    # 22. Clean up system keywords from consolidation_exception_keywords table
+    # =========================================================================
+    # Language keywords are now defined in SYSTEM_KEYWORDS (utils/keyword_matcher.py)
+    # They were accidentally seeded into the DB multiple times - remove them
+    if current_version < 22:
+        print("  🔄 Running migration 22: Clean up system keywords from DB")
+        try:
+            language_patterns = [
+                '%Español%', '%Spanish%', '%(ESP)%',
+                '%Français%', '%French%', '%(FRA)%',
+                '%German%', '%Deutsch%', '%(GER)%',
+                '%Portuguese%', '%Português%', '%(POR)%',
+                '%Italian%', '%Italiano%', '%(ITA)%',
+                '%Arabic%', '%العربية%', '%(ARA)%',
+            ]
+            deleted_count = 0
+            for pattern in language_patterns:
+                cursor.execute(
+                    "DELETE FROM consolidation_exception_keywords WHERE keywords LIKE ?",
+                    (pattern,)
+                )
+                deleted_count += cursor.rowcount
+            conn.commit()
+            migrations_run += 1
+            if deleted_count > 0:
+                print(f"    ✅ Migration 22 complete: Removed {deleted_count} system keywords (now in code)")
+            else:
+                print("    ✅ Migration 22 complete: No system keywords to remove")
+        except Exception as e:
+            print(f"    ⚠️ Migration 22 warning: {e}")
+            migrations_run += 1
 
     # =========================================================================
     # UPDATE SCHEMA VERSION

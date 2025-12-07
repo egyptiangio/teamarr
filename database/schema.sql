@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS settings (
     team_cache_refresh_frequency TEXT DEFAULT 'weekly',    -- daily, every_3_days, weekly, manual
 
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 21,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 22,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
