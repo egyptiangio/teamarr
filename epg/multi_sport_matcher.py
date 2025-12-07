@@ -362,16 +362,18 @@ class MultiSportMatcher:
                 event_result = {'found': False, 'reason': 'Enricher returned None'}
 
             # Step 7: If no game found, try alternate team combinations (disambiguation)
+            # Preserve original reason (e.g., GAME_PAST) if disambiguation doesn't find a match
             if not event_result.get('found'):
-                event_result, team_result = self._try_team_disambiguation(
+                original_reason = event_result.get('reason')
+                disambig_result, team_result = self._try_team_disambiguation(
                     team_result, raw_team1, raw_team2, detected_league,
                     detected_api_path_override
                 )
-
-            # Defensive check after disambiguation
-            if event_result is None:
-                logger.warning(f"Team disambiguation returned None event_result for stream '{stream_name}'")
-                event_result = {'found': False, 'reason': 'Disambiguation returned None'}
+                if disambig_result.get('found'):
+                    event_result = disambig_result
+                elif not disambig_result.get('reason') and original_reason:
+                    # Preserve original reason if disambiguation returned no specific reason
+                    event_result['reason'] = original_reason
 
             if event_result.get('found'):
                 # Match successful! Now check if league is enabled for this group
