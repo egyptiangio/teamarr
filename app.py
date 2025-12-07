@@ -1048,21 +1048,20 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         ]
 
         # Sort groups for processing order:
-        # 1. Single-league parent groups (regular event groups) - process first
-        # 2. Multi-sport parent groups - process last (need to check other groups' channels)
-        # 3. Child groups - process after parents (add streams to parent channels)
+        # 1. Single-league parent groups - process first (create channels)
+        # 2. Single-league child groups - process second (add streams to parent channels)
+        # 3. Multi-sport groups - process last (no parent/child hierarchy, check other groups' channels)
         # This ensures parent channels exist before children try to add streams to them,
         # and multi-sport groups can check if events are already handled by single-league groups
-        parent_groups_all = [g for g in event_groups_with_templates if not g.get('parent_group_id')]
-        child_groups = [g for g in event_groups_with_templates if g.get('parent_group_id')]
+        single_league_groups = [g for g in event_groups_with_templates if not g.get('is_multi_sport')]
+        multi_sport_groups = [g for g in event_groups_with_templates if g.get('is_multi_sport')]
 
-        # Split parent groups: single-league first, multi-sport last
-        single_league_parents = [g for g in parent_groups_all if not g.get('is_multi_sport')]
-        multi_sport_parents = [g for g in parent_groups_all if g.get('is_multi_sport')]
-        parent_groups = single_league_parents + multi_sport_parents
+        # Split single-league into parents and children
+        single_league_parents = [g for g in single_league_groups if not g.get('parent_group_id')]
+        single_league_children = [g for g in single_league_groups if g.get('parent_group_id')]
 
-        if multi_sport_parents:
-            app.logger.debug(f"Processing order: {len(single_league_parents)} single-league, {len(multi_sport_parents)} multi-sport, {len(child_groups)} child groups")
+        if multi_sport_groups or single_league_children:
+            app.logger.debug(f"Processing order: {len(single_league_parents)} single-league parents, {len(single_league_children)} single-league children, {len(multi_sport_groups)} multi-sport groups")
 
         if event_groups_with_templates:
             # Get M3U manager
@@ -1120,7 +1119,7 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
 
                 group_results = []
                 completed_count = 0
-                all_groups = parent_groups + child_groups
+                all_groups = single_league_parents + single_league_children + multi_sport_groups
 
                 def make_stream_progress_callback(group_idx, total_groups):
                     """Create a callback for stream-level progress within a group."""
