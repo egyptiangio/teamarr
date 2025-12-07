@@ -132,7 +132,8 @@ def is_soccer_league(league_code: str) -> bool:
         pass
 
     # Fallback: Check league_config for sport='soccer'
-    config = get_league_config(league_code)
+    from database import get_connection
+    config = get_league_config(league_code, get_connection)
     if config and config.get('sport') == 'soccer':
         return True
 
