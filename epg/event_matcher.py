@@ -222,16 +222,20 @@ class EventMatcher:
                     event_in_user_tz = event_date.astimezone(user_tz)
                     event_day = event_in_user_tz.date()
 
-                    # Past day events (in user TZ) are ALWAYS excluded
+                    logger.debug(f"[TRACE]   Event {event_id} is_completed=True | event_day={event_day} | today={today} | event_in_user_tz={event_in_user_tz}")
+
+                    # Past day completed events are ALWAYS excluded
                     if event_day < today:
                         skip_reason = 'past_game'  # Game from a previous day
-                        logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: past completed game ({event_day})")
+                        logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: past completed game ({event_day} < {today})")
                         continue
                     # Same day finals: honor the include_final_events setting
                     elif event_day == today and not include_final_events:
                         skip_reason = 'today_final'  # Today's game, but finals excluded
                         logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: today's final (excluded)")
                         continue
+                    else:
+                        logger.debug(f"[TRACE]   Event {event_id} completed but PASSING filter | event_day={event_day} | today={today} | include_final={include_final_events}")
 
                 # Found a matching game!
                 logger.debug(f"[TRACE]   MATCH! Event {event_id} ({event_name}) on {event_date.strftime('%Y-%m-%d %H:%M')} | completed={is_completed}")
@@ -526,11 +530,16 @@ class EventMatcher:
             from utils.filter_reasons import FilterReason
             if skip_reason == 'past_game':
                 result['reason'] = FilterReason.GAME_PAST
+                # Event found but excluded (past game) - use EXCLUDED not FAIL
+                logger.debug(f"[TRACE] find_event EXCLUDED | team1={team1_id} vs team2={team2_id} | reason=game_past")
             elif skip_reason == 'today_final':
                 result['reason'] = FilterReason.GAME_FINAL_EXCLUDED
+                # Event found but excluded (today's final) - use EXCLUDED not FAIL
+                logger.debug(f"[TRACE] find_event EXCLUDED | team1={team1_id} vs team2={team2_id} | reason=today_final")
             else:
                 result['reason'] = FilterReason.NO_GAME_FOUND
-            logger.debug(f"[TRACE] find_event FAIL | team1={team1_id} vs team2={team2_id} | reason={result['reason']} | skip_reason={skip_reason}")
+                # True failure - no event found at all
+                logger.debug(f"[TRACE] find_event NOT_FOUND | team1={team1_id} vs team2={team2_id}")
             return result
 
         # Sort by date and select best match
@@ -544,6 +553,22 @@ class EventMatcher:
             logger.debug(f"[TRACE]   [{i+1}] {evt_date} - {evt_name} (id={evt['event_id']})")
 
         best_match = self._select_best_match(matching_events, game_date, game_time)
+
+        # If stream explicitly specified a date and we had to match a different date,
+        # AND the original date's game was filtered (past/final), return that reason instead.
+        # This prevents matching "Yale vs Brown @ Dec 06" to a Dec 07 game when Dec 06 game is past.
+        if game_date and skip_reason:
+            target_date = game_date.date()
+            match_date = best_match['event_date'].date()
+            if target_date != match_date:
+                from utils.filter_reasons import FilterReason
+                if skip_reason == 'past_game':
+                    result['reason'] = FilterReason.GAME_PAST
+                    logger.debug(f"[TRACE] find_event EXCLUDED | target_date={target_date} game was past, ignoring {match_date} match")
+                elif skip_reason == 'today_final':
+                    result['reason'] = FilterReason.GAME_FINAL_EXCLUDED
+                    logger.debug(f"[TRACE] find_event EXCLUDED | target_date={target_date} game was final, ignoring {match_date} match")
+                return result
 
         # Parse and return
         result['found'] = True
