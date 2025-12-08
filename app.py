@@ -396,7 +396,9 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                             'type': 'matched',
                             'stream': stream,
                             'teams': team_result,
-                            'event': event_result['event']
+                            'event': event_result['event'],
+                            'detected_league': group['assigned_league'],
+                            'detection_tier': 'direct'
                         }
                     else:
                         # No game found with primary team matches - try alternate team combinations
@@ -449,7 +451,9 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                                             'type': 'matched',
                                             'stream': stream,
                                             'teams': alt_team_result,
-                                            'event': alt_result['event']
+                                            'event': alt_result['event'],
+                                            'detected_league': league,
+                                            'detection_tier': 'direct'
                                         }
 
                         # No match found with any combination
@@ -619,6 +623,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                             'stream': stream,
                             'teams': refreshed.get('team_result', {}),
                             'event': refreshed.get('event', {}),
+                            'detected_league': league,
+                            'detection_tier': 'cache',
                             'from_cache': True
                         }
 
@@ -2030,9 +2036,13 @@ def index():
     settings_row = cursor.execute("SELECT default_timezone FROM settings WHERE id = 1").fetchone()
     user_timezone = settings_row[0] if settings_row else 'America/Detroit'
 
-    # Get latest EPG generation stats (legacy query for backwards compatibility)
+    # Get latest EPG generation stats (includes all fields needed by template)
     latest_epg = cursor.execute("""
-        SELECT generated_at, num_programmes, num_events, num_channels
+        SELECT generated_at, num_programmes, num_events, num_channels,
+               generation_time_seconds, triggered_by,
+               team_based_channels, event_based_channels,
+               num_pregame, num_postgame, num_idle,
+               event_eligible_streams, event_matched_streams
         FROM epg_history
         ORDER BY generated_at DESC
         LIMIT 1
@@ -4741,6 +4751,8 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                             'event': refreshed.get('event'),
                                             'event_id': event_id
                                         },
+                                        'detected_league': cached_league,
+                                        'detection_tier': 'cache',
                                         'from_cache': True
                                     }
 
@@ -4828,13 +4840,17 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                 return {
                                     'stream': stream,
                                     'team_result': team_result,
-                                    'event_result': event_result
+                                    'event_result': event_result,
+                                    'detected_league': league,
+                                    'detection_tier': 'direct'
                                 }
                             else:
                                 return {
                                     'stream': stream,
                                     'team_result': team_result,
-                                    'event_result': None
+                                    'event_result': None,
+                                    'detected_league': league,
+                                    'detection_tier': 'direct'
                                 }
 
                         except Exception as e:
@@ -4903,6 +4919,8 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                         'event': refreshed.get('event'),
                                         'event_id': event_id
                                     },
+                                    'detected_league': cached_league,
+                                    'detection_tier': 'cache',
                                     'from_cache': True
                                 }
 
@@ -4966,7 +4984,9 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                             return {
                                 'stream': stream,
                                 'team_result': result.team_result,
-                                'event_result': event_result
+                                'event_result': event_result,
+                                'detected_league': result.detected_league,
+                                'detection_tier': result.detection_tier
                             }
                         else:
                             # Not matched - build team_result with failure info
@@ -4990,14 +5010,18 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                 return {
                                     'stream': stream,
                                     'team_result': team_result,
-                                    'event_result': event_result
+                                    'event_result': event_result,
+                                    'detected_league': result.detected_league,
+                                    'detection_tier': result.detection_tier
                                 }
 
                             # Include league_not_enabled info if present
                             return_dict = {
                                 'stream': stream,
                                 'team_result': team_result,
-                                'event_result': None
+                                'event_result': None,
+                                'detected_league': result.detected_league,
+                                'detection_tier': result.detection_tier
                             }
                             if result.league_not_enabled:
                                 return_dict['league_not_enabled'] = True

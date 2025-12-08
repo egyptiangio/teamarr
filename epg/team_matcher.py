@@ -553,8 +553,23 @@ class TeamMatcher:
         # Underscore → space (e.g., "Gardner_Webb" → "Gardner Webb")
         text = text.replace('_', ' ')
 
-        # Remove parenthetical content
-        text = re.sub(r'\([^)]*\)', '', text)
+        # Remove parenthetical content EXCEPT US state abbreviations like (OH), (FL), (PA)
+        # These are used to disambiguate teams like "Miami (OH)" vs "Miami"
+        # State codes are exactly 2 uppercase letters
+        def remove_non_state_parens(match):
+            content = match.group(1).strip().upper()
+            # US state abbreviations (2 letters) - preserve these
+            us_states = {
+                'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+                'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+                'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+                'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+                'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+            }
+            if content in us_states:
+                return match.group(0)  # Preserve the parenthetical
+            return ''  # Remove it
+        text = re.sub(r'\(([^)]*)\)', remove_non_state_parens, text)
 
         # Remove common channel prefixes (ncaa covers ncaaf, ncaam, ncaaw, ncaab)
         # Include optional colon after prefix (e.g., "NCAAM: Duke vs UNC")

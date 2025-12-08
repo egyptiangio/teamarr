@@ -125,6 +125,9 @@ class MatchedTier(Enum):
     # Direct assignment (single-league groups)
     DIRECT = 'direct'  # Group has single assigned league
 
+    # Cache hit (fingerprint cache)
+    CACHE = 'cache'  # Match retrieved from fingerprint cache
+
 
 # =============================================================================
 # MATCH OUTCOME - Unified result object
@@ -285,6 +288,7 @@ MATCHED_DISPLAY = {
     MatchedTier.TIER_4A: 'One team + date/time',
     MatchedTier.TIER_4B: 'One team only',
     MatchedTier.DIRECT: 'Direct assignment',
+    MatchedTier.CACHE: 'Fingerprint cache',
 }
 
 
@@ -636,7 +640,7 @@ def is_beach_soccer(team1: str, team2: str) -> bool:
     import re
     if not team1 and not team2:
         return False
-    pattern = re.compile(r'\b(BS|BSC)\s*\)?$', re.IGNORECASE)
+    pattern = re.compile(r'\bBS\s*\)?$', re.IGNORECASE)
     for team in [team1, team2]:
         if team and pattern.search(team.strip()):
             return True

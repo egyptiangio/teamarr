@@ -1266,6 +1266,45 @@ mark.current-match {
 <script>
 // EPG generation now handled by generateEPGWithProgress() in app.js
 
+// Clipboard helper with fallback for non-HTTPS contexts
+function copyTextToClipboard(text, successMsg, errorMsg) {
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification(successMsg, 'success');
+        }).catch(() => {
+            fallbackCopyText(text, successMsg, errorMsg);
+        });
+    } else {
+        fallbackCopyText(text, successMsg, errorMsg);
+    }
+}
+
+function fallbackCopyText(text, successMsg, errorMsg) {
+    // Create temporary textarea for copy operation
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showNotification(successMsg, 'success');
+        } else {
+            showNotification(errorMsg, 'error');
+        }
+    } catch (err) {
+        showNotification(errorMsg, 'error');
+    }
+
+    document.body.removeChild(textarea);
+}
+
 // Failed Matches Modal data store
 let failedMatchesData = null;
 
@@ -1424,11 +1463,7 @@ function copyFailedMatches() {
         });
     });
 
-    navigator.clipboard.writeText(text).then(() => {
-        showNotification('Failed matches copied to clipboard!', 'success');
-    }).catch(() => {
-        showNotification('Failed to copy to clipboard', 'error');
-    });
+    copyTextToClipboard(text, 'Failed matches copied to clipboard!', 'Failed to copy to clipboard');
 }
 
 // Close modal on Escape key
@@ -1600,11 +1635,7 @@ function copyMatchedStreams() {
         });
     });
 
-    navigator.clipboard.writeText(text).then(() => {
-        showNotification('Matched streams copied to clipboard!', 'success');
-    }).catch(() => {
-        showNotification('Failed to copy to clipboard', 'error');
-    });
+    copyTextToClipboard(text, 'Matched streams copied to clipboard!', 'Failed to copy to clipboard');
 }
 
 function copyEPGUrl() {
