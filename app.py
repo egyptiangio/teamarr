@@ -577,7 +577,18 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
 
             # Check for existing channel in other groups (except for create_all mode)
             if event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
-                existing_channel = find_any_channel_for_event(event_id, exclude_group_id=group_id)
+                # First try to find channel matching stream's exception keyword
+                stream_keyword = result.exception_keyword
+                existing_channel = None
+                if stream_keyword:
+                    existing_channel = find_any_channel_for_event(
+                        event_id,
+                        exception_keyword=stream_keyword,
+                        exclude_group_id=group_id
+                    )
+                # If no keyword or no match, find any channel for the event
+                if not existing_channel:
+                    existing_channel = find_any_channel_for_event(event_id, exclude_group_id=group_id, any_keyword=True)
                 if existing_channel:
                     if overlap_handling == 'skip':
                         # Skip - don't add stream to existing channel
@@ -655,16 +666,52 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                         # Touch cache entry to keep it fresh
                         stream_cache.touch(group_id, stream_id, stream_name, generation)
 
+                        # Check for cross-group consolidation (same logic as non-cached path)
+                        # This must happen even for cache hits to honor overlap_handling settings
+                        refreshed_event = refreshed.get('event', {})
+                        refreshed_event_id = refreshed_event.get('id')
+                        overlap_handling = group.get('overlap_handling', 'add_stream')
+                        existing_channel = None
+
+                        if refreshed_event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
+                            # First try to find channel matching stream's exception keyword
+                            stream_keyword = stream.get('exception_keyword')
+                            if stream_keyword:
+                                existing_channel = find_any_channel_for_event(
+                                    refreshed_event_id,
+                                    exception_keyword=stream_keyword,
+                                    exclude_group_id=group_id
+                                )
+                            # If no keyword or no match, find any channel for the event
+                            if not existing_channel:
+                                existing_channel = find_any_channel_for_event(refreshed_event_id, exclude_group_id=group_id, any_keyword=True)
+                            if existing_channel:
+                                if overlap_handling == 'skip':
+                                    return {
+                                        'type': 'filtered',
+                                        'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
+                                        'stream': stream,
+                                        'existing_channel': existing_channel
+                                    }
+                                # add_stream or add_only - continue with existing_channel set
+                            elif overlap_handling == 'add_only':
+                                return {
+                                    'type': 'filtered',
+                                    'reason': 'NO_EXISTING_CHANNEL',
+                                    'stream': stream
+                                }
+
                         # Exception keyword was pre-extracted in Step 2.6 and attached to stream dict
                         return {
                             'type': 'matched',
                             'stream': stream,
                             'teams': refreshed.get('team_result', {}),
-                            'event': refreshed.get('event', {}),
+                            'event': refreshed_event,
                             'detected_league': league,
                             'detection_tier': 'cache',
                             'from_cache': True,
-                            'exception_keyword': stream.get('exception_keyword')
+                            'exception_keyword': stream.get('exception_keyword'),
+                            'existing_channel': existing_channel  # For cross-group consolidation
                         }
 
                 cache_stats['misses'] += 1

@@ -3948,7 +3948,12 @@ def find_parent_channel_for_event(parent_group_id: int, event_id: str, exception
         """, (parent_group_id, event_id))
 
 
-def find_any_channel_for_event(event_id: str, exception_keyword: str = None, exclude_group_id: int = None) -> Optional[Dict[str, Any]]:
+def find_any_channel_for_event(
+    event_id: str,
+    exception_keyword: str = None,
+    exclude_group_id: int = None,
+    any_keyword: bool = False
+) -> Optional[Dict[str, Any]]:
     """Find any group's channel for a given event (used by multi-sport groups for overlap handling).
 
     Unlike find_parent_channel_for_event which only searches within a parent group,
@@ -3956,12 +3961,37 @@ def find_any_channel_for_event(event_id: str, exception_keyword: str = None, exc
 
     Args:
         event_id: The ESPN event ID
-        exception_keyword: Optional exception keyword to match
+        exception_keyword: Optional exception keyword to match (ignored if any_keyword=True)
         exclude_group_id: Optional group ID to exclude from search (usually the current group)
+        any_keyword: If True, find any channel for the event regardless of exception_keyword
 
     Returns:
         The matching managed channel record, or None if not found
     """
+    # For cross-group consolidation, find ANY channel for the event (ignore keywords)
+    if any_keyword:
+        if exclude_group_id:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND mc.event_epg_group_id != ?
+                  AND mc.deleted_at IS NULL
+                ORDER BY mc.created_at ASC
+                LIMIT 1
+            """, (event_id, exclude_group_id))
+        else:
+            return db_fetch_one("""
+                SELECT mc.*, eg.group_name
+                FROM managed_channels mc
+                LEFT JOIN event_epg_groups eg ON mc.event_epg_group_id = eg.id
+                WHERE mc.espn_event_id = ?
+                  AND mc.deleted_at IS NULL
+                ORDER BY mc.created_at ASC
+                LIMIT 1
+            """, (event_id,))
+
     if exception_keyword:
         if exclude_group_id:
             return db_fetch_one("""
