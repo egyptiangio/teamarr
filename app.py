@@ -578,7 +578,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                 'teams': result.team_result,
                 'event': event,
                 'detected_league': result.detected_league,
-                'detection_tier': result.detection_tier
+                'detection_tier': result.detection_tier,
+                'exception_keyword': result.exception_keyword
             }
 
         # Select the matching function based on mode
@@ -701,7 +702,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                 matched_streams.append({
                     'stream': stream,
                     'teams': teams,
-                    'event': event
+                    'event': event,
+                    'exception_keyword': result.get('exception_keyword')
                 })
                 # Capture for matched streams log
                 if generation is not None:

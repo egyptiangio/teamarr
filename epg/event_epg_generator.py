@@ -200,6 +200,7 @@ class EventEPGGenerator:
         for matched in matched_streams:
             stream = matched['stream']
             event = matched['event']
+            exception_keyword = matched.get('exception_keyword')
 
             # For multi-sport groups, build effective group_info with per-stream league/sport
             # This ensures {league} and {sport} template variables resolve to detected values
@@ -209,24 +210,24 @@ class EventEPGGenerator:
 
             # Add channel if not already added
             if channel_id not in added_channels:
-                self._add_channel(tv, stream, event, effective_group_info, settings, template)
+                self._add_channel(tv, stream, event, effective_group_info, settings, template, exception_keyword)
                 added_channels.add(channel_id)
 
             # Add pregame filler if enabled in template (EPG start to event start)
             if template and template.get('pregame_enabled'):
                 self._add_pregame_programmes(
                     tv, stream, event, effective_group_info, settings, template,
-                    epg_start_datetime, days_ahead
+                    epg_start_datetime, days_ahead, exception_keyword
                 )
 
             # Add programme for the event
-            self._add_programme(tv, stream, event, effective_group_info, settings, template)
+            self._add_programme(tv, stream, event, effective_group_info, settings, template, exception_keyword)
 
             # Add postgame filler if enabled in template (event end to EPG end)
             if template and template.get('postgame_enabled'):
                 self._add_postgame_programmes(
                     tv, stream, event, effective_group_info, settings, template,
-                    epg_start_datetime, days_ahead
+                    epg_start_datetime, days_ahead, exception_keyword
                 )
 
         # Convert to pretty XML
@@ -259,7 +260,8 @@ class EventEPGGenerator:
         event: Dict,
         group_info: Dict,
         settings: Dict = None,
-        template: Dict = None
+        template: Dict = None,
+        exception_keyword: str = None
     ):
         """Add channel element for a stream."""
         import xml.etree.ElementTree as ET
@@ -271,7 +273,7 @@ class EventEPGGenerator:
         display_name = ET.SubElement(channel, 'display-name')
         if template and template.get('channel_name'):
             epg_timezone = settings.get('default_timezone', 'America/Detroit') if settings else 'America/Detroit'
-            template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+            template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
             display_name.text = self._template_engine.resolve(template['channel_name'], template_ctx)
         else:
             display_name.text = stream.get('name', '')
@@ -279,7 +281,7 @@ class EventEPGGenerator:
         # Channel icon/logo - use template channel_logo_url if available
         if template and template.get('channel_logo_url'):
             epg_timezone = settings.get('default_timezone', 'America/Detroit') if settings else 'America/Detroit'
-            template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+            template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
             logo_url = self._template_engine.resolve(template['channel_logo_url'], template_ctx)
             if logo_url:
                 icon = ET.SubElement(channel, 'icon')
@@ -292,7 +294,8 @@ class EventEPGGenerator:
         event: Dict,
         group_info: Dict,
         settings: Dict,
-        template: Optional[Dict] = None
+        template: Optional[Dict] = None,
+        exception_keyword: str = None
     ):
         """Add programme element for an event."""
         import xml.etree.ElementTree as ET
@@ -318,7 +321,7 @@ class EventEPGGenerator:
 
         # Build template context for variable resolution
         epg_timezone = settings.get('default_timezone', 'America/Detroit')
-        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
 
         # Title - from template (required)
         title = ET.SubElement(programme, 'title')
@@ -401,7 +404,8 @@ class EventEPGGenerator:
         settings: Dict,
         template: Dict,
         epg_start_datetime: datetime,
-        days_ahead: int
+        days_ahead: int,
+        exception_keyword: str = None
     ):
         """
         Add pregame filler programmes from EPG start to event start.
@@ -418,6 +422,7 @@ class EventEPGGenerator:
             template: Event template
             epg_start_datetime: When EPG starts (channel creation or EPG generation time)
             days_ahead: Number of days in EPG window
+            exception_keyword: Optional matched exception keyword for sub-consolidation
         """
         import xml.etree.ElementTree as ET
 
@@ -442,7 +447,7 @@ class EventEPGGenerator:
             return
 
         # Build template context for variable resolution (once, reused for all programmes)
-        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
 
         # Create daily filler programmes from EPG start to event start
         current_start = epg_start_local
@@ -477,7 +482,8 @@ class EventEPGGenerator:
         settings: Dict,
         template: Dict,
         epg_start_datetime: datetime,
-        days_ahead: int
+        days_ahead: int,
+        exception_keyword: str = None
     ):
         """
         Add postgame filler programmes from event end to EPG end.
@@ -494,6 +500,7 @@ class EventEPGGenerator:
             template: Event template
             epg_start_datetime: When EPG starts
             days_ahead: Number of days in EPG window
+            exception_keyword: Optional matched exception keyword for sub-consolidation
         """
         import xml.etree.ElementTree as ET
 
@@ -528,7 +535,7 @@ class EventEPGGenerator:
             return
 
         # Build template context for variable resolution (once, reused for all programmes)
-        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings)
+        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
 
         # Create daily filler programmes from event end to EPG end
         current_start = event_end_local

@@ -1052,18 +1052,32 @@ class ChannelLifecycleManager:
             matched_keyword = None
             effective_mode = duplicate_mode  # Default to group's duplicate mode
 
-            if exception_keywords and duplicate_mode == 'consolidate':
-                keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
-                if keyword:
-                    matched_keyword = keyword
-                    effective_mode = exception_behavior
+            if duplicate_mode == 'consolidate':
+                # Use pre-detected keyword from matching phase if available
+                pre_detected_keyword = matched.get('exception_keyword')
+                if pre_detected_keyword:
+                    matched_keyword = pre_detected_keyword
+                    # Look up the behavior for this keyword
+                    _, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                    effective_mode = exception_behavior or 'consolidate'
                     logger.debug(
-                        f"Stream '{stream['name']}' matched exception keyword '{keyword}' "
-                        f"→ behavior: {exception_behavior}"
+                        f"Stream '{stream['name']}' using pre-detected keyword '{matched_keyword}' "
+                        f"→ behavior: {effective_mode}"
                     )
+                elif exception_keywords:
+                    # Fallback: detect from stream name (for streams not processed through MultiSportMatcher)
+                    keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                    if keyword:
+                        matched_keyword = keyword
+                        effective_mode = exception_behavior
+                        logger.debug(
+                            f"Stream '{stream['name']}' matched exception keyword '{keyword}' "
+                            f"→ behavior: {exception_behavior}"
+                        )
 
-                    # Remove stream from any non-keyword channel for this event
-                    # (handles case where stream was added before keyword was configured)
+                # If a keyword was matched (from either source), remove stream from non-keyword channel
+                # (handles case where stream was added before keyword was configured)
+                if matched_keyword:
                     non_keyword_channel = find_existing_channel(
                         group_id=group['id'],
                         event_id=espn_event_id,
@@ -1086,7 +1100,7 @@ class ChannelLifecycleManager:
                                         )
                             logger.info(
                                 f"Removed stream '{stream['name']}' from non-keyword channel "
-                                f"'{non_keyword_channel['channel_name']}' (now using keyword '{keyword}')"
+                                f"'{non_keyword_channel['channel_name']}' (now using keyword '{matched_keyword}')"
                             )
                         except Exception as e:
                             logger.warning(f"Failed to remove stream from non-keyword channel: {e}")
