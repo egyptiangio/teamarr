@@ -1,71 +1,94 @@
 """
-Filter Reasons - Single Source of Truth
+Filter Reasons - Backwards Compatibility Layer
 
-Centralized definitions for all stream filtering and event matching reasons.
-These constants are used throughout the codebase for consistency in:
-- Event matcher results
-- Preview modal display
-- Statistics tracking
-- Logging
+This module now re-exports from utils.match_result for backwards compatibility.
+New code should import directly from utils.match_result.
 
-Usage:
-    from utils.filter_reasons import FilterReason, get_display_text
+Migration Guide:
+    OLD: from utils.filter_reasons import FilterReason, get_display_text
+    NEW: from utils.match_result import FilteredReason, FailedReason, get_display_text
 
-    # In event_matcher.py
-    result['reason'] = FilterReason.GAME_FINAL_EXCLUDED
-
-    # In UI/templates
-    display_text = get_display_text(reason)
+The old FilterReason class is preserved but deprecated - it maps to the new
+FilteredReason and FailedReason enums.
 """
 
+# Re-export from new module for backwards compatibility
+from utils.match_result import (
+    # New types
+    ResultCategory,
+    FilteredReason,
+    FailedReason,
+    MatchedTier,
+    MatchOutcome,
+
+    # Helper functions
+    get_display_text,
+    is_filtered,
+    is_failed,
+    is_matched,
+    should_record_failure,
+    affects_match_rate,
+    normalize_reason,
+    convert_legacy_reason,
+
+    # Logging utilities
+    log_result,
+    format_result_summary,
+
+    # Detection helpers
+    is_boxing_mma,
+    is_beach_soccer,
+    is_futsal,
+
+    # Database mapping
+    DB_COLUMN_MAPPING,
+)
+
+
+# =============================================================================
+# LEGACY FilterReason CLASS - DEPRECATED
+# =============================================================================
+# This class exists for backwards compatibility with existing code.
+# New code should use FilteredReason and FailedReason enums.
 
 class FilterReason:
     """
-    Constants for filter/match reasons.
+    DEPRECATED: Use FilteredReason and FailedReason from utils.match_result
 
-    Categories:
-    1. Stream filtering (pre-matching)
-    2. Event matching (post-team-parsing)
+    Constants for filter/match reasons - maintained for backwards compatibility.
     """
 
-    # =========================================================================
-    # Stream Filtering Reasons (before team matching)
-    # =========================================================================
+    # Stream Filtering Reasons (now in FilteredReason)
+    NO_GAME_INDICATOR = FilteredReason.NO_GAME_INDICATOR.value
+    INCLUDE_REGEX_NOT_MATCHED = FilteredReason.INCLUDE_REGEX_MISS.value
+    EXCLUDE_REGEX_MATCHED = FilteredReason.EXCLUDE_REGEX_MATCH.value
 
-    # Built-in game indicator filter
-    NO_GAME_INDICATOR = 'no_game_indicator'
+    # Event Timing Reasons (now in FilteredReason)
+    GAME_PAST = FilteredReason.EVENT_PAST.value
+    GAME_FINAL_EXCLUDED = FilteredReason.EVENT_FINAL.value
+    OUTSIDE_LOOKAHEAD = FilteredReason.EVENT_OUTSIDE_WINDOW.value
 
-    # User inclusion regex not matched
-    INCLUDE_REGEX_NOT_MATCHED = 'include_regex_not_matched'
+    # League Config (now in FilteredReason)
+    LEAGUE_NOT_ENABLED = FilteredReason.LEAGUE_NOT_ENABLED.value
 
-    # User exclusion regex matched
-    EXCLUDE_REGEX_MATCHED = 'exclude_regex_matched'
+    # Unsupported Sports (now in FilteredReason)
+    UNSUPPORTED_BEACH_SOCCER = FilteredReason.UNSUPPORTED_BEACH_SOCCER.value
+    UNSUPPORTED_BOXING_MMA = FilteredReason.UNSUPPORTED_BOXING_MMA.value
+    UNSUPPORTED_FUTSAL = FilteredReason.UNSUPPORTED_FUTSAL.value
 
-    # =========================================================================
-    # Event Matching Reasons (after successful team parsing)
-    # =========================================================================
-
-    # Game from previous day(s) - always excluded
-    GAME_PAST = 'game_past'
-
-    # Today's game is final - excluded by user setting
-    GAME_FINAL_EXCLUDED = 'game_final_excluded'
-
-    # No ESPN event found for the team matchup
-    NO_GAME_FOUND = 'no_game_found'
-
-    # Teams successfully parsed but outside lookahead window
-    OUTSIDE_LOOKAHEAD = 'outside_lookahead'
-
-    # =========================================================================
-    # Team Parsing Reasons
-    # =========================================================================
-
-    # Could not parse team names from stream
-    TEAMS_NOT_PARSED = 'teams_not_parsed'
+    # Team/Event Failures (now in FailedReason)
+    TEAMS_NOT_PARSED = FailedReason.TEAMS_NOT_PARSED.value
+    TEAMS_NOT_IN_ESPN = FailedReason.BOTH_TEAMS_NOT_FOUND.value
+    NO_COMMON_LEAGUE = FailedReason.NO_COMMON_LEAGUE.value
+    NO_LEAGUE_DETECTED = FailedReason.NO_LEAGUE_DETECTED.value
+    NO_GAME_FOUND = FailedReason.NO_EVENT_FOUND.value
 
 
-# Display text for user-facing UI (preview modal, etc.)
+# =============================================================================
+# LEGACY DISPLAY TEXT - DEPRECATED
+# =============================================================================
+
+# Display text mapping using old FilterReason constants
 DISPLAY_TEXT = {
     FilterReason.NO_GAME_INDICATOR: 'Excluded by filter',
     FilterReason.INCLUDE_REGEX_NOT_MATCHED: 'Did not match inclusion pattern',
@@ -75,17 +98,27 @@ DISPLAY_TEXT = {
     FilterReason.NO_GAME_FOUND: 'No event found',
     FilterReason.OUTSIDE_LOOKAHEAD: 'Outside lookahead range',
     FilterReason.TEAMS_NOT_PARSED: 'Teams not parsed',
+    FilterReason.TEAMS_NOT_IN_ESPN: 'Team(s) not in ESPN database',
+    FilterReason.NO_COMMON_LEAGUE: 'No common league for teams',
+    FilterReason.NO_LEAGUE_DETECTED: 'League not detected',
+    FilterReason.UNSUPPORTED_BEACH_SOCCER: 'Unsupported (Beach Soccer)',
+    FilterReason.UNSUPPORTED_BOXING_MMA: 'Unsupported (Boxing/MMA)',
+    FilterReason.UNSUPPORTED_FUTSAL: 'Unsupported (Futsal)',
+    FilterReason.LEAGUE_NOT_ENABLED: 'League not enabled',
 }
 
-# Internal reasons (used by event_matcher.py for backwards compatibility)
-# These map to the FilterReason constants
+
+# =============================================================================
+# LEGACY COMPATIBILITY FUNCTIONS
+# =============================================================================
+
+# Internal reasons mapping (used by event_matcher.py)
 INTERNAL_REASONS = {
     'Game already completed (past)': FilterReason.GAME_PAST,
     'Game completed (excluded)': FilterReason.GAME_FINAL_EXCLUDED,
     'No game found between teams': FilterReason.NO_GAME_FOUND,
 }
 
-# Reverse mapping for converting internal reasons to display text
 INTERNAL_TO_DISPLAY = {
     'Game already completed (past)': DISPLAY_TEXT[FilterReason.GAME_PAST],
     'Game completed (excluded)': DISPLAY_TEXT[FilterReason.GAME_FINAL_EXCLUDED],
@@ -93,73 +126,31 @@ INTERNAL_TO_DISPLAY = {
 }
 
 
-def get_display_text(reason: str, lookahead_days: int = None) -> str:
+def is_failed_match(reason: str) -> bool:
     """
-    Get user-friendly display text for a filter reason.
+    DEPRECATED: Use should_record_failure() from utils.match_result
 
-    Args:
-        reason: The filter reason constant or internal reason string
-        lookahead_days: Optional lookahead days for NO_GAME_FOUND reason
-
-    Returns:
-        Human-readable display text
+    Check if a reason represents a true failed match that should be recorded.
     """
-    # Check if it's a FilterReason constant
-    if reason in DISPLAY_TEXT:
-        text = DISPLAY_TEXT[reason]
-        if reason == FilterReason.NO_GAME_FOUND and lookahead_days:
-            return f'No event in lookahead range ({lookahead_days} days)'
-        return text
-
-    # Check if it's an internal reason string (backwards compatibility)
-    if reason in INTERNAL_TO_DISPLAY:
-        return INTERNAL_TO_DISPLAY[reason]
-
-    # Return as-is if not recognized
-    return reason
-
-
-def normalize_reason(reason: str) -> str:
-    """
-    Normalize an internal reason string to a FilterReason constant.
-
-    Args:
-        reason: Internal reason string from event_matcher
-
-    Returns:
-        FilterReason constant, or original string if not recognized
-    """
-    return INTERNAL_REASONS.get(reason, reason)
+    return reason in (
+        FilterReason.TEAMS_NOT_PARSED,
+        FilterReason.TEAMS_NOT_IN_ESPN,
+        FilterReason.NO_COMMON_LEAGUE,
+        FilterReason.NO_LEAGUE_DETECTED,
+        FilterReason.NO_GAME_FOUND,
+    )
 
 
 def is_excluded_from_count(reason: str) -> bool:
     """
+    DEPRECATED: Use affects_match_rate() from utils.match_result
+
     Check if a reason should exclude the stream from the match rate denominator.
-
-    Streams that match this criteria are not "failures to match" - they're
-    streams where matching isn't applicable (past games, finals when excluded,
-    or no event found in the lookahead window).
-
-    Args:
-        reason: Filter reason constant or internal reason string
-
-    Returns:
-        True if stream should be excluded from match rate calculation
     """
-    normalized = normalize_reason(reason)
+    normalized = INTERNAL_REASONS.get(reason, reason)
     return normalized in (
         FilterReason.GAME_PAST,
         FilterReason.GAME_FINAL_EXCLUDED,
-        FilterReason.NO_GAME_FOUND,  # No event in lookahead range
+        FilterReason.NO_GAME_FOUND,
+        FilterReason.LEAGUE_NOT_ENABLED,
     )
-
-
-# Database column mapping for statistics
-DB_COLUMN_MAPPING = {
-    FilterReason.NO_GAME_INDICATOR: 'filtered_no_indicator',
-    FilterReason.INCLUDE_REGEX_NOT_MATCHED: 'filtered_include_regex',
-    FilterReason.EXCLUDE_REGEX_MATCHED: 'filtered_exclude_regex',
-    FilterReason.GAME_PAST: 'filtered_outside_lookahead',
-    FilterReason.GAME_FINAL_EXCLUDED: 'filtered_final',
-    FilterReason.NO_GAME_FOUND: 'filtered_outside_lookahead',  # Combined with GAME_PAST
-}

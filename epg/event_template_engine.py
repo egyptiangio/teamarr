@@ -181,9 +181,12 @@ class EventTemplateEngine:
 
         # =====================================================================
         # SPORT AND LEAGUE
+        # For multi-sport groups, use the event's sport/league (detected per-stream)
+        # Fall back to group's assigned values for single-sport groups
         # =====================================================================
 
-        sport_code = group_info.get('assigned_sport', '')
+        # Get sport from event first (for multi-sport), then group (for single-sport)
+        sport_code = event.get('sport', '') or group_info.get('assigned_sport', '')
         sport_display_names = {
             'basketball': 'Basketball',
             'football': 'Football',
@@ -192,8 +195,47 @@ class EventTemplateEngine:
             'soccer': 'Soccer'
         }
         variables['sport'] = sport_display_names.get(sport_code, sport_code.capitalize())
-        variables['league'] = group_info.get('assigned_league', '').upper()
-        variables['league_id'] = group_info.get('assigned_league', '').lower()
+
+        # Get league from event first (for multi-sport), then group (for single-sport)
+        # event['league'] contains the ESPN slug (e.g., 'aus.1', 'eng.1', 'nfl')
+        event_league = event.get('league', '') or group_info.get('assigned_league', '')
+
+        # {league_id} - Check aliases table for friendly name, fallback to ESPN slug
+        # This ensures consistent output whether from single-sport or multi-sport groups
+        # Convert ESPN slug to friendly alias for display (e.g., 'womens-college-basketball' -> 'ncaaw')
+        from database import get_league_alias
+        variables['league_id'] = get_league_alias(event_league.lower()) if event_league else ''
+
+        # Look up the display name for the league
+        # For soccer: use soccer_leagues_cache (e.g., 'aus.1' -> 'Australian A-League Men')
+        # For US sports: use league_config.league_name (e.g., 'nfl' -> 'NFL')
+        league_display_name = ''
+        if event_league:
+            if sport_code == 'soccer':
+                # Soccer leagues use the soccer cache (240+ leagues)
+                from epg.soccer_multi_league import SoccerMultiLeague
+                league_display_name = SoccerMultiLeague.get_league_name(event_league)
+
+            # If not found in soccer cache (or not soccer), try league_config
+            if not league_display_name:
+                from database import get_connection
+                try:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    result = cursor.execute(
+                        "SELECT league_name FROM league_config WHERE league_code = ?",
+                        (event_league.lower(),)
+                    ).fetchone()
+                    conn.close()
+                    if result and result[0]:
+                        league_display_name = result[0]
+                except Exception:
+                    pass
+
+        # {league} shows display name if available, else uppercase code
+        variables['league'] = league_display_name or event_league.upper()
+        # {league_name} is the full display name (e.g., "English Premier League")
+        variables['league_name'] = league_display_name
 
         # =====================================================================
         # DATE & TIME

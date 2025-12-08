@@ -24,6 +24,8 @@
             filtered_exclude_regex=0,
             filtered_outside_lookahead=0,
             filtered_final=0,
+            filtered_league_not_enabled=0,
+            filtered_unsupported_sport=0,
             eligible_streams=0,
             matched_streams=0
         ) %}
@@ -33,10 +35,12 @@
             {% set stats.filtered_exclude_regex = stats.filtered_exclude_regex + (group.filtered_exclude_regex or 0) %}
             {% set stats.filtered_outside_lookahead = stats.filtered_outside_lookahead + (group.filtered_outside_lookahead or 0) %}
             {% set stats.filtered_final = stats.filtered_final + (group.filtered_final or 0) %}
+            {% set stats.filtered_league_not_enabled = stats.filtered_league_not_enabled + (group.filtered_league_not_enabled or 0) %}
+            {% set stats.filtered_unsupported_sport = stats.filtered_unsupported_sport + (group.filtered_unsupported_sport or 0) %}
             {% set stats.eligible_streams = stats.eligible_streams + (group.stream_count or 0) %}
             {% set stats.matched_streams = stats.matched_streams + (group.matched_count or 0) %}
         {% endfor %}
-        {% set stats.total_filtered = stats.filtered_no_indicator + stats.filtered_exclude_regex + stats.filtered_outside_lookahead + stats.filtered_final %}
+        {% set stats.total_filtered = stats.filtered_no_indicator + stats.filtered_exclude_regex + stats.filtered_outside_lookahead + stats.filtered_final + stats.filtered_league_not_enabled + stats.filtered_unsupported_sport %}
         {% set stats.match_rate = ((stats.matched_streams / stats.eligible_streams * 100) | round | int) if stats.eligible_streams > 0 else 0 %}
 
         <h2 class="stats-section-title">📊 Event Groups Analysis</h2>
@@ -84,6 +88,18 @@
                         <span class="tooltip-value">{{ stats.filtered_final }}</span>
                     </div>
                     {% endif %}
+                    {% if stats.filtered_league_not_enabled > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">League not enabled</span>
+                        <span class="tooltip-value">{{ stats.filtered_league_not_enabled }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_unsupported_sport > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Unsupported sport</span>
+                        <span class="tooltip-value">{{ stats.filtered_unsupported_sport }}</span>
+                    </div>
+                    {% endif %}
                     <div class="tooltip-row tooltip-total">
                         <span class="tooltip-name">Total</span>
                         <span class="tooltip-value">{{ stats.total_filtered }}</span>
@@ -105,9 +121,19 @@
                 </div>
             </div>
 
-            <div class="stat-tile stat-tile-matched">
+            <div class="stat-tile stat-tile-matched" data-tooltip-id="tooltip-matched">
                 <div class="stat-value">{{ stats.matched_streams }}</div>
                 <div class="stat-label">Matched ({{ stats.match_rate }}%)</div>
+                <div class="stat-tooltip" id="tooltip-matched">
+                    <div class="tooltip-title">Match Rate by Group</div>
+                    {% for group in groups if (group.stream_count or 0) > 0 %}
+                    {% set group_rate = ((group.matched_count or 0) / group.stream_count * 100)|round|int if group.stream_count else 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ group.group_name|truncate(20) }}</span>
+                        <span class="tooltip-value">{{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ group_rate }}%)</span>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
@@ -240,7 +266,7 @@
                                     {% endif %}
                                 </div>
                             </td>
-                            <td style="text-align: center;">
+                            <td style="text-align: center; vertical-align: middle;">
                                 {% if group.is_multi_sport %}
                                 <span class="multi-sport-badge" title="Multi-Sport / Multi-League">MUL</span>
                                 {% else %}
@@ -278,12 +304,24 @@
                             <td class="text-center">{{ group.stream_count or 0 }}</td>
                             <td>
                                 {% if group.stream_count and group.stream_count > 0 %}
-                                <div class="match-rate-container">
+                                {% set past_events = group.filtered_outside_lookahead or 0 %}
+                                {% set final_events = group.filtered_final or 0 %}
+                                {% set league_disabled = group.filtered_league_not_enabled or 0 %}
+                                {% set unsupported_sport = group.filtered_unsupported_sport or 0 %}
+                                {% set total_excluded = past_events + final_events + league_disabled + unsupported_sport %}
+                                {% set exclusion_parts = [] %}
+                                {% if past_events > 0 %}{% set _ = exclusion_parts.append(past_events ~ ' past') %}{% endif %}
+                                {% if final_events > 0 %}{% set _ = exclusion_parts.append(final_events ~ ' final') %}{% endif %}
+                                {% if league_disabled > 0 %}{% set _ = exclusion_parts.append(league_disabled ~ ' league disabled') %}{% endif %}
+                                {% if unsupported_sport > 0 %}{% set _ = exclusion_parts.append(unsupported_sport ~ ' unsupported') %}{% endif %}
+                                <div class="match-rate-container" {% if total_excluded > 0 %}title="{{ total_excluded }} stream(s) excluded: {{ exclusion_parts | join(', ') }}"{% endif %}>
                                     <div class="match-rate-bar">
                                         <div class="match-rate-fill {% if match_rate >= 80 %}rate-good{% elif match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
                                              style="width: {{ match_rate }}%;"></div>
                                     </div>
-                                    <span class="match-rate-text">{{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)</span>
+                                    <span class="match-rate-text">
+                                        {{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)
+                                    </span>
                                 </div>
                                 {% else %}
                                 <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
@@ -347,7 +385,7 @@
                                         {% endif %}
                                     </div>
                                 </td>
-                                <td style="text-align: center;">
+                                <td style="text-align: center; vertical-align: middle;">
                                     <img src="{{ league_logos.get(child.assigned_league, '') }}"
                                          alt="{{ child.assigned_league.upper() }}"
                                          class="league-logo"
@@ -372,12 +410,24 @@
                                 <td class="text-center">{{ child.stream_count or 0 }}</td>
                                 <td>
                                     {% if child.stream_count and child.stream_count > 0 %}
-                                    <div class="match-rate-container">
+                                    {% set child_past_events = child.filtered_outside_lookahead or 0 %}
+                                    {% set child_final_events = child.filtered_final or 0 %}
+                                    {% set child_league_disabled = child.filtered_league_not_enabled or 0 %}
+                                    {% set child_unsupported_sport = child.filtered_unsupported_sport or 0 %}
+                                    {% set child_total_excluded = child_past_events + child_final_events + child_league_disabled + child_unsupported_sport %}
+                                    {% set child_exclusion_parts = [] %}
+                                    {% if child_past_events > 0 %}{% set _ = child_exclusion_parts.append(child_past_events ~ ' past') %}{% endif %}
+                                    {% if child_final_events > 0 %}{% set _ = child_exclusion_parts.append(child_final_events ~ ' final') %}{% endif %}
+                                    {% if child_league_disabled > 0 %}{% set _ = child_exclusion_parts.append(child_league_disabled ~ ' league disabled') %}{% endif %}
+                                    {% if child_unsupported_sport > 0 %}{% set _ = child_exclusion_parts.append(child_unsupported_sport ~ ' unsupported') %}{% endif %}
+                                    <div class="match-rate-container" {% if child_total_excluded > 0 %}title="{{ child_total_excluded }} stream(s) excluded: {{ child_exclusion_parts | join(', ') }}"{% endif %}>
                                         <div class="match-rate-bar">
                                             <div class="match-rate-fill {% if child_match_rate >= 80 %}rate-good{% elif child_match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
                                                  style="width: {{ child_match_rate }}%;"></div>
                                         </div>
-                                        <span class="match-rate-text">{{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)</span>
+                                        <span class="match-rate-text">
+                                            {{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)
+                                        </span>
                                     </div>
                                     {% else %}
                                     <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
@@ -986,7 +1036,12 @@ function renderPreviewStreams(streams, totalCount, filteredCount, customRegexInf
         if (teamMatch.filtered) {
             teamHtml = `<span class="text-muted" style="font-style: italic;">Filtered</span>`;
         } else if (teamMatch.matched) {
-            teamHtml = `<span class="text-success">${escapeHtml(teamMatch.away_team_name?.split(' ').pop() || '?')} @ ${escapeHtml(teamMatch.home_team_name?.split(' ').pop() || '?')}</span>`;
+            teamHtml = `<span class="text-success">${escapeHtml(teamMatch.away_team_name || '?')} @ ${escapeHtml(teamMatch.home_team_name || '?')}</span>`;
+        } else if (teamMatch.parsed_teams) {
+            // Teams were parsed but not found in ESPN - show what was parsed
+            const t1 = teamMatch.parsed_teams.team1 || '?';
+            const t2 = teamMatch.parsed_teams.team2 || '?';
+            teamHtml = `<span class="text-muted" title="Parsed but not found in ESPN">${escapeHtml(t1)} vs ${escapeHtml(t2)}</span>`;
         } else {
             teamHtml = `<span class="text-muted">—</span>`;
         }
@@ -1006,11 +1061,18 @@ function renderPreviewStreams(streams, totalCount, filteredCount, customRegexInf
             // Today's event but final - excluded by user setting
             statusHtml = `<span class="text-danger" style="font-weight: 600;">Event is final (excluded)</span>`;
         } else if (!teamMatch.matched) {
-            // Team parsing failed
-            statusHtml = `<span class="text-warning">Teams not parsed</span>`;
+            // Team parsing failed or teams not found in ESPN
+            const detail = teamMatch.detail || teamMatch.reason || 'Teams not parsed';
+            const parsedTeams = teamMatch.parsed_teams;
+            if (parsedTeams) {
+                // Teams were parsed but not found in ESPN database
+                statusHtml = `<span class="text-warning" title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>`;
+            } else {
+                statusHtml = `<span class="text-warning">${escapeHtml(detail)}</span>`;
+            }
         } else {
-            // Teams parsed but no event found
-            const reason = eventMatch.reason || 'No event found';
+            // Teams matched but no event found - show specific reason
+            const reason = eventMatch.reason || 'No game scheduled';
             statusHtml = `<span class="text-danger">${escapeHtml(reason)}</span>`;
         }
 
@@ -1671,6 +1733,21 @@ code {
 .light-theme .badge-inherited {
     background: rgba(168, 85, 247, 0.1);
     color: #7c3aed;
+}
+
+.badge-league-disabled {
+    background: rgba(251, 146, 60, 0.2);
+    color: #fb923c;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    margin-left: 0.25rem;
+    cursor: help;
+}
+
+.light-theme .badge-league-disabled {
+    background: rgba(251, 146, 60, 0.15);
+    color: #ea580c;
 }
 
 /* Child group row styling */

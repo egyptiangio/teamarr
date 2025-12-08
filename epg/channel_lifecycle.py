@@ -475,6 +475,16 @@ class ChannelLifecycleManager:
         # Prevents race conditions when multiple groups are processed in parallel
         self._dispatcharr_lock = threading.Lock()
 
+    def clear_cache(self):
+        """
+        Clear Dispatcharr API caches. Call at the start of each EPG generation cycle.
+
+        This ensures fresh channel/logo data is fetched from Dispatcharr,
+        while still benefiting from caching within the generation cycle.
+        """
+        self.channel_api.clear_cache()
+        logger.debug("ChannelLifecycleManager: Dispatcharr caches cleared")
+
     def delete_managed_channel(
         self,
         channel: Dict,
@@ -976,14 +986,13 @@ class ChannelLifecycleManager:
             log_channel_history
         )
         from epg.event_template_engine import EventTemplateEngine
-        from database import get_consolidation_exception_keywords
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         # Create template engine for channel name resolution
         template_engine = EventTemplateEngine()
 
-        # Load global exception keywords
-        exception_keywords = get_consolidation_exception_keywords()
+        # Load global exception keywords (system + user)
+        exception_keywords = get_all_exception_keywords()
 
         results = {
             'created': [],
@@ -1221,8 +1230,8 @@ class ChannelLifecycleManager:
             stream_detected_league = matched.get('detected_league') or teams.get('detected_league')
             stream_detected_sport = None
             if stream_detected_league:
-                from epg.league_detector import LEAGUE_TO_SPORT
-                stream_detected_sport = LEAGUE_TO_SPORT.get(stream_detected_league)
+                from epg.league_detector import get_sport_for_league
+                stream_detected_sport = get_sport_for_league(stream_detected_league)
 
             # Generate channel name using template
             channel_name = generate_channel_name(
@@ -1464,10 +1473,9 @@ class ChannelLifecycleManager:
             find_parent_channel_for_event,
             add_stream_to_channel,
             stream_exists_on_channel,
-            log_channel_history,
-            get_consolidation_exception_keywords
+            log_channel_history
         )
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         results = {
             'streams_added': [],
@@ -1480,8 +1488,8 @@ class ChannelLifecycleManager:
             logger.error(f"Child group {child_group['id']} has no parent_group_id")
             return results
 
-        # Load global exception keywords (same as parent uses)
-        exception_keywords = get_consolidation_exception_keywords()
+        # Load global exception keywords (system + user)
+        exception_keywords = get_all_exception_keywords()
 
         for matched in matched_streams:
             stream = matched['stream']
@@ -1610,7 +1618,6 @@ class ChannelLifecycleManager:
             Dict with 'moved' count and 'errors' list
         """
         from database import (
-            get_consolidation_exception_keywords,
             get_all_managed_channel_streams,
             find_existing_channel,
             remove_stream_from_channel,
@@ -1618,14 +1625,14 @@ class ChannelLifecycleManager:
             stream_exists_on_channel,
             log_channel_history
         )
-        from utils.keyword_matcher import check_exception_keyword
+        from utils.keyword_matcher import check_exception_keyword, get_all_exception_keywords
 
         results = {
             'moved': 0,
             'errors': []
         }
 
-        exception_keywords = get_consolidation_exception_keywords()
+        exception_keywords = get_all_exception_keywords()
         if not exception_keywords:
             return results  # No keywords configured, nothing to enforce
 
@@ -2316,6 +2323,12 @@ class ChannelLifecycleManager:
 
         logger.info(f"Associating EPG with {len(channels)} managed channels...")
 
+        # Build EPG lookup dict ONCE instead of fetching for each channel
+        # This avoids fetching the 2.3MB EPG data list for every channel
+        logger.debug("Building EPG lookup dict for batch association...")
+        epg_lookup = self.channel_api.build_epg_lookup(epg_source_id=self.epg_data_id)
+        logger.debug(f"EPG lookup built with {len(epg_lookup)} entries")
+
         for channel in channels:
             tvg_id = channel.get('tvg_id')
             dispatcharr_channel_id = channel.get('dispatcharr_channel_id')
@@ -2335,22 +2348,19 @@ class ChannelLifecycleManager:
                     })
                     continue
 
+            # Look up EPGData by tvg_id using pre-built lookup (O(1) instead of O(n))
+            epg_data = epg_lookup.get(tvg_id)
+
+            if not epg_data:
+                results['skipped'].append({
+                    'channel_name': channel_name,
+                    'tvg_id': tvg_id,
+                    'reason': f'EPGData not found for tvg_id={tvg_id}'
+                })
+                continue
+
             # Serialize Dispatcharr operations to prevent race conditions
             with self._dispatcharr_lock:
-                # Look up EPGData by tvg_id in the Teamarr EPG source
-                epg_data = self.channel_api.find_epg_data_by_tvg_id(
-                    tvg_id,
-                    epg_source_id=self.epg_data_id
-                )
-
-                if not epg_data:
-                    results['skipped'].append({
-                        'channel_name': channel_name,
-                        'tvg_id': tvg_id,
-                        'reason': f'EPGData not found for tvg_id={tvg_id}'
-                    })
-                    continue
-
                 # Associate EPG with channel
                 epg_data_id = epg_data['id']
                 epg_result = self.channel_api.set_channel_epg(

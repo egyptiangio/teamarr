@@ -37,19 +37,20 @@ logger = get_logger(__name__)
 # CONSTANTS
 # =============================================================================
 
-# Non-soccer leagues to index (includes NCAA soccer as standalone leagues)
+# Non-soccer leagues to index (uses ESPN API slugs)
+# These must match league_config.league_code values
 NON_SOCCER_LEAGUES = [
-    'nhl', 'nba', 'nba-g', 'wnba',
-    'nfl', 'ncaaf',
-    'ncaam', 'ncaaw',
+    'nhl', 'nba', 'nba-development', 'wnba',
+    'nfl', 'college-football',
+    'mens-college-basketball', 'womens-college-basketball',
     'mlb',
-    'ncaah',
-    'ncaavb-w', 'ncaavb-m',
-    'ncaas', 'ncaaws',  # NCAA soccer treated like other college sports
+    'mens-college-hockey', 'womens-college-hockey',
+    'womens-college-volleyball', 'mens-college-volleyball',
+    'usa.ncaa.m.1', 'usa.ncaa.w.1',  # NCAA soccer treated like other college sports
 ]
 
 # Thread pool size for parallel fetching
-MAX_WORKERS = 12  # Fewer than soccer since we have fewer leagues
+MAX_WORKERS = 100
 
 
 # =============================================================================
@@ -99,7 +100,8 @@ class TeamLeagueCache:
         Find all leagues a team name could belong to.
 
         Matches against team_name, team_abbrev, and team_short_name.
-        Case-insensitive. Handles punctuation differences (apostrophes, periods).
+        Case-insensitive. Handles punctuation differences (apostrophes, periods)
+        and common abbreviation variants (st/st., mt/mt., ft/ft.).
 
         Args:
             team_name: Team name to search (e.g., "Predators", "NSH", "Nashville")
@@ -110,28 +112,37 @@ class TeamLeagueCache:
         if not team_name:
             return set()
 
-        team_lower = team_name.lower().strip()
+        # Import here to avoid circular imports
+        from epg.league_detector import get_abbreviation_variants
 
-        # Also create a normalized version without punctuation for flexible matching
-        # This handles cases like "mount st mary's" matching "Mount St. Mary's"
-        import re
-        team_normalized = re.sub(r"[.'`]", '', team_lower)
+        # Get all abbreviation variants (with/without periods in st/st., mt/mt., etc.)
+        variants = get_abbreviation_variants(team_name)
+        results = set()
 
         conn = get_connection()
         try:
             cursor = conn.cursor()
-            # First try exact match with punctuation
-            cursor.execute("""
-                SELECT DISTINCT league_code FROM team_league_cache
-                WHERE LOWER(team_name) LIKE ?
-                   OR LOWER(team_abbrev) = ?
-                   OR LOWER(team_short_name) LIKE ?
-            """, (f'%{team_lower}%', team_lower, f'%{team_lower}%'))
 
-            results = {row[0] for row in cursor.fetchall()}
+            # Try each variant
+            for variant in variants:
+                cursor.execute("""
+                    SELECT DISTINCT league_code FROM team_league_cache
+                    WHERE LOWER(team_name) LIKE ?
+                       OR LOWER(team_abbrev) = ?
+                       OR LOWER(team_short_name) LIKE ?
+                """, (f'%{variant}%', variant, f'%{variant}%'))
+                for row in cursor.fetchall():
+                    results.add(row[0])
 
-            # If no results and team has punctuation, try normalized search
-            if not results and team_normalized != team_lower:
+                if results:
+                    return results
+
+            # Fallback: Also try normalized search (strip ALL punctuation)
+            # This handles cases like "mount st mary's" matching "Mount St. Mary's"
+            import re
+            team_normalized = re.sub(r"[.'`]", '', team_name.lower().strip())
+
+            if team_normalized not in variants:
                 cursor.execute("""
                     SELECT DISTINCT league_code FROM team_league_cache
                     WHERE REPLACE(REPLACE(REPLACE(LOWER(team_name), '.', ''), '''', ''), '`', '') LIKE ?
@@ -174,7 +185,8 @@ class TeamLeagueCache:
         """
         Get full team info for all matches of a team name.
 
-        Handles punctuation differences (apostrophes, periods).
+        Handles punctuation differences (apostrophes, periods)
+        and common abbreviation variants (st/st., mt/mt., ft/ft.).
 
         Args:
             team_name: Team name to search
@@ -185,34 +197,43 @@ class TeamLeagueCache:
         if not team_name:
             return []
 
-        team_lower = team_name.lower().strip()
+        # Import here to avoid circular imports
+        from epg.league_detector import get_abbreviation_variants
 
-        # Also create a normalized version without punctuation for flexible matching
-        import re
-        team_normalized = re.sub(r"[.'`]", '', team_lower)
+        # Get all abbreviation variants (with/without periods in st/st., mt/mt., etc.)
+        variants = get_abbreviation_variants(team_name)
+        rows = []
 
         conn = get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT espn_team_id, team_name, team_abbrev, team_short_name, sport, league_code
-                FROM team_league_cache
-                WHERE LOWER(team_name) LIKE ?
-                   OR LOWER(team_abbrev) = ?
-                   OR LOWER(team_short_name) LIKE ?
-            """, (f'%{team_lower}%', team_lower, f'%{team_lower}%'))
 
-            rows = cursor.fetchall()
-
-            # If no results and team has punctuation, try normalized search
-            if not rows and team_normalized != team_lower:
+            # Try each variant
+            for variant in variants:
                 cursor.execute("""
                     SELECT espn_team_id, team_name, team_abbrev, team_short_name, sport, league_code
                     FROM team_league_cache
-                    WHERE REPLACE(REPLACE(REPLACE(LOWER(team_name), '.', ''), '''', ''), '`', '') LIKE ?
-                       OR REPLACE(REPLACE(REPLACE(LOWER(team_short_name), '.', ''), '''', ''), '`', '') LIKE ?
-                """, (f'%{team_normalized}%', f'%{team_normalized}%'))
-                rows = cursor.fetchall()
+                    WHERE LOWER(team_name) LIKE ?
+                       OR LOWER(team_abbrev) = ?
+                       OR LOWER(team_short_name) LIKE ?
+                """, (f'%{variant}%', variant, f'%{variant}%'))
+                variant_rows = cursor.fetchall()
+                if variant_rows:
+                    rows.extend(variant_rows)
+                    break  # Found results, stop searching variants
+
+            # Fallback: try normalized search (strip ALL punctuation)
+            if not rows:
+                import re
+                team_normalized = re.sub(r"[.'`]", '', team_name.lower().strip())
+                if team_normalized not in variants:
+                    cursor.execute("""
+                        SELECT espn_team_id, team_name, team_abbrev, team_short_name, sport, league_code
+                        FROM team_league_cache
+                        WHERE REPLACE(REPLACE(REPLACE(LOWER(team_name), '.', ''), '''', ''), '`', '') LIKE ?
+                           OR REPLACE(REPLACE(REPLACE(LOWER(team_short_name), '.', ''), '''', ''), '`', '') LIKE ?
+                    """, (f'%{team_normalized}%', f'%{team_normalized}%'))
+                    rows = cursor.fetchall()
 
             # Group by team_id
             teams_by_id = {}
@@ -230,6 +251,123 @@ class TeamLeagueCache:
                 teams_by_id[team_id]['leagues'].append(row[5])
 
             return [TeamInfo(**info) for info in teams_by_id.values()]
+        finally:
+            conn.close()
+
+    @classmethod
+    def get_team_id_for_league(cls, team_name: str, league_code: str) -> Optional[str]:
+        """
+        Get the ESPN team ID for a specific team in a specific league.
+
+        This is critical because the same team name (e.g., "Iowa State Cyclones")
+        can have different ESPN IDs in different leagues:
+        - ID 66 in college-football, mens-college-basketball, womens-college-volleyball
+        - ID 20535 in usa.ncaa.w.1 (women's soccer)
+
+        Uses tiered matching (parallel structure to get_soccer_team_ids_for_league):
+        1. Direct match with abbreviation variants (st/st., mt/mt.)
+        2. Accent-normalized match (Atletico -> Atlético)
+        3. Number-stripped match (SV Elversberg -> SV 07 Elversberg)
+        4. Article-stripped match (Atlético de Madrid -> Atlético Madrid)
+
+        Args:
+            team_name: Team name to search
+            league_code: League to find the team in
+
+        Returns:
+            ESPN team ID if found, None otherwise
+        """
+        if not team_name or not league_code:
+            return None
+
+        # Import here to avoid circular imports
+        from epg.league_detector import (
+            get_abbreviation_variants, strip_accents, normalize_team_name
+        )
+        import re
+
+        team_lower = team_name.lower().strip()
+        team_accent_stripped = strip_accents(team_lower)
+        team_stripped = normalize_team_name(team_lower, strip_articles=False)
+        team_normalized = normalize_team_name(team_lower, strip_articles=True)
+
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Tier 1: Direct match with abbreviation variants (st/st., mt/mt.)
+            for variant in get_abbreviation_variants(team_name):
+                cursor.execute("""
+                    SELECT espn_team_id, team_name
+                    FROM team_league_cache
+                    WHERE league_code = ?
+                      AND (LOWER(team_name) LIKE ?
+                           OR LOWER(team_abbrev) = ?
+                           OR LOWER(team_short_name) LIKE ?
+                           OR INSTR(?, LOWER(team_name)) > 0)
+                    ORDER BY LENGTH(team_name) ASC
+                    LIMIT 1
+                """, (league_code, f'%{variant}%', variant, f'%{variant}%', variant))
+                row = cursor.fetchone()
+                if row:
+                    logger.debug(f"Team '{team_name}' matched via direct lookup in {league_code}: {row[1]} (ID {row[0]})")
+                    return str(row[0])
+
+            # Tier 2: Accent-normalized match
+            # Handles "Atletico" (stream) matching "Atlético" (DB)
+            cursor.execute("""
+                SELECT espn_team_id, team_name FROM team_league_cache
+                WHERE league_code = ?
+            """, (league_code,))
+            for row in cursor.fetchall():
+                db_normalized = strip_accents(row[1].lower())
+                if team_accent_stripped in db_normalized or db_normalized in team_accent_stripped:
+                    logger.debug(f"Team '{team_name}' matched via accent-stripping in {league_code}: {row[1]} (ID {row[0]})")
+                    return str(row[0])
+
+            # Tier 3: Number-stripped match
+            # Handles "SV Elversberg" (stream) matching "SV 07 Elversberg" (DB)
+            if team_stripped != team_lower:
+                # SQL expression to strip numbers from team_name
+                sql_strip_numbers = """
+                    TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                            LOWER(team_name), '0', ''), '1', ''), '2', ''), '3', ''), '4', ''),
+                        '5', ''), '6', ''), '7', ''), '8', ''), '9', ''), '  ', ' '))
+                """
+                cursor.execute(f"""
+                    SELECT espn_team_id, team_name FROM team_league_cache
+                    WHERE league_code = ? AND (
+                        {sql_strip_numbers} LIKE ?
+                        OR {sql_strip_numbers} LIKE ?
+                        OR INSTR(?, {sql_strip_numbers}) > 0
+                    )
+                    ORDER BY LENGTH(team_name) ASC
+                    LIMIT 1
+                """, (league_code, f'%{team_stripped}%', f'{team_stripped}%', team_stripped))
+                row = cursor.fetchone()
+                if row:
+                    logger.debug(f"Team '{team_name}' matched via number-stripping in {league_code}: {row[1]} (ID {row[0]})")
+                    return str(row[0])
+
+            # Tier 4: Article-stripped match (de, del, da, do, di, du)
+            if team_normalized != team_stripped:
+                cursor.execute("""
+                    SELECT espn_team_id, team_name FROM team_league_cache
+                    WHERE league_code = ?
+                """, (league_code,))
+                for row in cursor.fetchall():
+                    db_normalized = strip_accents(row[1].lower())
+                    # Strip articles from DB value too
+                    db_articles_stripped = re.sub(r'\b(de|del|da|do|di|du)\b', '', db_normalized, flags=re.I)
+                    db_articles_stripped = re.sub(r'\s+', ' ', db_articles_stripped).strip()
+                    if team_normalized in db_articles_stripped:
+                        logger.debug(f"Team '{team_name}' matched via article-stripping in {league_code}: {row[1]} (ID {row[0]})")
+                        return str(row[0])
+
+            # No match found
+            logger.debug(f"Team '{team_name}' not found in {league_code}")
+            return None
         finally:
             conn.close()
 
@@ -445,20 +583,37 @@ class TeamLeagueCache:
             # Use ESPNClient to fetch teams
             client = ESPNClient()
 
-            # For college leagues, use the comprehensive method
+            # For college leagues, try conference-based fetching first
             from epg.league_config import is_college_league
+            teams_data = []
+
             if is_college_league(league_code):
                 conferences_data = client.get_all_teams_by_conference(espn_sport, espn_league)
 
-                if not conferences_data:
-                    logger.warning(f"No conferences returned for {league_code}")
-                    return []
+                if conferences_data:
+                    # Flatten conference structure: [{name, teams: [...]}] -> [team, team, ...]
+                    for conf in conferences_data:
+                        conf_teams = conf.get('teams', [])
+                        teams_data.extend(conf_teams)
 
-                # Flatten conference structure: [{name, teams: [...]}] -> [team, team, ...]
-                teams_data = []
-                for conf in conferences_data:
-                    conf_teams = conf.get('teams', [])
-                    teams_data.extend(conf_teams)
+                    # For college-football, also fetch FCS teams via limit=1000 endpoint
+                    # FBS teams come from standings API (conferences), FCS teams aren't in standings
+                    if league_code == 'college-football':
+                        fbs_ids = {str(t.get('id')) for t in teams_data}
+                        all_cfb_teams = client.get_league_teams(espn_sport, espn_league)
+                        if all_cfb_teams:
+                            fcs_count = 0
+                            for team in all_cfb_teams:
+                                team_id = str(team.get('id', ''))
+                                if team_id and team_id not in fbs_ids:
+                                    teams_data.append(team)
+                                    fcs_count += 1
+                            if fcs_count > 0:
+                                logger.info(f"Added {fcs_count} FCS teams to college-football cache")
+                else:
+                    # Fallback to direct teams endpoint (e.g., NCAA soccer has no conferences)
+                    logger.info(f"No conferences for {league_code}, using direct teams endpoint")
+                    teams_data = client.get_league_teams(espn_sport, espn_league)
             else:
                 teams_data = client.get_league_teams(espn_sport, espn_league)
 

@@ -106,9 +106,21 @@
                     <div class="tile-value">{{ total_event_streams }}</div>
                     <div class="tile-label">Streams</div>
                 </div>
-                <div class="tile">
+                <div class="tile tile-hoverable">
                     <div class="tile-value">{{ matched_event_streams }}</div>
                     <div class="tile-label">Matched{% if total_event_streams > 0 %} <span class="tile-label-pct">({{ match_percent|int }}%)</span>{% endif %}</div>
+                    {% if event_groups_list %}
+                    <div class="tile-tooltip tile-tooltip-wide">
+                        <div class="tooltip-title">Match Rate by Group</div>
+                        {% for group in event_groups_list %}
+                        {% set group_rate = ((group.matched_count or 0) / group.stream_count * 100)|round|int if group.stream_count else 0 %}
+                        <div class="tooltip-row">
+                            <span class="tooltip-name tooltip-name-truncate">{{ group.group_name }}</span>
+                            <span class="tooltip-value">{{ group.matched_count }}/{{ group.stream_count }} ({{ group_rate }}%)</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -239,7 +251,12 @@
                                 <td class="text-center">{{ entry.num_programmes }}</td>
                                 <td class="text-center">
                                     {% if entry.generation_time_seconds %}
-                                        {{ entry.generation_time_seconds|round|int }}s
+                                        {% set secs = entry.generation_time_seconds|round|int %}
+                                        {% if secs >= 60 %}
+                                            {{ (secs // 60)|int }}m {{ (secs % 60)|int }}s
+                                        {% else %}
+                                            {{ secs }}s
+                                        {% endif %}
                                     {% else %}
                                         -
                                     {% endif %}
@@ -426,6 +443,8 @@
 .tooltip-value {
     color: var(--primary);
     font-weight: 600;
+    min-width: 85px;
+    text-align: right;
 }
 
 .tooltip-row-with-logo {

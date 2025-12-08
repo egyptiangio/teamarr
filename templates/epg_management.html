@@ -65,6 +65,133 @@
         </div>
     </div>
 
+    <!-- Last Generation Summary Bar -->
+    {% if latest_epg %}
+    {% set failed_count = (latest_epg.event_eligible_streams or 0) - (latest_epg.event_matched_streams or 0) %}
+    {% set total_filler = (latest_epg.num_pregame or 0) + (latest_epg.num_postgame or 0) + (latest_epg.num_idle or 0) %}
+    <div class="last-generation-bar" id="last-generation-bar">
+        <div class="generation-info">
+            <div class="generation-main">
+                <span class="generation-label">Last Generation</span>
+                <span class="generation-datetime format-datetime" data-utc="{{ latest_epg.generated_at }}">{{ latest_epg.generated_at[:16].replace('T', ' ') }}</span>
+                {% if latest_epg.generation_time_seconds %}
+                <span class="generation-duration">({{ "%.1f"|format(latest_epg.generation_time_seconds) }}s)</span>
+                {% endif %}
+                {% if latest_epg.triggered_by == 'scheduler' %}
+                <span class="trigger-badge trigger-scheduler" title="Triggered by scheduler">⏰ Scheduled</span>
+                {% elif latest_epg.triggered_by == 'api' %}
+                <span class="trigger-badge trigger-api" title="Triggered by API">🔌 API</span>
+                {% else %}
+                <span class="trigger-badge trigger-manual" title="Triggered manually">👆 Manual</span>
+                {% endif %}
+            </div>
+            <div class="generation-stats">
+                <span class="stat-item" title="Team-based channels">
+                    <span class="stat-icon">👥</span>
+                    <span class="stat-value">{{ latest_epg.team_based_channels or 0 }}</span>
+                    <span class="stat-label">Teams</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item" title="Event-based channels">
+                    <span class="stat-icon">📺</span>
+                    <span class="stat-value">{{ latest_epg.event_based_channels or 0 }}</span>
+                    <span class="stat-label">Events</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-filler" title="Pregame: {{ latest_epg.num_pregame or 0 }} | Postgame: {{ latest_epg.num_postgame or 0 }} | Idle: {{ latest_epg.num_idle or 0 }}">
+                    <span class="stat-icon">📝</span>
+                    <span class="stat-value">{{ total_filler }}</span>
+                    <span class="stat-label">Filler</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-clickable stat-success"
+                      onclick="openMatchedStreamsModal()"
+                      title="Click to view matched streams">
+                    <span class="stat-icon">✅</span>
+                    <span class="stat-value">{{ latest_epg.event_matched_streams or 0 }}</span>
+                    <span class="stat-label">Matched</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-clickable stat-error"
+                      onclick="openFailedMatchesModal()"
+                      title="Click to view failed matches">
+                    <span class="stat-icon">❌</span>
+                    <span class="stat-value" id="failed-count">{{ failed_count }}</span>
+                    <span class="stat-label">Failed</span>
+                </span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Failed Matches Modal -->
+    <div id="failed-matches-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeFailedMatchesModal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Failed Matches from Last EPG Run</h2>
+                <button class="modal-close" onclick="closeFailedMatchesModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="failed-matches-loading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading failed matches...</p>
+                </div>
+                <div id="failed-matches-empty" class="empty-state-sm" style="display: none;">
+                    <p>No failed matches recorded from last generation.</p>
+                </div>
+                <div id="failed-matches-content" style="display: none;">
+                    <div class="failed-matches-header">
+                        <span id="failed-matches-summary"></span>
+                    </div>
+                    <div id="failed-matches-list" class="failed-matches-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyFailedMatches()" class="btn btn-secondary">
+                    📋 Copy to Clipboard
+                </button>
+                <button onclick="closeFailedMatchesModal()" class="btn btn-primary">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matched Streams Modal -->
+    <div id="matched-streams-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeMatchedStreamsModal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Matched Streams from Last EPG Run</h2>
+                <button class="modal-close" onclick="closeMatchedStreamsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="matched-streams-loading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading matched streams...</p>
+                </div>
+                <div id="matched-streams-empty" class="empty-state-sm" style="display: none;">
+                    <p>No matched streams recorded from last generation.</p>
+                </div>
+                <div id="matched-streams-content" style="display: none;">
+                    <div class="matched-streams-header">
+                        <span id="matched-streams-summary"></span>
+                    </div>
+                    <div id="matched-streams-list" class="matched-streams-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyMatchedStreams()" class="btn btn-secondary">
+                    📋 Copy to Clipboard
+                </button>
+                <button onclick="closeMatchedStreamsModal()" class="btn btn-primary">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- EPG Analysis -->
     {% if epg_analysis %}
     <div class="analysis-section">
@@ -295,6 +422,10 @@
     padding: 0.5rem;
     text-align: center;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 52px;
 }
 
 .analysis-hoverable {
@@ -730,10 +861,782 @@ mark.current-match {
     margin: 0;
     color: var(--text-muted);
 }
+
+/* Last Generation Bar */
+.last-generation-bar {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.generation-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.generation-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.generation-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.generation-datetime {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.generation-duration {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.trigger-badge {
+    padding: 0.125rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
+.trigger-scheduler {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+
+.trigger-manual {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+}
+
+.trigger-api {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+}
+
+.generation-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+}
+
+.stat-icon {
+    font-size: 0.75rem;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.stat-divider {
+    color: var(--border);
+    font-size: 0.75rem;
+}
+
+.stat-success .stat-value {
+    color: #22c55e;
+}
+
+.stat-success .stat-icon {
+    color: #22c55e;
+}
+
+.stat-warning .stat-value {
+    color: #f59e0b;
+}
+
+.stat-warning .stat-icon {
+    color: #f59e0b;
+}
+
+.stat-error .stat-value {
+    color: #ef4444;
+}
+
+.stat-error .stat-icon {
+    color: #ef4444;
+}
+
+.stat-clickable {
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.15s;
+}
+
+.stat-clickable:hover {
+    background: var(--bg-tertiary);
+}
+
+/* Failed Matches Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-large {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    border-radius: 8px 8px 0 0;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    border-radius: 0 0 8px 8px;
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.empty-state-sm {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.failed-matches-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.failed-matches-list {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.failed-group {
+    margin-bottom: 1.5rem;
+}
+
+.failed-group-header {
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-left: 3px solid var(--primary);
+}
+
+.failed-stream {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    border-left: 2px solid var(--border);
+}
+
+.failed-stream-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.failed-stream-detail {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+}
+
+.failed-stream-detail .reason-tag {
+    display: inline-block;
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.failed-stream-detail .tier-tag {
+    display: inline-block;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    margin-right: 0.5rem;
+}
+
+.stat-filler .stat-value {
+    color: var(--text-secondary);
+}
+
+.stat-filler .stat-icon {
+    color: var(--text-muted);
+}
+
+/* Matched Streams Modal */
+.matched-streams-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.matched-streams-list {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+.matched-group {
+    margin-bottom: 1.5rem;
+}
+
+.matched-group-header {
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-left: 3px solid #22c55e;
+}
+
+.matched-stream {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    border-left: 2px solid var(--border);
+}
+
+.matched-stream-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.matched-stream-event {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.matched-stream-detail {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+}
+
+.matched-stream-detail .league-tag {
+    display: inline-block;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.matched-stream-detail .tier-tag {
+    display: inline-block;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    margin-right: 0.5rem;
+}
 </style>
 
 <script>
 // EPG generation now handled by generateEPGWithProgress() in app.js
+
+// Clipboard helper with fallback for non-HTTPS contexts
+function copyTextToClipboard(text, successMsg, errorMsg) {
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification(successMsg, 'success');
+        }).catch(() => {
+            fallbackCopyText(text, successMsg, errorMsg);
+        });
+    } else {
+        fallbackCopyText(text, successMsg, errorMsg);
+    }
+}
+
+function fallbackCopyText(text, successMsg, errorMsg) {
+    // Create temporary textarea for copy operation
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showNotification(successMsg, 'success');
+        } else {
+            showNotification(errorMsg, 'error');
+        }
+    } catch (err) {
+        showNotification(errorMsg, 'error');
+    }
+
+    document.body.removeChild(textarea);
+}
+
+// Failed Matches Modal data store
+let failedMatchesData = null;
+
+function openFailedMatchesModal() {
+    const modal = document.getElementById('failed-matches-modal');
+    const loading = document.getElementById('failed-matches-loading');
+    const empty = document.getElementById('failed-matches-empty');
+    const content = document.getElementById('failed-matches-content');
+
+    // Show modal with loading state
+    modal.style.display = 'flex';
+    loading.style.display = 'flex';
+    empty.style.display = 'none';
+    content.style.display = 'none';
+
+    // Fetch failed matches
+    fetch('/api/epg/failed-matches')
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+
+            if (!data.success) {
+                empty.innerHTML = '<p>Error loading failed matches: ' + (data.error || 'Unknown error') + '</p>';
+                empty.style.display = 'block';
+                return;
+            }
+
+            if (!data.has_failures || data.total_count === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            // Store data for copy function
+            failedMatchesData = data;
+
+            // Update summary
+            document.getElementById('failed-matches-summary').textContent =
+                `Total: ${data.total_count} failed across ${data.group_count} group${data.group_count !== 1 ? 's' : ''}`;
+
+            // Build HTML for failed matches
+            const listEl = document.getElementById('failed-matches-list');
+            listEl.innerHTML = '';
+
+            data.groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'failed-group';
+
+                // Group header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'failed-group-header';
+                headerDiv.textContent = `${group.group_name} (${group.failures.length} failed)`;
+                groupDiv.appendChild(headerDiv);
+
+                // Failed streams
+                group.failures.forEach(failure => {
+                    const streamDiv = document.createElement('div');
+                    streamDiv.className = 'failed-stream';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'failed-stream-name';
+                    nameDiv.textContent = failure.stream_name;
+                    streamDiv.appendChild(nameDiv);
+
+                    const detailDiv = document.createElement('div');
+                    detailDiv.className = 'failed-stream-detail';
+
+                    // Reason tag
+                    const reasonTag = document.createElement('span');
+                    reasonTag.className = 'reason-tag';
+                    reasonTag.textContent = failure.reason;
+                    detailDiv.appendChild(reasonTag);
+
+                    // Tier tag if present
+                    if (failure.detection_tier) {
+                        const tierTag = document.createElement('span');
+                        tierTag.className = 'tier-tag';
+                        tierTag.textContent = 'Tier ' + failure.detection_tier;
+                        detailDiv.appendChild(tierTag);
+                    }
+
+                    // Parsed teams
+                    if (failure.parsed_team1 || failure.parsed_team2) {
+                        const teamsSpan = document.createElement('span');
+                        teamsSpan.textContent = `Parsed: "${failure.parsed_team1 || '?'}" vs "${failure.parsed_team2 || '?'}"`;
+                        detailDiv.appendChild(teamsSpan);
+                    }
+
+                    // Leagues checked
+                    if (failure.leagues_checked) {
+                        const leaguesDiv = document.createElement('div');
+                        leaguesDiv.style.marginTop = '0.25rem';
+                        leaguesDiv.textContent = `Leagues: ${failure.leagues_checked}`;
+                        detailDiv.appendChild(leaguesDiv);
+                    }
+
+                    // Additional detail
+                    if (failure.detail) {
+                        const detailExtra = document.createElement('div');
+                        detailExtra.style.marginTop = '0.25rem';
+                        detailExtra.style.fontStyle = 'italic';
+                        detailExtra.textContent = failure.detail;
+                        detailDiv.appendChild(detailExtra);
+                    }
+
+                    streamDiv.appendChild(detailDiv);
+                    groupDiv.appendChild(streamDiv);
+                });
+
+                listEl.appendChild(groupDiv);
+            });
+
+            content.style.display = 'block';
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            empty.innerHTML = '<p>Error loading failed matches: ' + error.message + '</p>';
+            empty.style.display = 'block';
+        });
+}
+
+function closeFailedMatchesModal() {
+    document.getElementById('failed-matches-modal').style.display = 'none';
+}
+
+function copyFailedMatches() {
+    if (!failedMatchesData || !failedMatchesData.has_failures) {
+        showNotification('No failed matches to copy', 'warning');
+        return;
+    }
+
+    // Build plain text output
+    let text = 'Failed Matches from EPG Generation\n';
+    text += `Total: ${failedMatchesData.total_count} failures across ${failedMatchesData.group_count} groups\n\n`;
+
+    failedMatchesData.groups.forEach(group => {
+        text += '═'.repeat(60) + '\n';
+        text += `${group.group_name} (${group.failures.length} failed)\n`;
+        text += '═'.repeat(60) + '\n\n';
+
+        group.failures.forEach(failure => {
+            text += `${failure.stream_name}\n`;
+            text += `  Reason: ${failure.reason}\n`;
+            if (failure.parsed_team1 || failure.parsed_team2) {
+                text += `  Parsed: team1="${failure.parsed_team1 || '?'}" team2="${failure.parsed_team2 || '?'}"\n`;
+            }
+            if (failure.detection_tier) {
+                text += `  Tier: ${failure.detection_tier}\n`;
+            }
+            if (failure.leagues_checked) {
+                text += `  Leagues: ${failure.leagues_checked}\n`;
+            }
+            if (failure.detail) {
+                text += `  Detail: ${failure.detail}\n`;
+            }
+            text += '\n';
+        });
+    });
+
+    copyTextToClipboard(text, 'Failed matches copied to clipboard!', 'Failed to copy to clipboard');
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const failedModal = document.getElementById('failed-matches-modal');
+        if (failedModal && failedModal.style.display !== 'none') {
+            closeFailedMatchesModal();
+            return;
+        }
+        const matchedModal = document.getElementById('matched-streams-modal');
+        if (matchedModal && matchedModal.style.display !== 'none') {
+            closeMatchedStreamsModal();
+        }
+    }
+});
+
+// Matched Streams Modal data store
+let matchedStreamsData = null;
+
+function openMatchedStreamsModal() {
+    const modal = document.getElementById('matched-streams-modal');
+    const loading = document.getElementById('matched-streams-loading');
+    const empty = document.getElementById('matched-streams-empty');
+    const content = document.getElementById('matched-streams-content');
+
+    // Show modal with loading state
+    modal.style.display = 'flex';
+    loading.style.display = 'flex';
+    empty.style.display = 'none';
+    content.style.display = 'none';
+
+    // Fetch matched streams
+    fetch('/api/epg/matched-streams')
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+
+            if (!data.success) {
+                empty.innerHTML = '<p>Error loading matched streams: ' + (data.error || 'Unknown error') + '</p>';
+                empty.style.display = 'block';
+                return;
+            }
+
+            if (!data.has_matches || data.total_count === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            // Store data for copy function
+            matchedStreamsData = data;
+
+            // Update summary
+            document.getElementById('matched-streams-summary').textContent =
+                `Total: ${data.total_count} matched across ${data.group_count} group${data.group_count !== 1 ? 's' : ''}`;
+
+            // Build HTML for matched streams
+            const listEl = document.getElementById('matched-streams-list');
+            listEl.innerHTML = '';
+
+            data.groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'matched-group';
+
+                // Group header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'matched-group-header';
+                headerDiv.textContent = `${group.group_name} (${group.matches.length} matched)`;
+                groupDiv.appendChild(headerDiv);
+
+                // Matched streams
+                group.matches.forEach(match => {
+                    const streamDiv = document.createElement('div');
+                    streamDiv.className = 'matched-stream';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'matched-stream-name';
+                    nameDiv.textContent = match.stream_name;
+                    streamDiv.appendChild(nameDiv);
+
+                    // Event info
+                    const eventDiv = document.createElement('div');
+                    eventDiv.className = 'matched-stream-event';
+                    eventDiv.textContent = `→ ${match.home_team || '?'} vs ${match.away_team || '?'}`;
+                    if (match.event_date) {
+                        const dateStr = match.event_date.substring(0, 10);
+                        eventDiv.textContent += ` (${dateStr})`;
+                    }
+                    streamDiv.appendChild(eventDiv);
+
+                    const detailDiv = document.createElement('div');
+                    detailDiv.className = 'matched-stream-detail';
+
+                    // League tag
+                    if (match.detected_league) {
+                        const leagueTag = document.createElement('span');
+                        leagueTag.className = 'league-tag';
+                        leagueTag.textContent = match.detected_league.toUpperCase();
+                        detailDiv.appendChild(leagueTag);
+                    }
+
+                    // Tier tag if present
+                    if (match.detection_tier) {
+                        const tierTag = document.createElement('span');
+                        tierTag.className = 'tier-tag';
+                        tierTag.textContent = 'Tier ' + match.detection_tier;
+                        detailDiv.appendChild(tierTag);
+                    }
+
+                    // Parsed teams
+                    if (match.parsed_team1 || match.parsed_team2) {
+                        const teamsSpan = document.createElement('span');
+                        teamsSpan.textContent = `Parsed: "${match.parsed_team1 || '?'}" vs "${match.parsed_team2 || '?'}"`;
+                        detailDiv.appendChild(teamsSpan);
+                    }
+
+                    streamDiv.appendChild(detailDiv);
+                    groupDiv.appendChild(streamDiv);
+                });
+
+                listEl.appendChild(groupDiv);
+            });
+
+            content.style.display = 'block';
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            empty.innerHTML = '<p>Error loading matched streams: ' + error.message + '</p>';
+            empty.style.display = 'block';
+        });
+}
+
+function closeMatchedStreamsModal() {
+    document.getElementById('matched-streams-modal').style.display = 'none';
+}
+
+function copyMatchedStreams() {
+    if (!matchedStreamsData || !matchedStreamsData.has_matches) {
+        showNotification('No matched streams to copy', 'warning');
+        return;
+    }
+
+    // Build plain text output
+    let text = 'Matched Streams from EPG Generation\n';
+    text += `Total: ${matchedStreamsData.total_count} matches across ${matchedStreamsData.group_count} groups\n\n`;
+
+    matchedStreamsData.groups.forEach(group => {
+        text += '═'.repeat(60) + '\n';
+        text += `${group.group_name} (${group.matches.length} matched)\n`;
+        text += '═'.repeat(60) + '\n\n';
+
+        group.matches.forEach(match => {
+            text += `${match.stream_name}\n`;
+            text += `  → ${match.home_team || '?'} vs ${match.away_team || '?'}`;
+            if (match.event_date) {
+                text += ` (${match.event_date.substring(0, 10)})`;
+            }
+            text += '\n';
+            if (match.detected_league) {
+                text += `  League: ${match.detected_league}\n`;
+            }
+            if (match.detection_tier) {
+                text += `  Tier: ${match.detection_tier}\n`;
+            }
+            if (match.parsed_team1 || match.parsed_team2) {
+                text += `  Parsed: "${match.parsed_team1 || '?'}" vs "${match.parsed_team2 || '?'}"\n`;
+            }
+            text += '\n';
+        });
+    });
+
+    copyTextToClipboard(text, 'Matched streams copied to clipboard!', 'Failed to copy to clipboard');
+}
 
 function copyEPGUrl() {
     const input = document.getElementById('epg-url');

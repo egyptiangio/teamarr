@@ -27,10 +27,20 @@ GAME_INDICATOR_PATTERN = re.compile(
 _MONTHS_PATTERN = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
 
 # Pattern to detect @ used as team separator (not date/time separator)
-# Matches: "Team @ Team" (@ followed by word that's not a month or digit)
-# Does NOT match: "@ Dec 05", "@ 12:00", "@ 2025" (date/time markers)
+# Matches: "Team @ Team" or "Team @ #4 Team" (@ followed by team or ranking + team)
+# Does NOT match: "@ Dec 05", "@ 12:00", "@ 2025-12-06" (date/time markers)
+#
+# Key patterns:
+# - "@ Ravens" -> game (@ followed by team name)
+# - "@ 4 Texas T" -> game (@ followed by ranking + team)
+# - "@ #8 Alabama" -> game (@ followed by ranking + team)
+# - "@ Dec 05" -> NOT game (@ followed by month)
+# - "@ 2025-12-06" -> NOT game (@ followed by 4-digit year)
+# - "@ 12:00" -> NOT game (@ followed by time)
 AT_AS_SEPARATOR_PATTERN = re.compile(
-    rf'@\s+(?!{_MONTHS_PATTERN}\b|\d)([A-Za-z]{{2,}})',
+    rf'@\s+(?!{_MONTHS_PATTERN}\b|20\d{{2}}|\d{{1,2}}:\d{{2}})'  # Reject month, year (20xx), or time
+    rf'(?:#?\d+\s+)?'  # Optional ranking like "4 " or "#8 "
+    rf'([A-Za-z]{{2,}})',  # Team name (at least 2 letters)
     re.IGNORECASE
 )
 

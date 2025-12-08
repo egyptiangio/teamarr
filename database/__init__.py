@@ -138,6 +138,182 @@ def db_insert(query: str, params: tuple = ()) -> int:
         return cursor.lastrowid
 
 # =============================================================================
+# LEAGUE CODE NORMALIZATION
+# =============================================================================
+# ESPN slugs are the single source of truth (stored in league_config.league_code).
+# The league_id_aliases table maps friendly aliases back to ESPN slugs.
+# These helpers ensure we always work with ESPN slugs internally.
+
+# Cache for alias -> slug mapping (populated on first use)
+_alias_to_slug_cache: Optional[Dict[str, str]] = None
+
+# Hardcoded alias variants that map to ESPN slugs
+# This handles cases where multiple aliases should map to the same slug
+# (the DB table only stores one alias per slug for template variable output)
+_ALIAS_VARIANTS = {
+    # College basketball
+    'ncaam': 'mens-college-basketball',
+    'ncaaw': 'womens-college-basketball',
+    # College football
+    'ncaaf': 'college-football',
+    # College hockey
+    'ncaah': 'mens-college-hockey',
+    'ncaawh': 'womens-college-hockey',
+    # College volleyball (multiple alias formats)
+    'ncaavbm': 'mens-college-volleyball',
+    'ncaavb-m': 'mens-college-volleyball',
+    'ncaavb': 'mens-college-volleyball',
+    'ncaavbw': 'womens-college-volleyball',
+    'ncaavb-w': 'womens-college-volleyball',
+    'ncaawvb': 'womens-college-volleyball',
+    # College soccer
+    'ncaas': 'usa.ncaa.m.1',
+    'ncaaws': 'usa.ncaa.w.1',
+    # NBA G-League (multiple alias formats)
+    'nbag': 'nba-development',
+    'nba-g': 'nba-development',
+    # Soccer leagues
+    'epl': 'eng.1',
+    'laliga': 'esp.1',
+    'bundesliga': 'ger.1',
+    'seriea': 'ita.1',
+    'ligue1': 'fra.1',
+    'mls': 'usa.1',
+    'nwsl': 'usa.nwsl',
+    'efl': 'eng.2',
+    'efl1': 'eng.3',
+    'ucl': 'uefa.champions',
+}
+
+
+def get_alias_to_slug_mapping() -> Dict[str, str]:
+    """
+    Get mapping from aliases to ESPN slugs.
+
+    Combines hardcoded aliases (for variant handling) with DB aliases.
+    DB aliases take precedence if there's a conflict.
+
+    Returns:
+        Dict mapping alias -> espn_slug (e.g., {'ncaaw': 'womens-college-basketball'})
+    """
+    global _alias_to_slug_cache
+    if _alias_to_slug_cache is not None:
+        return _alias_to_slug_cache
+
+    # Start with hardcoded variants
+    _alias_to_slug_cache = _ALIAS_VARIANTS.copy()
+
+    # Add DB aliases (reverse the slug->alias to alias->slug)
+    try:
+        rows = db_fetch_all("SELECT espn_slug, alias FROM league_id_aliases")
+        for row in rows:
+            _alias_to_slug_cache[row['alias']] = row['espn_slug']
+    except Exception:
+        pass
+
+    return _alias_to_slug_cache
+
+
+def normalize_league_code(code: str) -> str:
+    """
+    Normalize a league code to its ESPN slug.
+
+    If the code is an alias, returns the ESPN slug.
+    If already an ESPN slug (or unknown), returns as-is.
+
+    Args:
+        code: League code (alias or ESPN slug)
+
+    Returns:
+        ESPN slug
+    """
+    if not code:
+        return code
+
+    mapping = get_alias_to_slug_mapping()
+    return mapping.get(code, code)
+
+
+def normalize_league_codes(codes: List[str]) -> List[str]:
+    """
+    Normalize a list of league codes to ESPN slugs.
+
+    Args:
+        codes: List of league codes (aliases or ESPN slugs)
+
+    Returns:
+        List of ESPN slugs (preserves order, deduplicates)
+    """
+    if not codes:
+        return codes
+
+    mapping = get_alias_to_slug_mapping()
+    seen = set()
+    result = []
+    for code in codes:
+        normalized = mapping.get(code, code)
+        if normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
+def clear_alias_cache():
+    """Clear the alias cache (call after modifying league_id_aliases)."""
+    global _alias_to_slug_cache, _slug_to_alias_cache
+    _alias_to_slug_cache = None
+    _slug_to_alias_cache = None
+
+
+# Cache for slug -> alias mapping (for display purposes)
+_slug_to_alias_cache: Optional[Dict[str, str]] = None
+
+
+def get_slug_to_alias_mapping() -> Dict[str, str]:
+    """
+    Get mapping from ESPN slugs to canonical aliases.
+
+    This is used for display purposes (e.g., {league_id} template variable).
+    Returns the canonical alias from the league_id_aliases table.
+
+    Returns:
+        Dict mapping espn_slug -> alias (e.g., {'womens-college-basketball': 'ncaaw'})
+    """
+    global _slug_to_alias_cache
+    if _slug_to_alias_cache is not None:
+        return _slug_to_alias_cache
+
+    _slug_to_alias_cache = {}
+    try:
+        rows = db_fetch_all("SELECT espn_slug, alias FROM league_id_aliases")
+        for row in rows:
+            _slug_to_alias_cache[row['espn_slug']] = row['alias']
+    except Exception:
+        pass
+
+    return _slug_to_alias_cache
+
+
+def get_league_alias(slug: str) -> str:
+    """
+    Get the friendly alias for an ESPN slug.
+
+    If no alias exists, returns the slug as-is.
+
+    Args:
+        slug: ESPN slug (e.g., 'womens-college-basketball')
+
+    Returns:
+        Alias (e.g., 'ncaaw') or original slug if no alias exists
+    """
+    if not slug:
+        return slug
+
+    mapping = get_slug_to_alias_mapping()
+    return mapping.get(slug, slug)
+
+
+# =============================================================================
 # SCHEMA VERSIONING
 # =============================================================================
 # Each migration has a version number. Migrations only run if current version < target version.
@@ -157,9 +333,10 @@ def db_insert(query: str, params: tuple = ()) -> int:
 #   12: Soccer multi-league cache tables (with league_tags JSON array)
 #   15: Team-league cache tables for non-soccer sports
 #   16: Multi-sport event groups (is_multi_sport, enabled_leagues, etc.)
+#   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 24
 
 
 def get_schema_version(conn) -> int:
@@ -1011,20 +1188,505 @@ def run_migrations(conn):
         conn.commit()
 
     # =========================================================================
-    # 17. NCAA SOCCER LEAGUES
+    # 17. NCAA SOCCER LEAGUES (legacy - replaced by migration 18)
     # =========================================================================
-    if current_version < 17:
-        # Add NCAA Men's and Women's Soccer to league_config
-        cursor.execute("""
-            INSERT OR IGNORE INTO league_config
-            (league_code, league_name, sport, api_path, default_category, record_format, logo_url)
-            VALUES
-            ('ncaas', 'NCAA Men''s Soccer', 'soccer', 'soccer/usa.ncaa.m.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png'),
-            ('ncaaws', 'NCAA Women''s Soccer', 'soccer', 'soccer/usa.ncaa.w.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png')
-        """)
-        migrations_run += 1
-        print("    ✅ Added NCAA Men's and Women's Soccer to league_config")
+    # Skipped - migration 18 adds these with correct ESPN slugs
+
+    # =========================================================================
+    # 18. LEAGUE CODE NORMALIZATION - Use ESPN slugs as league_code
+    # =========================================================================
+    if current_version < 18:
+        print("  🔄 Running migration 18: Normalizing league codes to ESPN slugs...")
+
+        # 18a. Create league_id_aliases table
+        if not table_exists("league_id_aliases"):
+            try:
+                cursor.execute("""
+                    CREATE TABLE league_id_aliases (
+                        espn_slug TEXT PRIMARY KEY,
+                        alias TEXT NOT NULL,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                migrations_run += 1
+                print("    ✅ Created table: league_id_aliases")
+            except Exception as e:
+                print(f"    ⚠️ Could not create league_id_aliases table: {e}")
+            conn.commit()
+
+        # 18b. Define league code mappings (old_code -> new_espn_slug)
+        league_code_mappings = [
+            # Basketball
+            ('nba-g', 'nba-development'),
+            ('ncaam', 'mens-college-basketball'),
+            ('ncaaw', 'womens-college-basketball'),
+            # Football
+            ('ncaaf', 'college-football'),
+            # Hockey
+            ('ncaah', 'mens-college-hockey'),
+            # Soccer
+            ('epl', 'eng.1'),
+            ('laliga', 'esp.1'),
+            ('bundesliga', 'ger.1'),
+            ('seriea', 'ita.1'),
+            ('ligue1', 'fra.1'),
+            ('mls', 'usa.1'),
+            ('nwsl', 'usa.nwsl'),
+            ('efl', 'eng.2'),
+            ('efl1', 'eng.3'),
+            # Volleyball
+            ('ncaavb-m', 'mens-college-volleyball'),
+            ('ncaavb-w', 'womens-college-volleyball'),
+        ]
+
+        # 18c. Update league_config with new league_codes
+        for old_code, new_code in league_code_mappings:
+            try:
+                cursor.execute(
+                    "UPDATE league_config SET league_code = ? WHERE league_code = ?",
+                    (new_code, old_code)
+                )
+                if cursor.rowcount > 0:
+                    print(f"    ✅ Updated league_config: {old_code} → {new_code}")
+            except Exception as e:
+                print(f"    ⚠️ Could not update league_config {old_code}: {e}")
         conn.commit()
+
+        # 18d. Update teams table references
+        for old_code, new_code in league_code_mappings:
+            try:
+                cursor.execute(
+                    "UPDATE teams SET league = ? WHERE league = ?",
+                    (new_code, old_code)
+                )
+                if cursor.rowcount > 0:
+                    print(f"    ✅ Updated teams: {old_code} → {new_code} ({cursor.rowcount} rows)")
+            except Exception as e:
+                print(f"    ⚠️ Could not update teams {old_code}: {e}")
+        conn.commit()
+
+        # 18e. Update event_epg_groups references
+        for old_code, new_code in league_code_mappings:
+            try:
+                cursor.execute(
+                    "UPDATE event_epg_groups SET assigned_league = ? WHERE assigned_league = ?",
+                    (new_code, old_code)
+                )
+                if cursor.rowcount > 0:
+                    print(f"    ✅ Updated event_epg_groups: {old_code} → {new_code} ({cursor.rowcount} rows)")
+            except Exception as e:
+                print(f"    ⚠️ Could not update event_epg_groups {old_code}: {e}")
+        conn.commit()
+
+        # 18f. Seed league_id_aliases with friendly names
+        # This table stores ONE canonical alias per ESPN slug (for {league_id} template variable)
+        # Additional alias variants are handled by _ALIAS_VARIANTS dict in the code
+        aliases = [
+            # Soccer
+            ('eng.1', 'epl'),
+            ('esp.1', 'laliga'),
+            ('ger.1', 'bundesliga'),
+            ('ita.1', 'seriea'),
+            ('fra.1', 'ligue1'),
+            ('usa.1', 'mls'),
+            ('usa.nwsl', 'nwsl'),
+            ('eng.2', 'efl'),
+            ('eng.3', 'efl1'),
+            ('uefa.champions', 'ucl'),
+            # College sports
+            ('mens-college-basketball', 'ncaam'),
+            ('womens-college-basketball', 'ncaaw'),
+            ('college-football', 'ncaaf'),
+            ('mens-college-hockey', 'ncaah'),
+            ('nba-development', 'nbag'),
+            ('mens-college-volleyball', 'ncaavbm'),
+            ('womens-college-volleyball', 'ncaavbw'),
+            ('usa.ncaa.m.1', 'ncaas'),
+            ('usa.ncaa.w.1', 'ncaaws'),
+        ]
+        for espn_slug, alias in aliases:
+            try:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO league_id_aliases (espn_slug, alias) VALUES (?, ?)",
+                    (espn_slug, alias)
+                )
+            except Exception as e:
+                print(f"    ⚠️ Could not insert alias {espn_slug}: {e}")
+        conn.commit()
+        print(f"    ✅ Seeded {len(aliases)} league aliases")
+
+        # 18g. Add new leagues to league_config
+        new_leagues = [
+            # UEFA Champions League
+            ('uefa.champions', 'UEFA Champions League', 'soccer', 'soccer/uefa.champions', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png'),
+            # NCAA Soccer (with ESPN slugs as league_code)
+            ('usa.ncaa.m.1', 'NCAA Men\'s Soccer', 'soccer', 'soccer/usa.ncaa.m.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png'),
+            ('usa.ncaa.w.1', 'NCAA Women\'s Soccer', 'soccer', 'soccer/usa.ncaa.w.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png'),
+        ]
+        for league_code, league_name, sport, api_path, category, record_format, logo_url in new_leagues:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO league_config
+                    (league_code, league_name, sport, api_path, default_category, record_format, logo_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (league_code, league_name, sport, api_path, category, record_format, logo_url))
+                if cursor.rowcount > 0:
+                    print(f"    ✅ Added league: {league_name}")
+            except Exception as e:
+                print(f"    ⚠️ Could not add league {league_code}: {e}")
+        conn.commit()
+
+        # 18h. Fix consolidation_exception_keywords table (make global, remove group_id)
+        # Migration 14 was supposed to do this but may not have run
+        try:
+            cursor.execute("PRAGMA table_info(consolidation_exception_keywords)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if 'group_id' in columns:
+                # Recreate table without group_id
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS consolidation_exception_keywords_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        keywords TEXT NOT NULL,
+                        behavior TEXT NOT NULL DEFAULT 'consolidate',
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                # Copy existing data (deduplicate by keywords)
+                cursor.execute("""
+                    INSERT OR IGNORE INTO consolidation_exception_keywords_new (keywords, behavior, created_at)
+                    SELECT DISTINCT keywords, behavior, created_at
+                    FROM consolidation_exception_keywords
+                """)
+                cursor.execute("DROP TABLE consolidation_exception_keywords")
+                cursor.execute("ALTER TABLE consolidation_exception_keywords_new RENAME TO consolidation_exception_keywords")
+                conn.commit()
+                print("    ✅ Fixed consolidation_exception_keywords table (removed group_id)")
+        except Exception as e:
+            print(f"    ⚠️ Could not fix exception keywords table: {e}")
+
+        # 18i. Clean up system keywords from DB (now defined in code)
+        # Language keywords are now managed in utils/keyword_matcher.py SYSTEM_KEYWORDS
+        # Delete all language-related entries that were incorrectly seeded
+        try:
+            language_patterns = [
+                '%Español%', '%Spanish%', '%(ESP)%',
+                '%Français%', '%French%', '%(FRA)%',
+                '%German%', '%Deutsch%', '%(GER)%',
+                '%Portuguese%', '%Português%', '%(POR)%',
+                '%Italian%', '%Italiano%', '%(ITA)%',
+                '%Arabic%', '%العربية%', '%(ARA)%',
+            ]
+            deleted_count = 0
+            for pattern in language_patterns:
+                cursor.execute(
+                    "DELETE FROM consolidation_exception_keywords WHERE keywords LIKE ?",
+                    (pattern,)
+                )
+                deleted_count += cursor.rowcount
+            conn.commit()
+            if deleted_count > 0:
+                print(f"    ✅ Cleaned up {deleted_count} system keywords from DB (now in code)")
+        except Exception as e:
+            print(f"    ⚠️ Could not clean up system keywords: {e}")
+
+        # 18j. Update team_league_cache to use ESPN slugs
+        # This cache stores league_code which needs to match league_config
+        tlc_mappings = [
+            ('ncaam', 'mens-college-basketball'),
+            ('ncaaw', 'womens-college-basketball'),
+            ('ncaaf', 'college-football'),
+            ('ncaah', 'mens-college-hockey'),
+            ('ncaavb-m', 'mens-college-volleyball'),
+            ('ncaavb-w', 'womens-college-volleyball'),
+            ('ncaas', 'usa.ncaa.m.1'),
+            ('ncaaws', 'usa.ncaa.w.1'),
+        ]
+        for old_code, new_code in tlc_mappings:
+            try:
+                cursor.execute(
+                    "UPDATE team_league_cache SET league_code = ? WHERE league_code = ?",
+                    (new_code, old_code)
+                )
+                if cursor.rowcount > 0:
+                    print(f"    ✅ Updated team_league_cache: {old_code} → {new_code} ({cursor.rowcount} rows)")
+            except Exception as e:
+                print(f"    ⚠️ Could not update team_league_cache {old_code}: {e}")
+        conn.commit()
+
+        migrations_run += 1
+        print("    ✅ Migration 18 complete: League codes normalized to ESPN slugs")
+
+    # =========================================================================
+    # 19. ADD WOMENS-COLLEGE-HOCKEY TO LEAGUE_CONFIG
+    # =========================================================================
+    if current_version < 19:
+        print("  🔄 Running migration 19: Add womens-college-hockey league")
+
+        # Add womens-college-hockey to league_config if not exists
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO league_config
+                (league_code, league_name, sport, api_path, default_category, record_format, logo_url)
+                VALUES
+                ('womens-college-hockey', 'NCAA Women''s Hockey', 'hockey', 'hockey/womens-college-hockey',
+                 'Hockey', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/hockey.png')
+            """)
+            if cursor.rowcount > 0:
+                print("    ✅ Added womens-college-hockey to league_config")
+            else:
+                print("    ⏭️  womens-college-hockey already exists in league_config")
+        except Exception as e:
+            print(f"    ⚠️ Could not add womens-college-hockey to league_config: {e}")
+
+        # Add alias for womens-college-hockey
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO league_id_aliases (espn_slug, alias)
+                VALUES ('womens-college-hockey', 'ncaawh')
+            """)
+            if cursor.rowcount > 0:
+                print("    ✅ Added ncaawh alias for womens-college-hockey")
+        except Exception as e:
+            print(f"    ⚠️ Could not add ncaawh alias: {e}")
+
+        conn.commit()
+        migrations_run += 1
+        print("    ✅ Migration 19 complete: Added womens-college-hockey league")
+
+    # =========================================================================
+    # 20. ADD FILTERED_LEAGUE_NOT_ENABLED COLUMN
+    # =========================================================================
+    if current_version < 20:
+        print("  🔄 Running migration 20: Add filtered_league_not_enabled column...")
+
+        # Add column to event_epg_groups for per-group stats
+        add_columns_if_missing('event_epg_groups', [
+            ('filtered_league_not_enabled', 'INTEGER DEFAULT 0'),
+        ])
+
+        # Add column to epg_history for aggregate stats
+        add_columns_if_missing('epg_history', [
+            ('event_filtered_league_not_enabled', 'INTEGER DEFAULT 0'),
+        ])
+
+        conn.commit()
+        migrations_run += 1
+        print("    ✅ Migration 20 complete: Added filtered_league_not_enabled tracking")
+
+    # =========================================================================
+    # 21. ADD FILTERED_UNSUPPORTED_SPORT COLUMN
+    # =========================================================================
+    if current_version < 21:
+        print("  🔄 Running migration 21: Add filtered_unsupported_sport tracking")
+
+        # Add column to event_epg_groups for per-group stats
+        add_columns_if_missing("event_epg_groups", [
+            ("filtered_unsupported_sport", "INTEGER DEFAULT 0"),
+        ])
+
+        # Add column to epg_history for aggregate stats
+        add_columns_if_missing("epg_history", [
+            ("event_filtered_unsupported_sport", "INTEGER DEFAULT 0"),
+        ])
+
+        conn.commit()
+        migrations_run += 1
+        print("    ✅ Migration 21 complete: Added filtered_unsupported_sport tracking")
+
+    # =========================================================================
+    # 22. Clean up system keywords from consolidation_exception_keywords table
+    # =========================================================================
+    # Language keywords are now defined in SYSTEM_KEYWORDS (utils/keyword_matcher.py)
+    # They were accidentally seeded into the DB multiple times - remove them
+    if current_version < 22:
+        print("  🔄 Running migration 22: Clean up system keywords from DB")
+        try:
+            language_patterns = [
+                '%Español%', '%Spanish%', '%(ESP)%',
+                '%Français%', '%French%', '%(FRA)%',
+                '%German%', '%Deutsch%', '%(GER)%',
+                '%Portuguese%', '%Português%', '%(POR)%',
+                '%Italian%', '%Italiano%', '%(ITA)%',
+                '%Arabic%', '%العربية%', '%(ARA)%',
+            ]
+            deleted_count = 0
+            for pattern in language_patterns:
+                cursor.execute(
+                    "DELETE FROM consolidation_exception_keywords WHERE keywords LIKE ?",
+                    (pattern,)
+                )
+                deleted_count += cursor.rowcount
+            conn.commit()
+            migrations_run += 1
+            if deleted_count > 0:
+                print(f"    ✅ Migration 22 complete: Removed {deleted_count} system keywords (now in code)")
+            else:
+                print("    ✅ Migration 22 complete: No system keywords to remove")
+        except Exception as e:
+            print(f"    ⚠️ Migration 22 warning: {e}")
+            migrations_run += 1
+
+    # =========================================================================
+    # 23. Stream Fingerprint Cache
+    # =========================================================================
+    # Caches stream-to-event matches to avoid expensive tier matching on every
+    # EPG generation. Only caches successful matches (with event_id).
+    # Fingerprint = group_id + stream_id + stream_name
+    if current_version < 23:
+        print("  🔄 Migration 23: Creating stream fingerprint cache...")
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS stream_match_cache (
+                    -- Hash fingerprint for fast lookup (SHA256 truncated to 16 chars)
+                    fingerprint TEXT PRIMARY KEY,
+
+                    -- Original fields kept for debugging
+                    group_id INTEGER NOT NULL,
+                    stream_id INTEGER NOT NULL,
+                    stream_name TEXT NOT NULL,
+
+                    -- Match result
+                    event_id TEXT NOT NULL,
+                    league TEXT NOT NULL,
+
+                    -- Cached static event data (JSON blob)
+                    -- Contains full normalized event + team_result for template vars
+                    cached_event_data TEXT NOT NULL,
+
+                    -- Housekeeping
+                    last_seen_generation INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Index for purge queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_smc_generation
+                ON stream_match_cache(last_seen_generation)
+            """)
+
+            # Index for event_id lookups (useful for debugging)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_smc_event_id
+                ON stream_match_cache(event_id)
+            """)
+
+            # Add epg_generation_counter to settings if not exists
+            add_columns_if_missing('settings', [
+                ('epg_generation_counter', 'INTEGER DEFAULT 0'),
+            ])
+
+            conn.commit()
+            migrations_run += 1
+            print("    ✅ Migration 23 complete: Stream fingerprint cache created")
+        except Exception as e:
+            print(f"    ⚠️ Migration 23 error: {e}")
+            conn.rollback()
+
+    # =========================================================================
+    # 24. EPG Failed Matches Table
+    # =========================================================================
+    # Stores failed stream matches from each EPG generation for debugging.
+    # Cleared at start of each generation, populated during processing.
+    if current_version < 24:
+        print("  🔄 Migration 24: Creating EPG match tracking tables...")
+        try:
+            # Failed matches table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS epg_failed_matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    generation_id INTEGER NOT NULL,
+                    group_id INTEGER NOT NULL,
+                    group_name TEXT NOT NULL,
+                    stream_id INTEGER,
+                    stream_name TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    parsed_team1 TEXT,
+                    parsed_team2 TEXT,
+                    detection_tier TEXT,
+                    leagues_checked TEXT,
+                    detail TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Index for generation lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_efm_generation
+                ON epg_failed_matches(generation_id)
+            """)
+
+            # Index for group-based queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_efm_group
+                ON epg_failed_matches(group_id)
+            """)
+
+            # Matched streams table (successful matches)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS epg_matched_streams (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    generation_id INTEGER NOT NULL,
+                    group_id INTEGER NOT NULL,
+                    group_name TEXT NOT NULL,
+                    stream_id INTEGER,
+                    stream_name TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    event_name TEXT,
+                    detected_league TEXT,
+                    detection_tier TEXT,
+                    parsed_team1 TEXT,
+                    parsed_team2 TEXT,
+                    home_team TEXT,
+                    away_team TEXT,
+                    event_date TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Index for generation lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ems_generation
+                ON epg_matched_streams(generation_id)
+            """)
+
+            # Index for group-based queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ems_group
+                ON epg_matched_streams(group_id)
+            """)
+
+            # Add triggered_by column to epg_history
+            add_columns_if_missing('epg_history', [
+                ('triggered_by', "TEXT DEFAULT 'manual'"),  # 'manual', 'scheduler', 'api'
+            ])
+
+            conn.commit()
+            migrations_run += 1
+            print("    ✅ Migration 24 complete: EPG match tracking tables + triggered_by column")
+        except Exception as e:
+            print(f"    ⚠️ Migration 24 error: {e}")
+            conn.rollback()
+
+    # =========================================================================
+    # REPAIR: Ensure critical columns exist (catches failed migrations)
+    # =========================================================================
+    # Some columns may have failed to be added during their migration due to
+    # timing issues. This section ensures they exist regardless of schema version.
+    repair_columns = [
+        ('epg_history', 'triggered_by', "TEXT DEFAULT 'manual'"),
+    ]
+    for table, col_name, col_def in repair_columns:
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        if col_name not in existing:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                conn.commit()
+                print(f"    🔧 Repaired missing column: {table}.{col_name}")
+            except Exception as e:
+                print(f"    ⚠️ Could not repair column {table}.{col_name}: {e}")
 
     # =========================================================================
     # UPDATE SCHEMA VERSION
@@ -1670,14 +2332,28 @@ def bulk_create_aliases(aliases: List[Dict[str, str]]) -> int:
 # =============================================================================
 
 def _parse_event_group_json_fields(group: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse JSON fields in an event EPG group dict."""
-    if group and 'channel_profile_ids' in group and group['channel_profile_ids']:
+    """Parse JSON fields in an event EPG group dict and normalize league codes."""
+    if not group:
+        return group
+
+    # Parse channel_profile_ids JSON
+    if 'channel_profile_ids' in group and group['channel_profile_ids']:
         try:
             group['channel_profile_ids'] = json.loads(group['channel_profile_ids'])
         except (json.JSONDecodeError, TypeError):
             group['channel_profile_ids'] = []
-    elif group:
+    else:
         group['channel_profile_ids'] = []
+
+    # Parse and normalize enabled_leagues JSON (alias -> ESPN slug)
+    if 'enabled_leagues' in group and group['enabled_leagues']:
+        try:
+            leagues = json.loads(group['enabled_leagues'])
+            # Normalize aliases to ESPN slugs (single source of truth)
+            group['enabled_leagues'] = json.dumps(normalize_league_codes(leagues))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return group
 
 
@@ -1792,6 +2468,15 @@ def create_event_epg_group(
         # Convert channel_profile_ids list to JSON string
         channel_profile_ids_json = json.dumps(channel_profile_ids) if channel_profile_ids else None
 
+        # Normalize enabled_leagues to ESPN slugs (single source of truth)
+        enabled_leagues_normalized = enabled_leagues
+        if enabled_leagues:
+            try:
+                leagues = json.loads(enabled_leagues) if isinstance(enabled_leagues, str) else enabled_leagues
+                enabled_leagues_normalized = json.dumps(normalize_league_codes(leagues))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         cursor.execute(
             """
             INSERT INTO event_epg_groups
@@ -1820,7 +2505,7 @@ def create_event_epg_group(
                 stream_include_regex, 1 if stream_include_regex_enabled else 0,
                 stream_exclude_regex, 1 if stream_exclude_regex_enabled else 0,
                 1 if skip_builtin_filter else 0, parent_group_id,
-                1 if is_multi_sport else 0, enabled_leagues, channel_sort_order, overlap_handling
+                1 if is_multi_sport else 0, enabled_leagues_normalized, channel_sort_order, overlap_handling
             )
         )
         conn.commit()
@@ -1846,6 +2531,14 @@ def update_event_epg_group(group_id: int, data: Dict[str, Any]) -> bool:
             if isinstance(data['channel_profile_ids'], list):
                 data['channel_profile_ids'] = json.dumps(data['channel_profile_ids']) if data['channel_profile_ids'] else None
             # If it's already a string (JSON), leave it as is
+
+        # Normalize enabled_leagues to ESPN slugs (single source of truth)
+        if 'enabled_leagues' in data and data['enabled_leagues']:
+            try:
+                leagues = json.loads(data['enabled_leagues']) if isinstance(data['enabled_leagues'], str) else data['enabled_leagues']
+                data['enabled_leagues'] = json.dumps(normalize_league_codes(leagues))
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         # Exclude fields that aren't actual columns
         exclude_fields = {'id', 'group_id'}
@@ -1905,7 +2598,9 @@ def update_event_epg_group_stats(
     filtered_include_regex: int = None,
     filtered_exclude_regex: int = None,
     filtered_outside_lookahead: int = None,
-    filtered_final: int = None
+    filtered_final: int = None,
+    filtered_league_not_enabled: int = None,
+    filtered_unsupported_sport: int = None
 ) -> bool:
     """
     Update stats after EPG generation.
@@ -1920,6 +2615,8 @@ def update_event_epg_group_stats(
         filtered_exclude_regex: Streams matching exclusion regex (optional)
         filtered_outside_lookahead: Streams outside date range (optional)
         filtered_final: Final events excluded by setting (optional)
+        filtered_league_not_enabled: Streams in non-enabled leagues (optional)
+        filtered_unsupported_sport: Streams for unsupported sports (beach soccer, boxing/MMA, futsal)
 
     Returns:
         True if update succeeded
@@ -1946,6 +2643,12 @@ def update_event_epg_group_stats(
     if filtered_final is not None:
         fields.append("filtered_final = ?")
         values.append(filtered_final)
+    if filtered_league_not_enabled is not None:
+        fields.append("filtered_league_not_enabled = ?")
+        values.append(filtered_league_not_enabled)
+    if filtered_unsupported_sport is not None:
+        fields.append("filtered_unsupported_sport = ?")
+        values.append(filtered_unsupported_sport)
 
     values.append(group_id)
 
@@ -2519,7 +3222,7 @@ def save_epg_generation_stats(stats: Dict[str, Any]) -> int:
             INSERT INTO epg_history (
                 file_path, file_size, file_hash,
                 generation_time_seconds, api_calls_made,
-                status, error_message,
+                status, error_message, triggered_by,
                 num_channels, num_programmes, num_events,
                 num_pregame, num_postgame, num_idle,
                 team_based_channels, team_based_events,
@@ -2529,9 +3232,11 @@ def save_epg_generation_stats(stats: Dict[str, Any]) -> int:
                 event_total_streams, event_filtered_no_indicator,
                 event_filtered_include_regex, event_filtered_exclude_regex,
                 event_filtered_outside_lookahead,
-                event_filtered_final, event_eligible_streams, event_matched_streams,
+                event_filtered_final, event_filtered_league_not_enabled,
+                event_filtered_unsupported_sport,
+                event_eligible_streams, event_matched_streams,
                 unresolved_vars_count, coverage_gaps_count, warnings_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             stats.get('file_path', ''),
             stats.get('file_size', 0),
@@ -2540,6 +3245,7 @@ def save_epg_generation_stats(stats: Dict[str, Any]) -> int:
             stats.get('api_calls_made', 0),
             stats.get('status', 'success'),
             stats.get('error_message'),
+            stats.get('triggered_by', 'manual'),  # 'manual', 'scheduler', 'api'
             # Legacy totals
             stats.get('num_channels', 0),
             stats.get('num_programmes', 0),
@@ -2565,6 +3271,8 @@ def save_epg_generation_stats(stats: Dict[str, Any]) -> int:
             stats.get('event_filtered_exclude_regex', 0),
             stats.get('event_filtered_outside_lookahead', 0),
             stats.get('event_filtered_final', 0),
+            stats.get('event_filtered_league_not_enabled', 0),
+            stats.get('event_filtered_unsupported_sport', 0),
             stats.get('event_eligible_streams', 0),
             stats.get('event_matched_streams', 0),
             # Quality stats
@@ -3389,3 +4097,360 @@ def delete_consolidation_exception_keyword(keyword_id: int) -> bool:
         )
         conn.commit()
         return cursor.rowcount > 0
+
+
+# =============================================================================
+# EPG Failed Matches Functions
+# =============================================================================
+
+def clear_failed_matches(generation_id: int = None):
+    """
+    Clear failed matches, optionally for a specific generation.
+
+    Args:
+        generation_id: If provided, only clear for that generation.
+                      If None, clear all failed matches.
+    """
+    with db_connection() as conn:
+        if generation_id is not None:
+            conn.execute(
+                "DELETE FROM epg_failed_matches WHERE generation_id = ?",
+                (generation_id,)
+            )
+        else:
+            conn.execute("DELETE FROM epg_failed_matches")
+        conn.commit()
+
+
+def save_failed_match(
+    generation_id: int,
+    group_id: int,
+    group_name: str,
+    stream_name: str,
+    reason: str,
+    stream_id: int = None,
+    parsed_team1: str = None,
+    parsed_team2: str = None,
+    detection_tier: str = None,
+    leagues_checked: str = None,
+    detail: str = None
+):
+    """
+    Save a failed stream match for debugging.
+
+    Args:
+        generation_id: EPG generation counter
+        group_id: Event group ID
+        group_name: Event group name (for display)
+        stream_name: Full stream name
+        reason: Failure reason code
+        stream_id: Dispatcharr stream ID (optional)
+        parsed_team1: First parsed team name (optional)
+        parsed_team2: Second parsed team name (optional)
+        detection_tier: Tier reached before failure (optional)
+        leagues_checked: Comma-separated leagues tried (optional)
+        detail: Additional context (optional)
+    """
+    with db_connection() as conn:
+        conn.execute("""
+            INSERT INTO epg_failed_matches (
+                generation_id, group_id, group_name, stream_id, stream_name,
+                reason, parsed_team1, parsed_team2, detection_tier,
+                leagues_checked, detail
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            generation_id, group_id, group_name, stream_id, stream_name,
+            reason, parsed_team1, parsed_team2, detection_tier,
+            leagues_checked, detail
+        ))
+        conn.commit()
+
+
+def save_failed_matches_batch(failures: list):
+    """
+    Save multiple failed matches in a single transaction.
+
+    Args:
+        failures: List of dicts with keys matching save_failed_match params
+    """
+    if not failures:
+        return
+
+    with db_connection() as conn:
+        conn.executemany("""
+            INSERT INTO epg_failed_matches (
+                generation_id, group_id, group_name, stream_id, stream_name,
+                reason, parsed_team1, parsed_team2, detection_tier,
+                leagues_checked, detail
+            ) VALUES (
+                :generation_id, :group_id, :group_name, :stream_id, :stream_name,
+                :reason, :parsed_team1, :parsed_team2, :detection_tier,
+                :leagues_checked, :detail
+            )
+        """, failures)
+        conn.commit()
+
+
+def get_failed_matches(generation_id: int = None) -> List[Dict]:
+    """
+    Get failed matches, optionally for a specific generation.
+
+    Args:
+        generation_id: If provided, get for that generation.
+                      If None, get for the most recent generation.
+
+    Returns:
+        List of failed match dicts
+    """
+    with db_connection() as conn:
+        if generation_id is None:
+            # Get most recent generation
+            row = conn.execute(
+                "SELECT MAX(generation_id) FROM epg_failed_matches"
+            ).fetchone()
+            if not row or row[0] is None:
+                return []
+            generation_id = row[0]
+
+        cursor = conn.execute("""
+            SELECT
+                id, generation_id, group_id, group_name, stream_id, stream_name,
+                reason, parsed_team1, parsed_team2, detection_tier,
+                leagues_checked, detail, created_at
+            FROM epg_failed_matches
+            WHERE generation_id = ?
+            ORDER BY group_name, stream_name
+        """, (generation_id,))
+
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_failed_matches_summary() -> Dict:
+    """
+    Get a summary of failed matches from the most recent generation.
+
+    Returns:
+        Dict with:
+            - generation_id: int
+            - total_count: int
+            - by_group: Dict[group_name, count]
+            - by_reason: Dict[reason, count]
+            - timestamp: str (ISO format)
+    """
+    with db_connection() as conn:
+        # Get most recent generation
+        row = conn.execute(
+            "SELECT MAX(generation_id) FROM epg_failed_matches"
+        ).fetchone()
+        if not row or row[0] is None:
+            return {'generation_id': None, 'total_count': 0, 'by_group': {}, 'by_reason': {}}
+
+        generation_id = row[0]
+
+        # Get total count
+        total = conn.execute(
+            "SELECT COUNT(*) FROM epg_failed_matches WHERE generation_id = ?",
+            (generation_id,)
+        ).fetchone()[0]
+
+        # Get counts by group
+        by_group = {}
+        for row in conn.execute("""
+            SELECT group_name, COUNT(*) as cnt
+            FROM epg_failed_matches
+            WHERE generation_id = ?
+            GROUP BY group_name
+            ORDER BY cnt DESC
+        """, (generation_id,)):
+            by_group[row['group_name']] = row['cnt']
+
+        # Get counts by reason
+        by_reason = {}
+        for row in conn.execute("""
+            SELECT reason, COUNT(*) as cnt
+            FROM epg_failed_matches
+            WHERE generation_id = ?
+            GROUP BY reason
+            ORDER BY cnt DESC
+        """, (generation_id,)):
+            by_reason[row['reason']] = row['cnt']
+
+        # Get timestamp
+        timestamp_row = conn.execute(
+            "SELECT MIN(created_at) FROM epg_failed_matches WHERE generation_id = ?",
+            (generation_id,)
+        ).fetchone()
+        timestamp = timestamp_row[0] if timestamp_row else None
+
+        return {
+            'generation_id': generation_id,
+            'total_count': total,
+            'by_group': by_group,
+            'by_reason': by_reason,
+            'timestamp': timestamp
+        }
+
+
+# =============================================================================
+# EPG Matched Streams Functions
+# =============================================================================
+
+def clear_matched_streams(generation_id: int = None):
+    """
+    Clear matched streams, optionally for a specific generation.
+
+    Args:
+        generation_id: If provided, only clear for that generation.
+                      If None, clear all matched streams.
+    """
+    with db_connection() as conn:
+        if generation_id is not None:
+            conn.execute(
+                "DELETE FROM epg_matched_streams WHERE generation_id = ?",
+                (generation_id,)
+            )
+        else:
+            conn.execute("DELETE FROM epg_matched_streams")
+        conn.commit()
+
+
+def save_matched_streams_batch(matches: list):
+    """
+    Save multiple matched streams in a single transaction.
+
+    Args:
+        matches: List of dicts with keys:
+            - generation_id, group_id, group_name, stream_id, stream_name
+            - event_id, event_name, detected_league, detection_tier
+            - parsed_team1, parsed_team2, home_team, away_team, event_date
+    """
+    if not matches:
+        return
+
+    with db_connection() as conn:
+        conn.executemany("""
+            INSERT INTO epg_matched_streams (
+                generation_id, group_id, group_name, stream_id, stream_name,
+                event_id, event_name, detected_league, detection_tier,
+                parsed_team1, parsed_team2, home_team, away_team, event_date
+            ) VALUES (
+                :generation_id, :group_id, :group_name, :stream_id, :stream_name,
+                :event_id, :event_name, :detected_league, :detection_tier,
+                :parsed_team1, :parsed_team2, :home_team, :away_team, :event_date
+            )
+        """, matches)
+        conn.commit()
+
+
+def get_matched_streams(generation_id: int = None) -> List[Dict]:
+    """
+    Get matched streams, optionally for a specific generation.
+
+    Args:
+        generation_id: If provided, get for that generation.
+                      If None, get for the most recent generation.
+
+    Returns:
+        List of matched stream dicts
+    """
+    with db_connection() as conn:
+        if generation_id is None:
+            # Get most recent generation
+            row = conn.execute(
+                "SELECT MAX(generation_id) FROM epg_matched_streams"
+            ).fetchone()
+            if not row or row[0] is None:
+                return []
+            generation_id = row[0]
+
+        cursor = conn.execute("""
+            SELECT
+                id, generation_id, group_id, group_name, stream_id, stream_name,
+                event_id, event_name, detected_league, detection_tier,
+                parsed_team1, parsed_team2, home_team, away_team, event_date,
+                created_at
+            FROM epg_matched_streams
+            WHERE generation_id = ?
+            ORDER BY group_name, event_date, stream_name
+        """, (generation_id,))
+
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_matched_streams_summary() -> Dict:
+    """
+    Get a summary of matched streams from the most recent generation.
+
+    Returns:
+        Dict with:
+            - generation_id: int
+            - total_count: int
+            - by_group: Dict[group_name, count]
+            - by_tier: Dict[tier, count]
+            - by_league: Dict[league, count]
+            - timestamp: str (ISO format)
+    """
+    with db_connection() as conn:
+        # Get most recent generation
+        row = conn.execute(
+            "SELECT MAX(generation_id) FROM epg_matched_streams"
+        ).fetchone()
+        if not row or row[0] is None:
+            return {'generation_id': None, 'total_count': 0, 'by_group': {}, 'by_tier': {}, 'by_league': {}}
+
+        generation_id = row[0]
+
+        # Get total count
+        total = conn.execute(
+            "SELECT COUNT(*) FROM epg_matched_streams WHERE generation_id = ?",
+            (generation_id,)
+        ).fetchone()[0]
+
+        # Get counts by group
+        by_group = {}
+        for row in conn.execute("""
+            SELECT group_name, COUNT(*) as cnt
+            FROM epg_matched_streams
+            WHERE generation_id = ?
+            GROUP BY group_name
+            ORDER BY cnt DESC
+        """, (generation_id,)):
+            by_group[row['group_name']] = row['cnt']
+
+        # Get counts by tier
+        by_tier = {}
+        for row in conn.execute("""
+            SELECT COALESCE(detection_tier, 'unknown') as tier, COUNT(*) as cnt
+            FROM epg_matched_streams
+            WHERE generation_id = ?
+            GROUP BY tier
+            ORDER BY cnt DESC
+        """, (generation_id,)):
+            by_tier[row['tier']] = row['cnt']
+
+        # Get counts by league
+        by_league = {}
+        for row in conn.execute("""
+            SELECT COALESCE(detected_league, 'unknown') as league, COUNT(*) as cnt
+            FROM epg_matched_streams
+            WHERE generation_id = ?
+            GROUP BY league
+            ORDER BY cnt DESC
+        """, (generation_id,)):
+            by_league[row['league']] = row['cnt']
+
+        # Get timestamp
+        timestamp_row = conn.execute(
+            "SELECT MIN(created_at) FROM epg_matched_streams WHERE generation_id = ?",
+            (generation_id,)
+        ).fetchone()
+        timestamp = timestamp_row[0] if timestamp_row else None
+
+        return {
+            'generation_id': generation_id,
+            'total_count': total,
+            'by_group': by_group,
+            'by_tier': by_tier,
+            'by_league': by_league,
+            'timestamp': timestamp
+        }

@@ -11,6 +11,7 @@ This module bridges the gap between:
 Enrichment is delegated to EventEnricher for consistency with other EPG paths.
 """
 
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple, TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -78,9 +79,82 @@ class EventMatcher:
         # Cache for league config
         self._league_config: Dict[str, Dict] = {}
 
+        # Scoreboard cache: key = "sport:league:YYYYMMDD" → scoreboard data
+        # Thread-safe with double-checked locking
+        self._scoreboard_cache: Dict[str, Optional[Dict]] = {}
+        self._scoreboard_cache_lock = threading.Lock()
+
+        # Counters for monitoring scoreboard-first effectiveness
+        self._scoreboard_hits = 0
+        self._scoreboard_misses = 0
+        self._schedule_fallbacks = 0
+        self._counters_lock = threading.Lock()
+
     def _get_league_config(self, league_code: str) -> Optional[Dict]:
         """Get league configuration (sport, api_path) using shared module."""
         return get_league_config(league_code, self.db_connection_func, self._league_config)
+
+    def clear_scoreboard_cache(self):
+        """Clear scoreboard cache. Call at start of each EPG generation."""
+        with self._scoreboard_cache_lock:
+            self._scoreboard_cache.clear()
+
+    def get_matching_stats(self) -> Dict[str, int]:
+        """
+        Get scoreboard-first matching statistics.
+
+        Returns dict with:
+        - scoreboard_hits: Number of matches found via scoreboard
+        - scoreboard_misses: Number of times scoreboard had no match
+        - schedule_fallbacks: Number of matches found via schedule after scoreboard miss
+        """
+        with self._counters_lock:
+            return {
+                'scoreboard_hits': self._scoreboard_hits,
+                'scoreboard_misses': self._scoreboard_misses,
+                'schedule_fallbacks': self._schedule_fallbacks
+            }
+
+    def reset_matching_stats(self):
+        """Reset matching statistics. Call at start of each EPG generation."""
+        with self._counters_lock:
+            self._scoreboard_hits = 0
+            self._scoreboard_misses = 0
+            self._schedule_fallbacks = 0
+
+    def _get_scoreboard_cached(self, sport: str, api_league: str, date_str: str) -> Optional[Dict]:
+        """
+        Get scoreboard data with thread-safe caching.
+
+        Args:
+            sport: Sport name (e.g., 'soccer', 'football')
+            api_league: API league path (e.g., 'eng.1', 'nfl')
+            date_str: Date string in YYYYMMDD format
+
+        Returns:
+            Scoreboard data dict or None if fetch failed
+        """
+        cache_key = f"{sport}:{api_league}:{date_str}"
+
+        # Fast path: check without lock
+        if cache_key in self._scoreboard_cache:
+            return self._scoreboard_cache[cache_key]
+
+        # Slow path: acquire lock and fetch
+        with self._scoreboard_cache_lock:
+            # Double-check after acquiring lock
+            if cache_key in self._scoreboard_cache:
+                return self._scoreboard_cache[cache_key]
+
+            # Fetch from API
+            try:
+                scoreboard_data = self.espn.get_scoreboard(sport, api_league, date_str)
+                self._scoreboard_cache[cache_key] = scoreboard_data
+                return scoreboard_data
+            except Exception as e:
+                logger.warning(f"Error fetching scoreboard for {cache_key}: {e}")
+                self._scoreboard_cache[cache_key] = None
+                return None
 
     def _filter_matching_events(
         self,
@@ -101,10 +175,22 @@ class EventMatcher:
             - matching_events: List of {event, event_date, event_id} dicts
             - skip_reason: None, 'past_game', or 'today_final' indicating why game was skipped
         """
+        from utils.time_format import get_today_in_user_tz, get_user_timezone
+
         now = datetime.now(ZoneInfo('UTC'))
         cutoff_past = now - timedelta(days=self.SEARCH_DAYS_BACK)
         cutoff_future = now + timedelta(days=self.lookahead_days)
-        today = now.date()
+
+        # Use user's timezone for "today" to avoid games becoming "yesterday"
+        # when UTC crosses midnight but user's local time hasn't
+        today = get_today_in_user_tz(self.db_connection_func)
+
+        # Get user timezone for event date conversion
+        user_tz_str = get_user_timezone(self.db_connection_func)
+        try:
+            user_tz = ZoneInfo(user_tz_str)
+        except Exception:
+            user_tz = ZoneInfo('America/Detroit')
 
         matching_events = []
         skip_reason = None  # 'past_game' or 'today_final'
@@ -159,15 +245,26 @@ class EventMatcher:
 
                 # Filter completed games based on settings
                 if is_completed:
-                    event_day = event_date.date()
+                    # Convert event_date to user timezone for day comparison
+                    # This ensures a 7pm EST game on Dec 6 (which is 12am UTC Dec 7)
+                    # is still considered "Dec 6" for a user in EST
+                    event_in_user_tz = event_date.astimezone(user_tz)
+                    event_day = event_in_user_tz.date()
+
+                    logger.debug(f"[TRACE]   Event {event_id} is_completed=True | event_day={event_day} | today={today} | event_in_user_tz={event_in_user_tz}")
+
+                    # Past day completed events are ALWAYS excluded
                     if event_day < today:
                         skip_reason = 'past_game'  # Game from a previous day
-                        logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: past completed game ({event_day})")
+                        logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: past completed game ({event_day} < {today})")
                         continue
+                    # Same day finals: honor the include_final_events setting
                     elif event_day == today and not include_final_events:
                         skip_reason = 'today_final'  # Today's game, but finals excluded
                         logger.debug(f"[TRACE]   Event {event_id} ({event_name}) - skipped: today's final (excluded)")
                         continue
+                    else:
+                        logger.debug(f"[TRACE]   Event {event_id} completed but PASSING filter | event_day={event_day} | today={today} | include_final={include_final_events}")
 
                 # Found a matching game!
                 logger.debug(f"[TRACE]   MATCH! Event {event_id} ({event_name}) on {event_date.strftime('%Y-%m-%d %H:%M')} | completed={is_completed}")
@@ -302,7 +399,8 @@ class EventMatcher:
         team2_id: str,
         sport: str,
         api_league: str,
-        include_final_events: bool
+        include_final_events: bool,
+        game_time: datetime = None
     ) -> Tuple[List[Dict], Optional[str], Optional[str]]:
         """
         Search scoreboard for games between two teams.
@@ -316,6 +414,9 @@ class EventMatcher:
             sport: Sport type for API call
             api_league: League code for API call
             include_final_events: Whether to include completed events
+            game_time: Optional target time for disambiguation (if provided, only
+                      early-exit on exact time match to handle same-name teams
+                      in different leagues like men's vs women's hockey)
 
         Returns:
             Tuple of (matching_events, skip_reason, error_reason)
@@ -326,33 +427,54 @@ class EventMatcher:
         candidate_events = []
 
         # Search scoreboard for each day in the lookahead window
-        for day_offset in range(self.lookahead_days):
+        # Start from -1 (yesterday) to handle timezone edge cases where games
+        # listed for Dec 6 in user's local time are Dec 6 in ESPN scoreboard
+        # but current UTC date is already Dec 7
+        exact_time_match_found = False
+        for day_offset in range(-1, self.lookahead_days):
             check_date = now_utc + timedelta(days=day_offset)
             date_str = check_date.strftime('%Y%m%d')
 
             logger.debug(f"[TRACE] _search_scoreboard | checking {date_str} for teams {team1_id} vs {team2_id}")
 
-            try:
-                scoreboard_data = self.espn.get_scoreboard(sport, api_league, date_str)
-                if not scoreboard_data or 'events' not in scoreboard_data:
+            # Use cached scoreboard fetch
+            scoreboard_data = self._get_scoreboard_cached(sport, api_league, date_str)
+            if not scoreboard_data or 'events' not in scoreboard_data:
+                continue
+
+            for sb_event in scoreboard_data.get('events', []):
+                # Check if this event involves both teams
+                competitions = sb_event.get('competitions', [])
+                if not competitions:
                     continue
 
-                for sb_event in scoreboard_data.get('events', []):
-                    # Check if this event involves both teams
-                    competitions = sb_event.get('competitions', [])
-                    if not competitions:
-                        continue
+                competitors = competitions[0].get('competitors', [])
+                team_ids_in_event = {str(c.get('team', {}).get('id', '')) for c in competitors}
 
-                    competitors = competitions[0].get('competitors', [])
-                    team_ids_in_event = {str(c.get('team', {}).get('id', '')) for c in competitors}
+                if str(team1_id) in team_ids_in_event and str(team2_id) in team_ids_in_event:
+                    candidate_events.append(sb_event)
+                    logger.debug(f"[TRACE] _search_scoreboard | candidate: {sb_event.get('name')} on {sb_event.get('date')}")
 
-                    if str(team1_id) in team_ids_in_event and str(team2_id) in team_ids_in_event:
-                        candidate_events.append(sb_event)
-                        logger.debug(f"[TRACE] _search_scoreboard | candidate: {sb_event.get('name')} on {sb_event.get('date')}")
+                    # Only early exit if we have an exact time match
+                    # This handles the edge case where men's and women's teams with
+                    # the same name play on the same day (e.g., hockey doubleheaders)
+                    if game_time:
+                        try:
+                            event_date_str = sb_event.get('date', '')
+                            event_dt = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
+                            # Check if times match within 5 minutes
+                            time_diff = abs((event_dt - game_time).total_seconds())
+                            if time_diff < 300:  # 5 minutes tolerance
+                                logger.debug(f"[TRACE] _search_scoreboard | exact time match, early exit")
+                                exact_time_match_found = True
+                                break
+                        except (ValueError, TypeError):
+                            pass
+                    # No game_time provided - keep collecting candidates for later selection
+                    # Don't break here; there might be multiple games (men's + women's)
 
-            except Exception as e:
-                logger.warning(f"[TRACE] _search_scoreboard | error fetching scoreboard for {date_str}: {e}")
-                continue
+            if exact_time_match_found:
+                break  # Found exact time match, no need to check more days
 
         if not candidate_events:
             logger.debug(f"[TRACE] _search_scoreboard | no candidates found for {team1_id} vs {team2_id}")
@@ -374,7 +496,8 @@ class EventMatcher:
         league: str,
         game_date: datetime = None,
         game_time: datetime = None,
-        include_final_events: bool = False
+        include_final_events: bool = False,
+        api_path_override: str = None
     ) -> Dict[str, Any]:
         """
         Find an ESPN event between two teams.
@@ -386,16 +509,18 @@ class EventMatcher:
         Args:
             team1_id: ESPN team ID for first team (from stream name)
             team2_id: ESPN team ID for second team (from stream name)
-            league: League code (e.g., 'nfl', 'epl')
+            league: League code (e.g., 'nfl', 'epl') or ESPN slug (e.g., 'eng.w.1')
             game_date: Optional target date extracted from stream name
             game_time: Optional target time for double-header disambiguation
             include_final_events: Whether to include completed events from today
+            api_path_override: Optional API path override for leagues not in
+                              league_config (e.g., 'soccer/eng.w.1')
 
         Returns:
             Dict with found, event, event_id, reason (if not found)
         """
         # TRACE: Log the search parameters
-        logger.debug(f"[TRACE] find_event START | team1={team1_id} vs team2={team2_id} | league={league} | target_date={game_date.date() if game_date else None} | include_final={include_final_events}")
+        logger.debug(f"[TRACE] find_event START | team1={team1_id} vs team2={team2_id} | league={league} | target_date={game_date.date() if game_date else None} | include_final={include_final_events} | api_override={api_path_override}")
 
         result = {
             'found': False,
@@ -404,42 +529,67 @@ class EventMatcher:
             'league': league
         }
 
-        # Get league config
-        config = self._get_league_config(league)
-        if not config:
-            result['reason'] = f'Unknown league: {league}'
-            logger.debug(f"[TRACE] find_event FAIL | reason=unknown league {league}")
-            return result
+        # Use api_path override if provided (for unmapped soccer leagues)
+        if api_path_override:
+            sport, api_league = parse_api_path(api_path_override)
+            if not sport or not api_league:
+                result['reason'] = f'Invalid api_path_override: {api_path_override}'
+                logger.debug(f"[TRACE] find_event FAIL | reason=invalid api_path_override")
+                return result
+        else:
+            # Get league config from database
+            config = self._get_league_config(league)
+            if not config:
+                result['reason'] = f'Unknown league: {league}'
+                logger.debug(f"[TRACE] find_event FAIL | reason=unknown league {league}")
+                return result
 
-        sport, api_league = parse_api_path(config['api_path'])
-        if not sport or not api_league:
-            result['reason'] = f'Invalid api_path for league: {league}'
-            logger.debug(f"[TRACE] find_event FAIL | reason=invalid api_path")
-            return result
+            sport, api_league = parse_api_path(config['api_path'])
+            if not sport or not api_league:
+                result['reason'] = f'Invalid api_path for league: {league}'
+                logger.debug(f"[TRACE] find_event FAIL | reason=invalid api_path")
+                return result
 
-        # Try team1's schedule first
-        logger.debug(f"[TRACE] Searching team1 ({team1_id}) schedule for opponent {team2_id}")
-        matching_events, skip_reason, error = self._search_team_schedule(
-            team1_id, team2_id, sport, api_league, include_final_events
+        # ================================================================
+        # SCOREBOARD FIRST: Check scoreboard (fast, cached, has today's games)
+        # ================================================================
+        # The scoreboard is fetched once per league/date and cached. For pro sports
+        # it has all games. For college sports, we use groups param to get all D1 games.
+        # This eliminates ~1200 schedule API calls per EPG generation.
+        logger.debug(f"[TRACE] Checking scoreboard for {team1_id} vs {team2_id} in {league}")
+        matching_events, skip_reason, error = self._search_scoreboard(
+            team1_id, team2_id, sport, api_league, include_final_events, game_time
         )
 
-        # If no match found on team1's schedule, try team2's schedule as fallback
-        if not matching_events and not skip_reason:
-            logger.debug(f"[TRACE] No match on team1 schedule, trying team2 ({team2_id}) schedule for opponent {team1_id}")
-            matching_events, skip_reason, error = self._search_team_schedule(
-                team2_id, team1_id, sport, api_league, include_final_events
-            )
-            if matching_events:
-                logger.info(f"[TRACE] Found game via team2 ({team2_id}) schedule fallback")
+        if matching_events:
+            logger.debug(f"[SCOREBOARD HIT] Found {team1_id} vs {team2_id} in {league}")
+            with self._counters_lock:
+                self._scoreboard_hits += 1
 
-        # Soccer fallback: schedule API only returns past results, use scoreboard for future games
-        if not matching_events and not skip_reason and is_soccer_league(league):
-            logger.debug(f"[TRACE] No match in schedule, trying scoreboard fallback for soccer league {league}")
-            matching_events, skip_reason, error = self._search_scoreboard(
+        # ================================================================
+        # SCHEDULE FALLBACK: If not on scoreboard (D2/D3/NAIA, far future, etc.)
+        # ================================================================
+        # Scoreboard may miss: D2/D3/NAIA games, games > 7 days out, exhibitions
+        if not matching_events and not skip_reason:
+            logger.debug(f"[SCOREBOARD MISS] Falling back to schedule for {team1_id} vs {team2_id}")
+            with self._counters_lock:
+                self._scoreboard_misses += 1
+
+            # Try team1's schedule
+            matching_events, skip_reason, error = self._search_team_schedule(
                 team1_id, team2_id, sport, api_league, include_final_events
             )
+
+            # If no match, try team2's schedule
+            if not matching_events and not skip_reason:
+                matching_events, skip_reason, error = self._search_team_schedule(
+                    team2_id, team1_id, sport, api_league, include_final_events
+                )
+
             if matching_events:
-                logger.info(f"[TRACE] Found game via scoreboard fallback for soccer league {league}")
+                logger.info(f"[SCHEDULE FALLBACK] Found via schedule after scoreboard miss")
+                with self._counters_lock:
+                    self._schedule_fallbacks += 1
 
         if error and not matching_events:
             result['reason'] = error
@@ -447,14 +597,20 @@ class EventMatcher:
             return result
 
         if not matching_events:
-            # Provide specific reason based on why game was skipped
+            # Use FilterReason constants for consistent messaging and match rate exclusion
+            from utils.filter_reasons import FilterReason
             if skip_reason == 'past_game':
-                result['reason'] = 'Game already completed (past)'
+                result['reason'] = FilterReason.GAME_PAST
+                # Event found but excluded (past game) - use EXCLUDED not FAIL
+                logger.debug(f"[TRACE] find_event EXCLUDED | team1={team1_id} vs team2={team2_id} | reason=game_past")
             elif skip_reason == 'today_final':
-                result['reason'] = 'Game completed (excluded)'
+                result['reason'] = FilterReason.GAME_FINAL_EXCLUDED
+                # Event found but excluded (today's final) - use EXCLUDED not FAIL
+                logger.debug(f"[TRACE] find_event EXCLUDED | team1={team1_id} vs team2={team2_id} | reason=today_final")
             else:
-                result['reason'] = 'No game found between teams'
-            logger.debug(f"[TRACE] find_event FAIL | team1={team1_id} vs team2={team2_id} | reason={result['reason']} | skip_reason={skip_reason}")
+                result['reason'] = FilterReason.NO_GAME_FOUND
+                # True failure - no event found at all
+                logger.debug(f"[TRACE] find_event NOT_FOUND | team1={team1_id} vs team2={team2_id}")
             return result
 
         # Sort by date and select best match
@@ -468,6 +624,22 @@ class EventMatcher:
             logger.debug(f"[TRACE]   [{i+1}] {evt_date} - {evt_name} (id={evt['event_id']})")
 
         best_match = self._select_best_match(matching_events, game_date, game_time)
+
+        # If stream explicitly specified a date and we had to match a different date,
+        # AND the original date's game was filtered (past/final), return that reason instead.
+        # This prevents matching "Yale vs Brown @ Dec 06" to a Dec 07 game when Dec 06 game is past.
+        if game_date and skip_reason:
+            target_date = game_date.date()
+            match_date = best_match['event_date'].date()
+            if target_date != match_date:
+                from utils.filter_reasons import FilterReason
+                if skip_reason == 'past_game':
+                    result['reason'] = FilterReason.GAME_PAST
+                    logger.debug(f"[TRACE] find_event EXCLUDED | target_date={target_date} game was past, ignoring {match_date} match")
+                elif skip_reason == 'today_final':
+                    result['reason'] = FilterReason.GAME_FINAL_EXCLUDED
+                    logger.debug(f"[TRACE] find_event EXCLUDED | target_date={target_date} game was final, ignoring {match_date} match")
+                return result
 
         # Parse and return
         result['found'] = True
@@ -541,16 +713,16 @@ class EventMatcher:
                 elif b.get('name'):
                     event['broadcasts'].append(b.get('name'))
 
-            # Odds
+            # Odds - handle None entries in odds list (ESPN sometimes returns [None])
             odds = comp.get('odds', [])
-            if odds:
-                primary_odds = odds[0]
+            primary_odds = odds[0] if odds else None
+            if primary_odds:
                 event['odds'] = {
                     'spread': primary_odds.get('details'),
                     'over_under': primary_odds.get('overUnder'),
                     'home_moneyline': primary_odds.get('homeTeamOdds', {}).get('moneyLine'),
                     'away_moneyline': primary_odds.get('awayTeamOdds', {}).get('moneyLine'),
-                    'provider': primary_odds.get('provider', {}).get('name')
+                    'provider': (primary_odds.get('provider') or {}).get('name')
                 }
 
             # Status
@@ -636,16 +808,34 @@ class EventMatcher:
             Enriched event dict or None if not found
         """
         try:
-            config = get_league_config(league)
-            if not config:
-                logger.warning(f"No config for league {league}")
-                return None
+            config = self._get_league_config(league)
+            if config:
+                api_path = config['api_path']
+                sport = config.get('sport', api_path.split('/')[0])
+                api_league = api_path.split('/')[-1] if '/' in api_path else league
+            else:
+                # Fallback for soccer leagues not in league_config but in soccer cache
+                # (e.g., eng.fa, esp.copa_del_rey, etc.)
+                from database import get_connection
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT 1 FROM soccer_leagues_cache WHERE league_slug = ?",
+                    (league,)
+                )
+                is_soccer = cursor.fetchone() is not None
+                conn.close()
 
-            api_path = config['api_path']
-            sport = config.get('sport', api_path.split('/')[0])
+                if is_soccer:
+                    sport = 'soccer'
+                    api_league = league
+                    logger.debug(f"get_event_by_id: using soccer fallback for {league}")
+                else:
+                    logger.warning(f"No config for league {league}")
+                    return None
 
             # Use scoreboard API to get the event (faster)
-            scoreboard = self.espn.get_scoreboard(api_path)
+            scoreboard = self.espn.get_scoreboard(sport, api_league)
             event = None
 
             if scoreboard:
@@ -688,7 +878,8 @@ class EventMatcher:
         league: str,
         game_date: datetime = None,
         game_time: datetime = None,
-        include_final_events: bool = False
+        include_final_events: bool = False,
+        api_path_override: str = None
     ) -> Dict[str, Any]:
         """
         Find event and enrich with scoreboard and team stats data.
@@ -704,6 +895,8 @@ class EventMatcher:
             game_date: Optional target date from stream name
             game_time: Optional target time for double-header disambiguation
             include_final_events: Whether to include completed events from today (default False)
+            api_path_override: Optional API path override for leagues not in
+                              league_config (e.g., 'soccer/eng.w.1')
 
         Returns:
             Result dict with enriched event (if found)
@@ -712,7 +905,8 @@ class EventMatcher:
             team1_id, team2_id, league,
             game_date=game_date,
             game_time=game_time,
-            include_final_events=include_final_events
+            include_final_events=include_final_events,
+            api_path_override=api_path_override
         )
 
         if result['found'] and self.enricher:

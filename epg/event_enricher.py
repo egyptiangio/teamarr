@@ -339,15 +339,16 @@ class EventEnricher:
         event['broadcasts'] = self._normalize_broadcasts(comp.get('broadcasts'))
 
         # === Odds ===
+        # Handle None entries in odds list (ESPN sometimes returns [None])
         odds_data = comp.get('odds', [])
-        if odds_data:
-            primary_odds = odds_data[0]
+        primary_odds = odds_data[0] if odds_data else None
+        if primary_odds:
             event['odds'] = {
                 'spread': primary_odds.get('details'),
                 'over_under': primary_odds.get('overUnder'),
                 'home_moneyline': primary_odds.get('homeTeamOdds', {}).get('moneyLine'),
                 'away_moneyline': primary_odds.get('awayTeamOdds', {}).get('moneyLine'),
-                'provider': primary_odds.get('provider', {}).get('name'),
+                'provider': (primary_odds.get('provider') or {}).get('name'),
             }
             event['has_odds'] = True
         else:
@@ -458,14 +459,16 @@ class EventEnricher:
         odds_data = sb_comp.get('odds', [])
         if odds_data:
             primary_odds = odds_data[0]
-            event['odds'] = {
-                'spread': primary_odds.get('details'),
-                'over_under': primary_odds.get('overUnder'),
-                'home_moneyline': primary_odds.get('homeTeamOdds', {}).get('moneyLine'),
-                'away_moneyline': primary_odds.get('awayTeamOdds', {}).get('moneyLine'),
-                'provider': primary_odds.get('provider', {}).get('name'),
-            }
-            event['has_odds'] = True
+            # Handle None entries in odds list (ESPN sometimes returns [None])
+            if primary_odds:
+                event['odds'] = {
+                    'spread': primary_odds.get('details'),
+                    'over_under': primary_odds.get('overUnder'),
+                    'home_moneyline': primary_odds.get('homeTeamOdds', {}).get('moneyLine'),
+                    'away_moneyline': primary_odds.get('awayTeamOdds', {}).get('moneyLine'),
+                    'provider': (primary_odds.get('provider') or {}).get('name'),
+                }
+                event['has_odds'] = True
 
         # Update scores and records from scoreboard (more current)
         for competitor in sb_comp.get('competitors', []):

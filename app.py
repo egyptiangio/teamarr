@@ -35,6 +35,10 @@ from utils.logger import setup_logging, get_logger
 from utils import to_pascal_case
 from utils.time_format import format_time as fmt_time, get_time_settings
 from utils.filter_reasons import FilterReason, get_display_text, INTERNAL_REASONS
+from utils.match_result import (
+    FilteredReason, FailedReason, MatchedTier,
+    should_record_failure, normalize_reason
+)
 from config import VERSION
 
 app = Flask(__name__)
@@ -220,7 +224,7 @@ def inject_globals():
 # CORE EPG GENERATION FUNCTIONS
 # =============================================================================
 
-def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_start_datetime=None):
+def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_start_datetime=None, progress_callback=None, generation=None):
     """
     Core function to refresh a single event EPG group.
 
@@ -232,6 +236,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
         m3u_manager: M3UAccountManager instance
         skip_m3u_refresh: If True, skip M3U refresh (use when already refreshed in batch)
         epg_start_datetime: Optional datetime for EPG start (for multi-day filler)
+        progress_callback: Optional callable(processed, total, group_name) for stream progress
+        generation: EPG generation counter for fingerprint cache (None = no caching)
 
     Returns:
         dict with keys: success, stream_count, matched_count, matched_streams,
@@ -241,10 +247,20 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
     from epg.event_matcher import create_event_matcher
     from epg.event_epg_generator import generate_event_epg
     from epg.epg_consolidator import get_data_dir, after_event_epg_generation
-    from database import get_template, update_event_epg_group_stats
+    from database import get_template, update_event_epg_group_stats, save_failed_matches_batch, save_matched_streams_batch
     from utils.stream_filter import filter_game_streams
+    from epg.stream_match_cache import StreamMatchCache, refresh_cached_event
 
     group_id = group['id']
+    group_name = group.get('group_name', f'Group {group_id}')
+
+    # Initialize fingerprint cache if generation provided
+    stream_cache = StreamMatchCache(get_connection) if generation is not None else None
+    cache_stats = {'hits': 0, 'misses': 0, 'stored': 0}
+
+    # Collect matches for debugging
+    failed_matches = []
+    successful_matches = []
 
     # Fetch settings early for use throughout the function
     conn = get_connection()
@@ -333,6 +349,10 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             else:
                 enabled_leagues = raw_leagues
 
+            # Normalize aliases to ESPN slugs (e.g., 'ncaawh' -> 'womens-college-hockey')
+            from database import normalize_league_codes
+            enabled_leagues = normalize_league_codes(enabled_leagues)
+
             if enabled_leagues or soccer_enabled:
                 app.logger.debug(f"Multi-sport mode enabled with leagues: {enabled_leagues}, soccer_enabled: {soccer_enabled}")
             else:
@@ -376,7 +396,9 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                             'type': 'matched',
                             'stream': stream,
                             'teams': team_result,
-                            'event': event_result['event']
+                            'event': event_result['event'],
+                            'detected_league': group['assigned_league'],
+                            'detection_tier': 'direct'
                         }
                     else:
                         # No game found with primary team matches - try alternate team combinations
@@ -429,7 +451,9 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                                             'type': 'matched',
                                             'stream': stream,
                                             'teams': alt_team_result,
-                                            'event': alt_result['event']
+                                            'event': alt_result['event'],
+                                            'detected_league': league,
+                                            'detection_tier': 'direct'
                                         }
 
                         # No match found with any combination
@@ -446,14 +470,14 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
         def match_single_stream_multi_sport(stream):
             """Match a single stream using multi-sport league detection - called in parallel.
 
-            Uses tiered detection flow:
+            Uses consolidated MultiSportMatcher with tiered detection:
               Tier 1: League indicator + Teams → Direct match
               Tier 2: Sport indicator + Teams → Match within sport's leagues
-              Tier 3a: Teams + Date + Time → Exact schedule match
-              Tier 3b: Teams + Time only → Infer today, schedule match
-              Tier 3c: Teams only → Closest game to now
+              Tier 3a-c: Cache lookup + schedule disambiguation
+              Tier 4a-b: Single-team schedule fallback (NAIA vs NCAA)
             """
-            from epg.league_detector import LeagueDetector, LEAGUE_TO_SPORT
+            from epg.league_detector import LeagueDetector
+            from epg.multi_sport_matcher import MultiSportMatcher, MatcherConfig
             from database import find_any_channel_for_event
 
             # Create per-thread instances
@@ -465,339 +489,308 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                 lookahead_days=lookahead_days
             )
 
-            try:
-                # Step 1: Extract raw matchup data (teams, date, time, league indicator)
-                # Pass custom regex settings if enabled
-                raw_matchup = thread_team_matcher.extract_raw_matchup(
-                    stream['name'],
-                    custom_regex_teams=group.get('custom_regex_teams'),
-                    custom_regex_teams_enabled=teams_enabled,
-                    custom_regex_date=group.get('custom_regex_date'),
-                    custom_regex_date_enabled=date_enabled,
-                    custom_regex_time=group.get('custom_regex_time'),
-                    custom_regex_time_enabled=time_enabled
-                )
+            # Configure the matcher
+            config = MatcherConfig(
+                enabled_leagues=enabled_leagues,
+                soccer_enabled=soccer_enabled,
+                custom_regex_teams=group.get('custom_regex_teams'),
+                custom_regex_teams_enabled=teams_enabled,
+                custom_regex_date=group.get('custom_regex_date'),
+                custom_regex_date_enabled=date_enabled,
+                custom_regex_time=group.get('custom_regex_time'),
+                custom_regex_time_enabled=time_enabled,
+                include_final_events=include_final_events
+            )
 
-                if not raw_matchup.get('success'):
-                    return {'type': 'no_teams', 'stream': stream, 'reason': raw_matchup.get('reason')}
+            matcher = MultiSportMatcher(
+                team_matcher=thread_team_matcher,
+                event_matcher=thread_event_matcher,
+                league_detector=thread_league_detector,
+                config=config
+            )
 
-                raw_team1 = raw_matchup['team1']
-                raw_team2 = raw_matchup['team2']
-                game_date = raw_matchup['game_date']
-                game_time = raw_matchup['game_time']
-                indicator_league = raw_matchup['detected_league']
-                indicator_sport = raw_matchup['detected_sport']
+            # Run the consolidated matching logic
+            result = matcher.match_stream(stream)
 
-                team_result = None
-                detected_league = None
+            # Handle the result
+            if result.error:
+                return {'type': 'error', 'stream': stream, 'error': result.error_message}
 
-                # Step 2: Tier 1 - If league indicator found, try that league directly
-                if indicator_league and indicator_league in (enabled_leagues + (['soccer'] if soccer_enabled else [])):
-                    if any_custom_enabled:
-                        team_result = thread_team_matcher.extract_teams_with_selective_regex(
-                            stream['name'], indicator_league,
-                            teams_pattern=group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                            date_pattern=group.get('custom_regex_date'), date_enabled=date_enabled,
-                            time_pattern=group.get('custom_regex_time'), time_enabled=time_enabled
-                        )
-                    else:
-                        team_result = thread_team_matcher.extract_teams(stream['name'], indicator_league)
-
-                    if team_result.get('matched'):
-                        detected_league = indicator_league
-
-                # Step 3: Tier 2 - If sport indicator found, try leagues within that sport
-                if (not team_result or not team_result.get('matched')) and indicator_sport:
-                    if indicator_sport == 'soccer' and soccer_enabled:
-                        # Soccer uses dedicated SoccerMultiLeague cache (240+ leagues)
-                        soccer_slugs = thread_league_detector._find_soccer_leagues_for_teams(raw_team1, raw_team2)
-                        from database import get_soccer_slug_mapping
-                        slug_to_code = get_soccer_slug_mapping()
-                        sport_leagues = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
-                    else:
-                        sport_leagues = [l for l in enabled_leagues if LEAGUE_TO_SPORT.get(l) == indicator_sport]
-
-                    for league in sport_leagues:
-                        if any_custom_enabled:
-                            candidate = thread_team_matcher.extract_teams_with_selective_regex(
-                                stream['name'], league,
-                                teams_pattern=group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                                date_pattern=group.get('custom_regex_date'), date_enabled=date_enabled,
-                                time_pattern=group.get('custom_regex_time'), time_enabled=time_enabled
-                            )
-                        else:
-                            candidate = thread_team_matcher.extract_teams(stream['name'], league)
-
-                        if candidate.get('matched'):
-                            team_result = candidate
-                            detected_league = league
-                            break
-
-                # Step 4: Tier 3 - Use caches to find candidate leagues from team names
-                if not team_result or not team_result.get('matched'):
-                    # Find candidate leagues from TeamLeagueCache (non-soccer)
-                    candidate_leagues = thread_league_detector.find_candidate_leagues(
-                        raw_team1, raw_team2, include_soccer=False
+            if not result.matched:
+                # Determine result type based on reason
+                if result.league_not_enabled:
+                    # Found in a non-enabled league - log and exclude from match rate
+                    app.logger.debug(
+                        f"Stream '{stream.get('name', '')[:50]}' found in non-enabled league: {result.league_name}"
                     )
-                    # Filter to enabled leagues
-                    candidate_leagues = [l for l in candidate_leagues if l in enabled_leagues]
-
-                    # Also check soccer cache if enabled
-                    if soccer_enabled:
-                        soccer_slugs = thread_league_detector._find_soccer_leagues_for_teams(raw_team1, raw_team2)
-                        # Map ESPN slugs (esp.1) to league_config codes (laliga)
-                        from database import get_soccer_slug_mapping
-                        slug_to_code = get_soccer_slug_mapping()
-                        soccer_codes = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
-                        candidate_leagues.extend(soccer_codes)
-
-                    # Try each candidate league - collect all matches first
-                    # Then disambiguate by checking which has an actual game in the window
-                    matched_candidates = []
-                    for league in candidate_leagues:
-                        if any_custom_enabled:
-                            candidate = thread_team_matcher.extract_teams_with_selective_regex(
-                                stream['name'], league,
-                                teams_pattern=group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                                date_pattern=group.get('custom_regex_date'), date_enabled=date_enabled,
-                                time_pattern=group.get('custom_regex_time'), time_enabled=time_enabled
-                            )
-                        else:
-                            candidate = thread_team_matcher.extract_teams(stream['name'], league)
-
-                        if candidate.get('matched'):
-                            matched_candidates.append((league, candidate))
-
-                    # If only one match, use it directly
-                    if len(matched_candidates) == 1:
-                        detected_league, team_result = matched_candidates[0]
-                    elif len(matched_candidates) > 1:
-                        # Multiple leagues have these teams - check ALL for games
-                        # Then pick the one with the best time match (Tier 3 disambiguation)
-                        leagues_with_games = []
-                        leagues_with_final_games = []  # Track leagues that have final/past games
-                        for league, candidate in matched_candidates:
-                            test_result = thread_event_matcher.find_event(
-                                candidate['away_team_id'],
-                                candidate['home_team_id'],
-                                league,
-                                game_date=candidate.get('game_date'),
-                                game_time=candidate.get('game_time'),
-                                include_final_events=include_final_events
-                            )
-                            if test_result.get('found'):
-                                # Calculate time difference if we have target time
-                                time_diff = float('inf')
-                                if candidate.get('game_time') and test_result.get('event_date'):
-                                    from datetime import datetime
-                                    from zoneinfo import ZoneInfo
-                                    try:
-                                        event_dt = datetime.fromisoformat(test_result['event_date'].replace('Z', '+00:00'))
-                                        target_time = candidate['game_time']
-                                        # Convert both to minutes from midnight for comparison
-                                        event_mins = event_dt.hour * 60 + event_dt.minute
-                                        target_mins = target_time.hour * 60 + target_time.minute
-                                        time_diff = abs(event_mins - target_mins)
-                                    except Exception:
-                                        pass
-                                leagues_with_games.append((league, candidate, test_result, time_diff))
-                            else:
-                                # Track if the game was found but is final/past
-                                reason = test_result.get('reason', '')
-                                if 'completed' in reason.lower() or 'past' in reason.lower() or 'final' in reason.lower():
-                                    leagues_with_final_games.append((league, candidate, test_result))
-
-                        if len(leagues_with_games) == 1:
-                            # Only one league has a game - use it
-                            detected_league, team_result, _, _ = leagues_with_games[0]
-                        elif len(leagues_with_games) > 1:
-                            # Multiple leagues have games - pick best time match
-                            leagues_with_games.sort(key=lambda x: x[3])  # Sort by time_diff
-                            detected_league, team_result, _, _ = leagues_with_games[0]
-                            logger.debug(f"Multi-league disambiguation: {len(leagues_with_games)} leagues have games, "
-                                       f"selected {detected_league} (time_diff={leagues_with_games[0][3]} mins)")
-
-                        # If no active game found but we found final games, use that league
-                        # This ensures we return "game final" instead of "no game in lookahead"
-                        if not detected_league and leagues_with_final_games:
-                            detected_league, team_result, _ = leagues_with_final_games[0]
-                        # If no game found in any league, fall back to first match
-                        elif not detected_league and matched_candidates:
-                            detected_league, team_result = matched_candidates[0]
-
-                if not team_result or not team_result.get('matched'):
-                    return {'type': 'no_teams', 'stream': stream}
-
-                # Step 5: If multiple candidate leagues, use schedule disambiguation (Tier 3a/3b/3c)
-                # This happens inside the LeagueDetector when we have team IDs
-                if not detected_league:
-                    # Try full detection with team info
-                    full_detection = thread_league_detector.detect(
-                        stream_name=stream['name'],
-                        team1=team_result.get('away_team_name', ''),
-                        team2=team_result.get('home_team_name', ''),
-                        team1_id=team_result.get('away_team_id'),
-                        team2_id=team_result.get('home_team_id'),
-                        game_date=team_result.get('game_date'),
-                        game_time=team_result.get('game_time')
-                    )
-
-                    if full_detection.detected:
-                        detected_league = full_detection.league
-                        # Re-extract teams with the detected league if different
-                        if detected_league != team_result.get('league'):
-                            if any_custom_enabled:
-                                team_result = thread_team_matcher.extract_teams_with_selective_regex(
-                                    stream['name'],
-                                    detected_league,
-                                    teams_pattern=group.get('custom_regex_teams'),
-                                    teams_enabled=teams_enabled,
-                                    date_pattern=group.get('custom_regex_date'),
-                                    date_enabled=date_enabled,
-                                    time_pattern=group.get('custom_regex_time'),
-                                    time_enabled=time_enabled
-                                )
-                            else:
-                                team_result = thread_team_matcher.extract_teams(stream['name'], detected_league)
-
-                if not detected_league:
-                    # Still no league detected - skip stream
                     return {
                         'type': 'filtered',
-                        'reason': 'NO_LEAGUE_DETECTED',
-                        'stream': stream
-                    }
-
-                # Step 3: Find event in the detected league
-                event_result = thread_event_matcher.find_and_enrich(
-                    team_result['away_team_id'],
-                    team_result['home_team_id'],
-                    detected_league,
-                    game_date=team_result.get('game_date'),
-                    game_time=team_result.get('game_time'),
-                    include_final_events=include_final_events
-                )
-
-                # If no game found, try alternate team combinations (disambiguation)
-                # This handles ambiguous names like "Maryland" matching multiple teams
-                if not event_result.get('found'):
-                    raw_away = team_result.get('raw_away', '') or raw_team1
-                    raw_home = team_result.get('raw_home', '') or raw_team2
-
-                    if raw_away and raw_home:
-                        # Get all teams matching each raw name
-                        all_away_teams = thread_team_matcher.get_all_matching_teams(raw_away, detected_league, max_results=5)
-                        all_home_teams = thread_team_matcher.get_all_matching_teams(raw_home, detected_league, max_results=5)
-
-                        # Try all combinations (skip the first one - already tried)
-                        tried_pairs = {(team_result['away_team_id'], team_result['home_team_id'])}
-
-                        for away_candidate in all_away_teams:
-                            for home_candidate in all_home_teams:
-                                pair = (away_candidate['id'], home_candidate['id'])
-                                if pair in tried_pairs:
-                                    continue
-                                tried_pairs.add(pair)
-
-                                alt_result = thread_event_matcher.find_and_enrich(
-                                    away_candidate['id'],
-                                    home_candidate['id'],
-                                    detected_league,
-                                    game_date=team_result.get('game_date'),
-                                    game_time=team_result.get('game_time'),
-                                    include_final_events=include_final_events
-                                )
-
-                                if alt_result.get('found'):
-                                    # Found a match with alternate teams - update team_result and event_result
-                                    team_result['away_team_id'] = away_candidate['id']
-                                    team_result['away_team_name'] = away_candidate['name']
-                                    team_result['away_team_abbrev'] = away_candidate.get('abbrev', '')
-                                    team_result['home_team_id'] = home_candidate['id']
-                                    team_result['home_team_name'] = home_candidate['name']
-                                    team_result['home_team_abbrev'] = home_candidate.get('abbrev', '')
-                                    team_result['disambiguated'] = True  # Flag for debugging
-                                    event_result = alt_result
-
-                                    app.logger.debug(
-                                        f"Team disambiguation (multi-sport): '{raw_away}' vs '{raw_home}' → "
-                                        f"'{away_candidate['name']}' vs '{home_candidate['name']}'"
-                                    )
-                                    break
-                            if event_result.get('found'):
-                                break
-
-                if event_result.get('found'):
-                    event = event_result['event']
-                    event_id = event.get('id')
-
-                    # Step 4: Check overlap handling for multi-sport groups
-                    overlap_handling = group.get('overlap_handling', 'consolidate')
-
-                    if overlap_handling == 'consolidate' and event_id:
-                        # Check if another group already has a channel for this event
-                        existing_channel = find_any_channel_for_event(
-                            event_id,
-                            exclude_group_id=group_id
-                        )
-
-                        if existing_channel:
-                            # Another group owns this event - skip (or could add stream to their channel)
-                            return {
-                                'type': 'filtered',
-                                'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
-                                'stream': stream,
-                                'existing_channel': existing_channel
-                            }
-
-                    # Store detected league in the result for channel creation
-                    team_result['detected_league'] = detected_league
-
-                    return {
-                        'type': 'matched',
+                        'reason': FilterReason.LEAGUE_NOT_ENABLED,
                         'stream': stream,
-                        'teams': team_result,
-                        'event': event,
-                        'detected_league': detected_league
+                        'league_name': result.league_name
                     }
+                elif result.reason == 'NO_LEAGUE_DETECTED':
+                    return {'type': 'filtered', 'reason': 'NO_LEAGUE_DETECTED', 'stream': stream}
+                elif result.reason in (FilterReason.UNSUPPORTED_BEACH_SOCCER, FilterReason.UNSUPPORTED_BOXING_MMA, FilterReason.UNSUPPORTED_FUTSAL):
+                    # Unsupported sport - return as filtered so it's excluded from match rate
+                    return {'type': 'filtered', 'reason': result.reason, 'stream': stream}
+                elif result.parsed_teams:
+                    # Teams were parsed but no event found - check if reason is excludable
+                    # Use normalize_reason() to handle both enum and string values
+                    reason_str = normalize_reason(result.reason)
+                    if reason_str in ('event_past', 'event_final', 'league_not_enabled'):
+                        # Return as filtered so it's excluded from match rate denominator
+                        # Note: NO_GAME_FOUND is NOT excluded - it counts against match rate
+                        return {'type': 'filtered', 'reason': result.reason, 'stream': stream}
+                    else:
+                        # True no_teams case - teams parsed but couldn't match to ESPN
+                        # This includes NO_GAME_FOUND which counts against match rate
+                        return {
+                            'type': 'no_teams',
+                            'stream': stream,
+                            'reason': result.reason,
+                            'detail': result.detail,
+                            'parsed_teams': result.parsed_teams
+                        }
                 else:
-                    reason = event_result.get('reason', '')
-                    normalized = INTERNAL_REASONS.get(reason, reason)
+                    # Event not found - normalize reason
+                    normalized = INTERNAL_REASONS.get(result.reason, result.reason)
                     return {'type': 'filtered', 'reason': normalized, 'stream': stream}
 
-            except Exception as e:
-                app.logger.warning(f"Error matching multi-sport stream '{stream['name']}': {e}")
-                return {'type': 'error', 'stream': stream, 'error': str(e)}
+            # Matched! Now check overlap handling (not in matcher - EPG builder specific)
+            event = result.event
+            event_id = event.get('id')
+            overlap_handling = group.get('overlap_handling', 'consolidate')
+
+            if overlap_handling == 'consolidate' and event_id:
+                existing_channel = find_any_channel_for_event(event_id, exclude_group_id=group_id)
+                if existing_channel:
+                    return {
+                        'type': 'filtered',
+                        'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
+                        'stream': stream,
+                        'existing_channel': existing_channel
+                    }
+
+            return {
+                'type': 'matched',
+                'stream': stream,
+                'teams': result.team_result,
+                'event': event,
+                'detected_league': result.detected_league,
+                'detection_tier': result.detection_tier
+            }
 
         # Select the matching function based on mode
-        match_single_stream = match_single_stream_multi_sport if is_multi_sport else match_single_stream_single_league
+        match_single_stream_base = match_single_stream_multi_sport if is_multi_sport else match_single_stream_single_league
 
-        # Process streams in parallel (max 10 workers to avoid overwhelming ESPN API)
+        # Create ESPN client for cache refreshes (shared across threads via get_event_summary)
+        from api.espn_client import ESPNClient
+        espn_for_cache = ESPNClient()
+
+        def match_with_cache(stream):
+            """
+            Wrapper that checks fingerprint cache before full matching.
+
+            On cache hit: refresh dynamic fields from ESPN and return cached match
+            On cache miss: run full matching, cache successful results
+            """
+            nonlocal cache_stats
+            stream_id = stream.get('id')
+            stream_name = stream.get('name', '')
+
+            # Check cache first (if caching enabled)
+            if stream_cache and generation is not None:
+                cached = stream_cache.get(group_id, stream_id, stream_name)
+                if cached:
+                    event_id, league, cached_data = cached
+                    cache_stats['hits'] += 1
+
+                    # Refresh dynamic fields (scores, status, odds)
+                    refreshed = refresh_cached_event(
+                        espn_for_cache,
+                        cached_data,
+                        league,
+                        get_connection
+                    )
+
+                    if refreshed:
+                        # Touch cache entry to keep it fresh
+                        stream_cache.touch(group_id, stream_id, stream_name, generation)
+
+                        return {
+                            'type': 'matched',
+                            'stream': stream,
+                            'teams': refreshed.get('team_result', {}),
+                            'event': refreshed.get('event', {}),
+                            'detected_league': league,
+                            'detection_tier': 'cache',
+                            'from_cache': True
+                        }
+
+                cache_stats['misses'] += 1
+
+            # Cache miss - run full matching
+            result = match_single_stream_base(stream)
+
+            # Cache successful matches
+            if stream_cache and generation is not None and result.get('type') == 'matched':
+                event = result.get('event', {})
+                event_id = event.get('id')
+                detected_league = result.get('detected_league') or group.get('assigned_league', '')
+
+                # Debug: Log cache store decision
+                if not event_id:
+                    app.logger.debug(f"[CACHE SKIP] No event_id for stream: {stream_name[:50]}")
+                elif not detected_league:
+                    app.logger.debug(f"[CACHE SKIP] No detected_league for stream: {stream_name[:50]}, event_id={event_id}")
+
+                if event_id and detected_league:
+                    # Build cached data structure
+                    cached_data = {
+                        'event': event,
+                        'team_result': result.get('teams', {})
+                    }
+                    stream_cache.set(
+                        group_id, stream_id, stream_name,
+                        event_id, detected_league, cached_data, generation
+                    )
+                    cache_stats['stored'] += 1
+                    app.logger.debug(f"[CACHE STORED] {stream_name[:50]} -> {event_id} ({detected_league})")
+
+            return result
+
+        # Process streams in parallel with progress reporting
+        from concurrent.futures import as_completed
         matched_streams = []
         filtered_outside_lookahead = 0
         filtered_final = 0
+        filtered_league_not_enabled = 0
+        filtered_unsupported_sport = 0
         results = []
 
         if streams:  # Only use ThreadPoolExecutor if there are streams to process
-            with ThreadPoolExecutor(max_workers=min(len(streams), 50)) as executor:
-                results = list(executor.map(match_single_stream, streams))
+            total_streams = len(streams)
+            processed_count = 0
+
+            with ThreadPoolExecutor(max_workers=min(total_streams, 100)) as executor:
+                futures = {executor.submit(match_with_cache, s): s for s in streams}
+                for future in as_completed(futures):
+                    result = future.result()
+                    results.append(result)
+                    processed_count += 1
+
+                    # Report progress for every stream with name and status
+                    if progress_callback:
+                        stream_name = result.get('stream', {}).get('name', '')[:50]
+                        matched = result.get('type') == 'matched'
+                        status_icon = '✓' if matched else '✗'
+                        progress_callback(
+                            processed_count, total_streams, group['group_name'],
+                            stream_name=stream_name,
+                            stream_matched=matched,
+                            stream_status=status_icon
+                        )
 
         # Process results
         for result in results:
             if result['type'] == 'matched':
+                stream = result['stream']
+                event = result['event']
+                teams = result['teams']
                 matched_streams.append({
-                    'stream': result['stream'],
-                    'teams': result['teams'],
-                    'event': result['event']
+                    'stream': stream,
+                    'teams': teams,
+                    'event': event
                 })
+                # Capture for matched streams log
+                if generation is not None:
+                    successful_matches.append({
+                        'generation_id': generation,
+                        'group_id': group_id,
+                        'group_name': group_name,
+                        'stream_id': stream.get('id'),
+                        'stream_name': stream.get('name', ''),
+                        'event_id': event.get('id', ''),
+                        'event_name': event.get('name', event.get('short_name', '')),
+                        'detected_league': result.get('detected_league'),
+                        'detection_tier': result.get('detection_tier'),
+                        'parsed_team1': teams.get('team1') if teams else None,
+                        'parsed_team2': teams.get('team2') if teams else None,
+                        'home_team': event.get('home_team', {}).get('name', ''),
+                        'away_team': event.get('away_team', {}).get('name', ''),
+                        'event_date': event.get('date', '')
+                    })
             elif result['type'] == 'filtered':
                 reason = result.get('reason')
-                if reason == FilterReason.GAME_FINAL_EXCLUDED:
-                    filtered_final += 1
-                elif reason in (FilterReason.GAME_PAST, FilterReason.NO_GAME_FOUND):
-                    filtered_outside_lookahead += 1
+                # Normalize reason to string for comparison (handles enums and strings)
+                reason_str = normalize_reason(reason)
 
+                # Count filtered reasons by category
+                # Note: reason can be enum or string, reason_str is always the string value
+                if reason in (FilteredReason.EVENT_FINAL,) or reason_str == 'event_final':
+                    filtered_final += 1
+                elif reason in (FilteredReason.EVENT_PAST, FilteredReason.EVENT_OUTSIDE_WINDOW) or reason_str in ('event_past', 'event_outside_window'):
+                    filtered_outside_lookahead += 1
+                elif reason in (FilteredReason.LEAGUE_NOT_ENABLED,) or reason_str == 'league_not_enabled':
+                    filtered_league_not_enabled += 1
+                elif reason in (FilteredReason.UNSUPPORTED_BEACH_SOCCER, FilteredReason.UNSUPPORTED_BOXING_MMA, FilteredReason.UNSUPPORTED_FUTSAL):
+                    filtered_unsupported_sport += 1
+
+                # Check if this is a FAILURE that should be recorded
+                # Uses new should_record_failure() which checks against FailedReason enums
+                if should_record_failure(reason) and generation is not None:
+                    stream = result.get('stream', {})
+                    parsed_teams = result.get('parsed_teams', {})
+                    failed_matches.append({
+                        'generation_id': generation,
+                        'group_id': group_id,
+                        'group_name': group_name,
+                        'stream_id': stream.get('id'),
+                        'stream_name': stream.get('name', ''),
+                        'reason': reason_str,  # Store normalized string value
+                        'parsed_team1': parsed_teams.get('team1') if parsed_teams else None,
+                        'parsed_team2': parsed_teams.get('team2') if parsed_teams else None,
+                        'detection_tier': result.get('detection_tier'),
+                        'leagues_checked': result.get('leagues_checked'),
+                        'detail': result.get('detail')
+                    })
+
+            elif result['type'] == 'no_teams':
+                # Teams could not be parsed/matched - this is a FAILURE
+                if generation is not None:
+                    stream = result.get('stream', {})
+                    parsed_teams = result.get('parsed_teams', {})
+                    reason = result.get('reason', FailedReason.TEAMS_NOT_PARSED)
+                    failed_matches.append({
+                        'generation_id': generation,
+                        'group_id': group_id,
+                        'group_name': group_name,
+                        'stream_id': stream.get('id'),
+                        'stream_name': stream.get('name', ''),
+                        'reason': normalize_reason(reason),  # Store normalized string value
+                        'parsed_team1': parsed_teams.get('team1') if parsed_teams else None,
+                        'parsed_team2': parsed_teams.get('team2') if parsed_teams else None,
+                        'detection_tier': result.get('detection_tier'),
+                        'leagues_checked': result.get('leagues_checked'),
+                        'detail': result.get('detail')
+                    })
         matched_count = len(matched_streams)
+
+        # Save match data to database for debugging
+        if failed_matches:
+            try:
+                save_failed_matches_batch(failed_matches)
+                app.logger.debug(f"Saved {len(failed_matches)} failed matches for group {group_name}")
+            except Exception as e:
+                app.logger.warning(f"Could not save failed matches: {e}")
+
+        if successful_matches:
+            try:
+                save_matched_streams_batch(successful_matches)
+                app.logger.debug(f"Saved {len(successful_matches)} matched streams for group {group_name}")
+            except Exception as e:
+                app.logger.warning(f"Could not save matched streams: {e}")
 
         # Step 3.5: Include existing managed channels that weren't matched
         # This ensures EPG continues for channels until they're actually deleted
@@ -846,7 +839,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
 
         # Calculate totals for stats
         game_stream_count = len(streams)
-        total_event_excluded = filtered_outside_lookahead + filtered_final
+        total_event_excluded = filtered_outside_lookahead + filtered_final + filtered_league_not_enabled + filtered_unsupported_sport
         effective_stream_count = game_stream_count - total_event_excluded
 
         # Update stats with granular filtering breakdown
@@ -859,7 +852,9 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             filtered_include_regex=filtered_include_regex,
             filtered_exclude_regex=filtered_exclude_regex,
             filtered_outside_lookahead=filtered_outside_lookahead,
-            filtered_final=filtered_final
+            filtered_final=filtered_final,
+            filtered_league_not_enabled=filtered_league_not_enabled,
+            filtered_unsupported_sport=filtered_unsupported_sport
         )
 
         # Log with filtering info
@@ -868,7 +863,21 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
         if total_filtered > 0:
             log_parts.append(f"{total_filtered} non-game filtered")
         if total_event_excluded > 0:
-            log_parts.append(f"{total_event_excluded} event excluded ({filtered_outside_lookahead} past, {filtered_final} final)")
+            exclude_parts = []
+            if filtered_outside_lookahead > 0:
+                exclude_parts.append(f"{filtered_outside_lookahead} past")
+            if filtered_final > 0:
+                exclude_parts.append(f"{filtered_final} final")
+            if filtered_league_not_enabled > 0:
+                exclude_parts.append(f"{filtered_league_not_enabled} league disabled")
+            if filtered_unsupported_sport > 0:
+                exclude_parts.append(f"{filtered_unsupported_sport} unsupported sport")
+            log_parts.append(f"{total_event_excluded} event excluded ({', '.join(exclude_parts)})")
+
+        # Add cache stats if caching was enabled
+        if stream_cache and (cache_stats['hits'] > 0 or cache_stats['stored'] > 0):
+            log_parts.append(f"cache: {cache_stats['hits']} hits, {cache_stats['stored']} stored")
+
         app.logger.debug(" | ".join(log_parts))
 
         # Check if template is assigned (child groups inherit from parent, so they don't need one)
@@ -884,6 +893,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                 'filtered_exclude_regex': filtered_exclude_regex,
                 'filtered_outside_lookahead': filtered_outside_lookahead,
                 'filtered_final': filtered_final,
+                'filtered_league_not_enabled': filtered_league_not_enabled,
+                'filtered_unsupported_sport': filtered_unsupported_sport,
                 'matched_count': matched_count,
                 'matched_streams': [],
                 'error': 'No event template assigned to this group'
@@ -926,7 +937,15 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                 if not epg_result.get('success'):
                     return {
                         'success': False,
-                        'stream_count': len(streams),
+                        'total_stream_count': total_stream_count,
+                        'stream_count': game_stream_count,
+                        'filtered_no_indicator': filtered_no_indicator,
+                        'filtered_include_regex': filtered_include_regex,
+                        'filtered_exclude_regex': filtered_exclude_regex,
+                        'filtered_outside_lookahead': filtered_outside_lookahead,
+                        'filtered_final': filtered_final,
+                        'filtered_league_not_enabled': filtered_league_not_enabled,
+                        'filtered_unsupported_sport': filtered_unsupported_sport,
                         'matched_count': matched_count,
                         'matched_streams': matched_streams,
                         'error': f"EPG generation failed: {epg_result.get('error')}",
@@ -1037,6 +1056,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             'filtered_exclude_regex': filtered_exclude_regex,
             'filtered_outside_lookahead': filtered_outside_lookahead,
             'filtered_final': filtered_final,
+            'filtered_league_not_enabled': filtered_league_not_enabled,
+            'filtered_unsupported_sport': filtered_unsupported_sport,
             'matched_count': matched_count,
             'matched_streams': matched_streams,
             'epg_result': epg_result,
@@ -1057,9 +1078,16 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
         }
 
 
-def generate_all_epg(progress_callback=None, settings=None, save_history=True, team_progress_callback=None):
+def generate_all_epg(progress_callback=None, settings=None, save_history=True, team_progress_callback=None, triggered_by='manual'):
     """
     AUTHORITATIVE EPG generation function - single source of truth for ALL EPG generation.
+
+    Args:
+        progress_callback: Optional callback for progress updates
+        settings: Optional settings dict (fetched if not provided)
+        save_history: Whether to save generation stats to epg_history table
+        team_progress_callback: Optional callback for team-level progress
+        triggered_by: What triggered this generation ('manual', 'scheduler', 'api')
 
     This function handles the complete EPG pipeline:
     1. Generates team-based EPG → saves to teams.xml
@@ -1081,11 +1109,20 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         dict with keys: success, team_stats, event_stats, lifecycle_stats, generation_time, error
     """
     from epg.epg_consolidator import after_team_epg_generation, get_data_dir, finalize_epg_generation
-    from database import save_epg_generation_stats
+    from database import save_epg_generation_stats, clear_failed_matches, clear_matched_streams
     from epg.channel_lifecycle import get_lifecycle_manager
+    from epg.stream_match_cache import StreamMatchCache, increment_generation_counter
     import hashlib
 
     start_time = datetime.now()
+
+    # Increment generation counter for fingerprint cache
+    current_generation = increment_generation_counter(get_connection)
+    app.logger.debug(f"EPG generation #{current_generation}")
+
+    # Clear previous match data before new generation
+    clear_failed_matches()
+    clear_matched_streams()
 
     def report_progress(status, message, percent=None, **extra):
         """Helper to report progress if callback provided"""
@@ -1116,6 +1153,8 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         'filtered_exclude_regex': 0,
         'filtered_outside_lookahead': 0,
         'filtered_final': 0,
+        'filtered_league_not_enabled': 0,
+        'filtered_unsupported_sport': 0,
         'eligible_streams': 0
     }
     lifecycle_stats = {
@@ -1147,7 +1186,17 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
 
         # Clear caches and reset counters for fresh generation
         epg_orchestrator.espn.clear_schedule_cache()
+        epg_orchestrator.espn.clear_team_info_cache()
+        epg_orchestrator.espn.clear_roster_cache()
+        epg_orchestrator.espn.clear_group_cache()
+        epg_orchestrator.espn.clear_scoreboard_cache()
         epg_orchestrator.api_calls = 0
+
+        # Clear Dispatcharr caches for fresh channel/logo lookups
+        # (caches are still used within this generation cycle for performance)
+        lifecycle_mgr = get_lifecycle_manager()
+        if lifecycle_mgr:
+            lifecycle_mgr.clear_cache()
 
         # ============================================
         # PHASE 1: Team-based EPG
@@ -1203,21 +1252,20 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         ]
 
         # Sort groups for processing order:
-        # 1. Single-league parent groups (regular event groups) - process first
-        # 2. Multi-sport parent groups - process last (need to check other groups' channels)
-        # 3. Child groups - process after parents (add streams to parent channels)
+        # 1. Single-league parent groups - process first (create channels)
+        # 2. Single-league child groups - process second (add streams to parent channels)
+        # 3. Multi-sport groups - process last (no parent/child hierarchy, check other groups' channels)
         # This ensures parent channels exist before children try to add streams to them,
         # and multi-sport groups can check if events are already handled by single-league groups
-        parent_groups_all = [g for g in event_groups_with_templates if not g.get('parent_group_id')]
-        child_groups = [g for g in event_groups_with_templates if g.get('parent_group_id')]
+        single_league_groups = [g for g in event_groups_with_templates if not g.get('is_multi_sport')]
+        multi_sport_groups = [g for g in event_groups_with_templates if g.get('is_multi_sport')]
 
-        # Split parent groups: single-league first, multi-sport last
-        single_league_parents = [g for g in parent_groups_all if not g.get('is_multi_sport')]
-        multi_sport_parents = [g for g in parent_groups_all if g.get('is_multi_sport')]
-        parent_groups = single_league_parents + multi_sport_parents
+        # Split single-league into parents and children
+        single_league_parents = [g for g in single_league_groups if not g.get('parent_group_id')]
+        single_league_children = [g for g in single_league_groups if g.get('parent_group_id')]
 
-        if multi_sport_parents:
-            app.logger.debug(f"Processing order: {len(single_league_parents)} single-league, {len(multi_sport_parents)} multi-sport, {len(child_groups)} child groups")
+        if multi_sport_groups or single_league_children:
+            app.logger.debug(f"Processing order: {len(single_league_parents)} single-league parents, {len(single_league_children)} single-league children, {len(multi_sport_groups)} multi-sport groups")
 
         if event_groups_with_templates:
             # Get M3U manager
@@ -1268,101 +1316,112 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                             if not result.get('success') and not result.get('skipped'):
                                 app.logger.warning(f"  Account {account_id}: {result.get('message')}")
 
-                # Step 2b: Process groups (parents first, then children)
-                # Parent groups process in parallel, then child groups process in parallel
-                # This ensures parent channels exist before children try to add streams
+                # Step 2b: Process groups sequentially (parents first, then children)
+                # Sequential processing allows stream-level progress reporting during large groups
+                # Streams within each group are still processed in parallel for speed
                 report_progress('progress', f'Processing {total_groups} event group(s)...', 55)
 
-                def process_single_group(group):
-                    """Process a single event group - called in parallel. Exact same logic."""
+                group_results = []
+                completed_count = 0
+                all_groups = single_league_parents + single_league_children + multi_sport_groups
+
+                def make_stream_progress_callback(group_idx, total_groups):
+                    """Create a callback for stream-level progress within a group."""
+                    def callback(processed_streams, total_streams, group_name, **kwargs):
+                        # Calculate overall progress: 55-85% range divided among groups
+                        # Each group gets a slice of the progress bar proportional to its position
+                        group_base_percent = 55 + int(30 * group_idx / total_groups)
+                        group_end_percent = 55 + int(30 * (group_idx + 1) / total_groups)
+                        group_range = group_end_percent - group_base_percent
+
+                        # Within this group's slice, show stream progress
+                        stream_progress = processed_streams / total_streams if total_streams > 0 else 1
+                        progress_percent = group_base_percent + int(group_range * stream_progress)
+
+                        # Build message with stream name and status if available
+                        stream_name = kwargs.get('stream_name', '')
+                        stream_status = kwargs.get('stream_status', '')
+                        if stream_name:
+                            message = f"{group_name}: {stream_name} {stream_status} ({processed_streams}/{total_streams})"
+                        else:
+                            message = f"Processing {group_name}: {processed_streams}/{total_streams} streams"
+
+                        report_progress(
+                            'progress',
+                            message,
+                            progress_percent,
+                            group_name=group_name,
+                            streams_processed=processed_streams,
+                            streams_total=total_streams,
+                            stream_name=stream_name,
+                            stream_matched=kwargs.get('stream_matched'),
+                            stream_status=stream_status
+                        )
+                    return callback
+
+                for group_idx, group in enumerate(all_groups):
                     try:
-                        # Skip M3U refresh since we did batch refresh above
-                        # Pass epg_start_datetime for multi-day filler support
+                        # Create stream progress callback for this group
+                        stream_callback = make_stream_progress_callback(group_idx, total_groups)
+
+                        # Initial progress message for this group
+                        group_base_percent = 55 + int(30 * group_idx / total_groups)
+                        report_progress(
+                            'progress',
+                            f"Starting group: {group['group_name']}",
+                            group_base_percent,
+                            group_name=group['group_name']
+                        )
+
+                        # Process the group with stream-level progress callback
                         refresh_result = refresh_event_group_core(
                             group, m3u_manager,
                             skip_m3u_refresh=True,
-                            epg_start_datetime=epg_start_datetime
+                            epg_start_datetime=epg_start_datetime,
+                            progress_callback=stream_callback,
+                            generation=current_generation
                         )
-                        return (group, refresh_result, None)
+                        error = None
                     except Exception as e:
                         app.logger.warning(f"Error refreshing event group '{group['group_name']}': {e}")
-                        return (group, None, str(e))
+                        refresh_result = None
+                        error = str(e)
 
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-                group_results = []
-                completed_count = 0
+                    group_results.append((group, refresh_result, error))
+                    completed_count += 1
 
-                # Process parent groups first (can run in parallel)
-                if parent_groups:
-                    with ThreadPoolExecutor(max_workers=min(len(parent_groups), 50)) as executor:
-                        futures = {executor.submit(process_single_group, g): g for g in parent_groups}
-                        for future in as_completed(futures):
-                            group, refresh_result, error = future.result()
-                            group_results.append((group, refresh_result, error))
-                            completed_count += 1
+                    # Aggregate stats
+                    if refresh_result and refresh_result.get('success'):
+                        event_stats['groups_refreshed'] += 1
+                        event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
+                        event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
+                        event_stats['events'] += refresh_result.get('events_count', 0)
+                        event_stats['pregame'] += refresh_result.get('pregame_count', 0)
+                        event_stats['postgame'] += refresh_result.get('postgame_count', 0)
+                        event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
+                        event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
+                        event_stats['filtered_include_regex'] += refresh_result.get('filtered_include_regex', 0)
+                        event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
+                        event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
+                        event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
+                        event_stats['filtered_league_not_enabled'] += refresh_result.get('filtered_league_not_enabled', 0)
+                        event_stats['filtered_unsupported_sport'] += refresh_result.get('filtered_unsupported_sport', 0)
+                        event_stats['eligible_streams'] += refresh_result.get('stream_count', 0)
 
-                            # Aggregate stats immediately
-                            if refresh_result and refresh_result.get('success'):
-                                event_stats['groups_refreshed'] += 1
-                                event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
-                                event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
-                                event_stats['events'] += refresh_result.get('events_count', 0)
-                                event_stats['pregame'] += refresh_result.get('pregame_count', 0)
-                                event_stats['postgame'] += refresh_result.get('postgame_count', 0)
-                                event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
-                                event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
-                                event_stats['filtered_include_regex'] += refresh_result.get('filtered_include_regex', 0)
-                                event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
-                                event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
-                                event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
+                        # Child groups update their own last_refresh
+                        if group.get('parent_group_id'):
+                            update_event_epg_group_last_refresh(group['id'])
 
-                            progress_percent = 55 + int(30 * completed_count / total_groups)
-                            report_progress(
-                                'progress',
-                                f"Processed {completed_count}/{total_groups} groups ({group['group_name']})",
-                                progress_percent,
-                                group_name=group['group_name'],
-                                current=completed_count,
-                                total=total_groups
-                            )
-
-                # Process child groups after parents (can run in parallel)
-                if child_groups:
-                    app.logger.debug(f"Processing {len(child_groups)} child group(s)...")
-                    with ThreadPoolExecutor(max_workers=min(len(child_groups), 50)) as executor:
-                        futures = {executor.submit(process_single_group, g): g for g in child_groups}
-                        for future in as_completed(futures):
-                            group, refresh_result, error = future.result()
-                            group_results.append((group, refresh_result, error))
-                            completed_count += 1
-
-                            # Aggregate stats immediately
-                            if refresh_result and refresh_result.get('success'):
-                                event_stats['groups_refreshed'] += 1
-                                event_stats['streams_matched'] += refresh_result.get('matched_count', 0)
-                                event_stats['programmes'] += refresh_result.get('programmes_generated', 0)
-                                event_stats['events'] += refresh_result.get('events_count', 0)
-                                event_stats['pregame'] += refresh_result.get('pregame_count', 0)
-                                event_stats['postgame'] += refresh_result.get('postgame_count', 0)
-                                event_stats['total_streams'] += refresh_result.get('total_stream_count', 0)
-                                event_stats['filtered_no_indicator'] += refresh_result.get('filtered_no_indicator', 0)
-                                event_stats['filtered_include_regex'] += refresh_result.get('filtered_include_regex', 0)
-                                event_stats['filtered_exclude_regex'] += refresh_result.get('filtered_exclude_regex', 0)
-                                event_stats['filtered_outside_lookahead'] += refresh_result.get('filtered_outside_lookahead', 0)
-                                event_stats['filtered_final'] += refresh_result.get('filtered_final', 0)
-                                event_stats['eligible_streams'] += refresh_result.get('stream_count', 0)
-                                update_event_epg_group_last_refresh(group['id'])
-
-                            # Progress: 55% to 85% range
-                            progress_percent = 55 + int(30 * completed_count / total_groups)
-                            report_progress(
-                                'progress',
-                                f"Processed {completed_count}/{total_groups} groups ({group['group_name']})",
-                                progress_percent,
-                                group_name=group['group_name'],
-                                current=completed_count,
-                                total=total_groups
-                            )
+                    # Report group completion
+                    progress_percent = 55 + int(30 * completed_count / total_groups)
+                    report_progress(
+                        'progress',
+                        f"Completed {completed_count}/{total_groups} groups ({group['group_name']})",
+                        progress_percent,
+                        group_name=group['group_name'],
+                        current=completed_count,
+                        total=total_groups
+                    )
             else:
                 report_progress('progress', 'M3U manager not available, skipping event groups...', 85)
                 app.logger.warning("M3U manager not available - skipping event groups")
@@ -1499,12 +1558,16 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                 'event_filtered_exclude_regex': event_stats['filtered_exclude_regex'],
                 'event_filtered_outside_lookahead': event_stats['filtered_outside_lookahead'],
                 'event_filtered_final': event_stats['filtered_final'],
+                'event_filtered_league_not_enabled': event_stats['filtered_league_not_enabled'],
+                'event_filtered_unsupported_sport': event_stats['filtered_unsupported_sport'],
                 'event_eligible_streams': event_stats['eligible_streams'],
                 'event_matched_streams': event_stats['streams_matched'],
                 # Quality stats (not tracked here, defaults to 0)
                 'unresolved_vars_count': 0,
                 'coverage_gaps_count': 0,
-                'warnings_json': '[]'
+                'warnings_json': '[]',
+                # Trigger source
+                'triggered_by': triggered_by
             })
             app.logger.info(f"📊 EPG history saved: {total_programmes} programmes, {total_channels} channels in {generation_time:.2f}s")
 
@@ -1588,6 +1651,15 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
         # Finalize: archive intermediate files (runs once at end of full cycle)
         finalize_epg_generation(output_path)
 
+        # Purge stale fingerprint cache entries
+        try:
+            stream_cache = StreamMatchCache(get_connection)
+            purged = stream_cache.purge_stale(current_generation)
+            if purged > 0:
+                app.logger.info(f"🗑️ Purged {purged} stale fingerprint cache entries")
+        except Exception as e:
+            app.logger.warning(f"Fingerprint cache purge error: {e}")
+
         return {
             'success': True,
             'team_stats': team_stats,
@@ -1619,7 +1691,8 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                     'num_channels': 0,
                     'num_events': 0,
                     'num_programmes': 0,
-                    'warnings_json': f'["{str(e)}"]'
+                    'warnings_json': f'["{str(e)}"]',
+                    'triggered_by': triggered_by
                 })
             except Exception as hist_err:
                 app.logger.warning(f"Failed to save error to history: {hist_err}")
@@ -1639,7 +1712,7 @@ def run_scheduled_generation():
         app.logger.info(f"🕐 Scheduled EPG generation started at {datetime.now()}")
 
         with app.app_context():
-            result = generate_all_epg()
+            result = generate_all_epg(triggered_by='scheduler')
 
             if result.get('success'):
                 team_stats = result.get('team_stats', {})
@@ -1963,9 +2036,13 @@ def index():
     settings_row = cursor.execute("SELECT default_timezone FROM settings WHERE id = 1").fetchone()
     user_timezone = settings_row[0] if settings_row else 'America/Detroit'
 
-    # Get latest EPG generation stats (legacy query for backwards compatibility)
+    # Get latest EPG generation stats (includes all fields needed by template)
     latest_epg = cursor.execute("""
-        SELECT generated_at, num_programmes, num_events, num_channels
+        SELECT generated_at, num_programmes, num_events, num_channels,
+               generation_time_seconds, triggered_by,
+               team_based_channels, event_based_channels,
+               num_pregame, num_postgame, num_idle,
+               event_eligible_streams, event_matched_streams
         FROM epg_history
         ORDER BY generated_at DESC
         LIMIT 1
@@ -3008,7 +3085,7 @@ def generate_epg():
 
     # For JSON API clients, run synchronously and return result
     if request.accept_mimetypes.accept_json and not request.accept_mimetypes.accept_html:
-        result = generate_all_epg()
+        result = generate_all_epg(triggered_by='api')
 
         if result.get('success'):
             return jsonify({
@@ -3444,6 +3521,159 @@ def api_epg_stats_history():
         })
     except Exception as e:
         app.logger.error(f"Error getting EPG history: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/epg/failed-matches', methods=['GET'])
+def api_epg_failed_matches():
+    """
+    Get failed matches from last EPG generation.
+
+    Returns JSON with failures grouped by group_name, includes generation
+    timestamp and total count for the Failed Matches modal.
+    """
+    from database import get_failed_matches, get_failed_matches_summary
+    try:
+        # Get summary for header info
+        summary = get_failed_matches_summary()
+
+        if summary['generation_id'] is None:
+            return jsonify({
+                'success': True,
+                'has_failures': False,
+                'generation_id': None,
+                'total_count': 0,
+                'groups': [],
+                'by_reason': {},
+                'timestamp': None
+            })
+
+        # Get all failures
+        failures = get_failed_matches(summary['generation_id'])
+
+        # Group failures by group_name
+        groups = {}
+        for failure in failures:
+            group_name = failure['group_name']
+            if group_name not in groups:
+                groups[group_name] = {
+                    'group_name': group_name,
+                    'group_id': failure['group_id'],
+                    'failures': []
+                }
+            groups[group_name]['failures'].append({
+                'stream_id': failure['stream_id'],
+                'stream_name': failure['stream_name'],
+                'reason': failure['reason'],
+                'parsed_team1': failure['parsed_team1'],
+                'parsed_team2': failure['parsed_team2'],
+                'detection_tier': failure['detection_tier'],
+                'leagues_checked': failure['leagues_checked'],
+                'detail': failure['detail']
+            })
+
+        # Convert to sorted list (by failure count desc)
+        groups_list = sorted(
+            groups.values(),
+            key=lambda g: len(g['failures']),
+            reverse=True
+        )
+
+        return jsonify({
+            'success': True,
+            'has_failures': summary['total_count'] > 0,
+            'generation_id': summary['generation_id'],
+            'total_count': summary['total_count'],
+            'group_count': len(groups_list),
+            'groups': groups_list,
+            'by_reason': summary['by_reason'],
+            'timestamp': summary.get('timestamp')
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting failed matches: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/epg/matched-streams', methods=['GET'])
+def api_epg_matched_streams():
+    """
+    Get matched streams from last EPG generation.
+
+    Returns JSON with matches grouped by group_name, includes detection tiers
+    and league info for the Matched Streams modal.
+    """
+    from database import get_matched_streams, get_matched_streams_summary
+    try:
+        # Get summary for header info
+        summary = get_matched_streams_summary()
+
+        if summary['generation_id'] is None:
+            return jsonify({
+                'success': True,
+                'has_matches': False,
+                'generation_id': None,
+                'total_count': 0,
+                'groups': [],
+                'by_tier': {},
+                'by_league': {},
+                'timestamp': None
+            })
+
+        # Get all matches
+        matches = get_matched_streams(summary['generation_id'])
+
+        # Group matches by group_name
+        groups = {}
+        for match in matches:
+            group_name = match['group_name']
+            if group_name not in groups:
+                groups[group_name] = {
+                    'group_name': group_name,
+                    'group_id': match['group_id'],
+                    'matches': []
+                }
+            groups[group_name]['matches'].append({
+                'stream_id': match['stream_id'],
+                'stream_name': match['stream_name'],
+                'event_id': match['event_id'],
+                'event_name': match['event_name'],
+                'detected_league': match['detected_league'],
+                'detection_tier': match['detection_tier'],
+                'parsed_team1': match['parsed_team1'],
+                'parsed_team2': match['parsed_team2'],
+                'home_team': match['home_team'],
+                'away_team': match['away_team'],
+                'event_date': match['event_date']
+            })
+
+        # Convert to sorted list (by match count desc)
+        groups_list = sorted(
+            groups.values(),
+            key=lambda g: len(g['matches']),
+            reverse=True
+        )
+
+        return jsonify({
+            'success': True,
+            'has_matches': summary['total_count'] > 0,
+            'generation_id': summary['generation_id'],
+            'total_count': summary['total_count'],
+            'group_count': len(groups_list),
+            'groups': groups_list,
+            'by_tier': summary['by_tier'],
+            'by_league': summary['by_league'],
+            'timestamp': summary.get('timestamp')
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error getting matched streams: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -4315,20 +4545,20 @@ def api_event_epg_dispatcharr_streams(group_id):
                             # Add reason for not found, with better messages
                             if not event_result['found']:
                                 reason = event_result.get('reason', 'No event found')
-                                # Normalize internal reason to constant
-                                normalized = INTERNAL_REASONS.get(reason, reason)
+                                # Use normalize_reason() to handle both enum and string values
+                                reason_str = normalize_reason(reason)
 
                                 # Set flags and display text based on reason
-                                if normalized == FilterReason.GAME_FINAL_EXCLUDED:
+                                if reason_str == 'event_final':
                                     event_match_data['is_final'] = True
-                                    event_match_data['reason'] = get_display_text(FilterReason.GAME_FINAL_EXCLUDED)
-                                elif normalized == FilterReason.GAME_PAST:
+                                    event_match_data['reason'] = get_display_text(FilteredReason.EVENT_FINAL)
+                                elif reason_str == 'event_past':
                                     event_match_data['is_past'] = True
-                                    event_match_data['reason'] = get_display_text(FilterReason.GAME_PAST)
-                                elif normalized == FilterReason.NO_GAME_FOUND:
-                                    event_match_data['reason'] = get_display_text(FilterReason.NO_GAME_FOUND, lookahead_days)
+                                    event_match_data['reason'] = get_display_text(FilteredReason.EVENT_PAST)
+                                elif reason_str == 'no_event_found':
+                                    event_match_data['reason'] = get_display_text(FailedReason.NO_EVENT_FOUND, lookahead_days)
                                 else:
-                                    event_match_data['reason'] = reason
+                                    event_match_data['reason'] = get_display_text(reason)
 
                             stream['event_match'] = event_match_data
                         else:
@@ -4424,6 +4654,13 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                     from epg.team_matcher import create_matcher
                     from epg.event_matcher import create_event_matcher
                     from utils.stream_filter import has_game_indicator
+                    from epg.stream_match_cache import StreamMatchCache, refresh_cached_event, get_generation_counter
+
+                    # Initialize fingerprint cache for test modal
+                    # Test modal reads from cache (benefits from EPG runs) and writes with current generation
+                    stream_cache = StreamMatchCache(get_connection)
+                    current_generation = get_generation_counter(get_connection)
+                    internal_group_id = db_group.get('id') if db_group else 0
 
                     # Fetch settings
                     conn = get_connection()
@@ -4456,6 +4693,10 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                         else:
                             enabled_leagues = raw_leagues
 
+                        # Normalize aliases to ESPN slugs (e.g., 'ncaawh' -> 'womens-college-hockey')
+                        from database import normalize_league_codes
+                        enabled_leagues = normalize_league_codes(enabled_leagues)
+
                     send_progress('progress', f'Matching {len(streams)} streams...', percent=50)
 
                     def match_single_stream_single(stream):
@@ -4466,6 +4707,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
 
                         try:
                             stream_name = stream['name']
+                            stream_id = stream.get('id', 0)
 
                             # Check if stream is filtered/excluded
                             if not skip_builtin_filter and not has_game_indicator(stream_name):
@@ -4486,6 +4728,33 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                     'filtered': True,
                                     'filter_reason': get_display_text(FilterReason.EXCLUDE_REGEX_MATCHED)
                                 }
+
+                            # Check fingerprint cache first
+                            cached = stream_cache.get(internal_group_id, stream_id, stream_name)
+                            if cached:
+                                event_id, cached_league, cached_data = cached
+                                # Refresh dynamic fields from ESPN
+                                refreshed = refresh_cached_event(
+                                    thread_event_matcher.espn,
+                                    cached_data,
+                                    cached_league,
+                                    get_connection
+                                )
+                                if refreshed:
+                                    # Touch cache to update last_seen_generation
+                                    stream_cache.touch(internal_group_id, stream_id, stream_name, current_generation)
+                                    return {
+                                        'stream': stream,
+                                        'team_result': refreshed.get('team_result', {}),
+                                        'event_result': {
+                                            'found': True,
+                                            'event': refreshed.get('event'),
+                                            'event_id': event_id
+                                        },
+                                        'detected_league': cached_league,
+                                        'detection_tier': 'cache',
+                                        'from_cache': True
+                                    }
 
                             # Extract teams - use custom regex if configured (same logic as refresh_event_group_core)
                             if any_custom_enabled:
@@ -4554,16 +4823,34 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                                             if event_result.get('found'):
                                                 break
 
+                                # Cache successful match for future EPG runs
+                                if event_result.get('found') and event_result.get('event'):
+                                    event = event_result['event']
+                                    event_id = event.get('id')
+                                    if event_id:
+                                        cached_data = {
+                                            'event': event,
+                                            'team_result': team_result
+                                        }
+                                        stream_cache.set(
+                                            internal_group_id, stream_id, stream_name,
+                                            event_id, league, cached_data, current_generation
+                                        )
+
                                 return {
                                     'stream': stream,
                                     'team_result': team_result,
-                                    'event_result': event_result
+                                    'event_result': event_result,
+                                    'detected_league': league,
+                                    'detection_tier': 'direct'
                                 }
                             else:
                                 return {
                                     'stream': stream,
                                     'team_result': team_result,
-                                    'event_result': None
+                                    'event_result': None,
+                                    'detected_league': league,
+                                    'detection_tier': 'direct'
                                 }
 
                         except Exception as e:
@@ -4575,13 +4862,67 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                     def match_single_stream_multi(stream):
                         """Match a single stream using multi-sport league detection - called in parallel.
 
-                        Uses tiered detection flow:
+                        Uses consolidated MultiSportMatcher with tiered detection:
                           Tier 1: League indicator + Teams → Direct match
                           Tier 2: Sport indicator + Teams → Match within sport's leagues
-                          Tier 3: Cache lookup + schedule disambiguation
+                          Tier 3a-c: Cache lookup + schedule disambiguation
+                          Tier 4a-b: Single-team schedule fallback (NAIA vs NCAA)
                         """
-                        from epg.league_detector import LeagueDetector, LEAGUE_TO_SPORT
-                        from database import get_soccer_slug_mapping
+                        from epg.league_detector import LeagueDetector
+                        from epg.multi_sport_matcher import MultiSportMatcher, MatcherConfig
+
+                        stream_name = stream['name']
+
+                        # Pre-filter streams (test modal does this inline)
+                        if not skip_builtin_filter and not has_game_indicator(stream_name):
+                            return {
+                                'stream': stream,
+                                'filtered': True,
+                                'filter_reason': get_display_text(FilterReason.NO_GAME_INDICATOR)
+                            }
+                        if include_regex and not include_regex.search(stream_name):
+                            return {
+                                'stream': stream,
+                                'filtered': True,
+                                'filter_reason': get_display_text(FilterReason.INCLUDE_REGEX_NOT_MATCHED)
+                            }
+                        if exclude_regex and exclude_regex.search(stream_name):
+                            return {
+                                'stream': stream,
+                                'filtered': True,
+                                'filter_reason': get_display_text(FilterReason.EXCLUDE_REGEX_MATCHED)
+                            }
+
+                        stream_id = stream.get('id', 0)
+
+                        # Check fingerprint cache first
+                        cached = stream_cache.get(internal_group_id, stream_id, stream_name)
+                        if cached:
+                            # Create minimal matcher just for ESPN client access
+                            thread_event_matcher = create_event_matcher(lookahead_days=lookahead_days)
+                            event_id, cached_league, cached_data = cached
+                            # Refresh dynamic fields from ESPN
+                            refreshed = refresh_cached_event(
+                                thread_event_matcher.espn,
+                                cached_data,
+                                cached_league,
+                                get_connection
+                            )
+                            if refreshed:
+                                # Touch cache to update last_seen_generation
+                                stream_cache.touch(internal_group_id, stream_id, stream_name, current_generation)
+                                return {
+                                    'stream': stream,
+                                    'team_result': refreshed.get('team_result', {}),
+                                    'event_result': {
+                                        'found': True,
+                                        'event': refreshed.get('event'),
+                                        'event_id': event_id
+                                    },
+                                    'detected_league': cached_league,
+                                    'detection_tier': 'cache',
+                                    'from_cache': True
+                                }
 
                         # Create per-thread instances
                         thread_team_matcher = create_matcher()
@@ -4592,278 +4933,108 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                             lookahead_days=lookahead_days
                         )
 
-                        try:
-                            stream_name = stream['name']
+                        # Configure the matcher
+                        config = MatcherConfig(
+                            enabled_leagues=enabled_leagues,
+                            soccer_enabled=soccer_enabled,
+                            custom_regex_teams=db_group.get('custom_regex_teams'),
+                            custom_regex_teams_enabled=teams_enabled,
+                            custom_regex_date=db_group.get('custom_regex_date'),
+                            custom_regex_date_enabled=date_enabled,
+                            custom_regex_time=db_group.get('custom_regex_time'),
+                            custom_regex_time_enabled=time_enabled,
+                            include_final_events=include_final_events
+                        )
 
-                            # Check if stream is filtered/excluded
-                            if not skip_builtin_filter and not has_game_indicator(stream_name):
-                                return {
-                                    'stream': stream,
-                                    'filtered': True,
-                                    'filter_reason': get_display_text(FilterReason.NO_GAME_INDICATOR)
+                        matcher = MultiSportMatcher(
+                            team_matcher=thread_team_matcher,
+                            event_matcher=thread_event_matcher,
+                            league_detector=thread_league_detector,
+                            config=config
+                        )
+
+                        # Run the consolidated matching logic
+                        result = matcher.match_stream(stream)
+
+                        # Convert to test modal return format
+                        if result.error:
+                            return {'stream': stream, 'error': result.error_message}
+
+                        if result.matched:
+                            # Build event_result dict from the enriched event
+                            event_result = {
+                                'found': True,
+                                'event': result.event,
+                                'event_id': result.event.get('id') if result.event else None
+                            }
+
+                            # Cache successful match for future EPG runs
+                            if result.event and result.event.get('id'):
+                                event_id = result.event.get('id')
+                                detected_league = result.league or ''
+                                cached_data = {
+                                    'event': result.event,
+                                    'team_result': result.team_result
                                 }
-                            if include_regex and not include_regex.search(stream_name):
-                                return {
-                                    'stream': stream,
-                                    'filtered': True,
-                                    'filter_reason': get_display_text(FilterReason.INCLUDE_REGEX_NOT_MATCHED)
-                                }
-                            if exclude_regex and exclude_regex.search(stream_name):
-                                return {
-                                    'stream': stream,
-                                    'filtered': True,
-                                    'filter_reason': get_display_text(FilterReason.EXCLUDE_REGEX_MATCHED)
-                                }
-
-                            # Step 1: Extract raw matchup data (teams, date, time, league indicator)
-                            raw_matchup = thread_team_matcher.extract_raw_matchup(
-                                stream_name,
-                                custom_regex_teams=db_group.get('custom_regex_teams'),
-                                custom_regex_teams_enabled=teams_enabled,
-                                custom_regex_date=db_group.get('custom_regex_date'),
-                                custom_regex_date_enabled=date_enabled,
-                                custom_regex_time=db_group.get('custom_regex_time'),
-                                custom_regex_time_enabled=time_enabled
-                            )
-
-                            if not raw_matchup.get('success'):
-                                return {
-                                    'stream': stream,
-                                    'team_result': {'matched': False, 'reason': raw_matchup.get('reason', 'NO_TEAMS')},
-                                    'event_result': None
-                                }
-
-                            raw_team1 = raw_matchup['team1']
-                            raw_team2 = raw_matchup['team2']
-                            game_date = raw_matchup['game_date']
-                            game_time = raw_matchup['game_time']
-                            indicator_league = raw_matchup['detected_league']
-                            indicator_sport = raw_matchup['detected_sport']
-
-                            team_result = None
-                            detected_league = None
-
-                            # Step 2: Tier 1 - If league indicator found, try that league directly
-                            if indicator_league and indicator_league in (enabled_leagues + (['soccer'] if soccer_enabled else [])):
-                                if any_custom_enabled:
-                                    team_result = thread_team_matcher.extract_teams_with_selective_regex(
-                                        stream_name, indicator_league,
-                                        teams_pattern=db_group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                                        date_pattern=db_group.get('custom_regex_date'), date_enabled=date_enabled,
-                                        time_pattern=db_group.get('custom_regex_time'), time_enabled=time_enabled
-                                    )
-                                else:
-                                    team_result = thread_team_matcher.extract_teams(stream_name, indicator_league)
-
-                                if team_result.get('matched'):
-                                    detected_league = indicator_league
-
-                            # Step 3: Tier 2 - If sport indicator found, try leagues within that sport
-                            if (not team_result or not team_result.get('matched')) and indicator_sport:
-                                if indicator_sport == 'soccer' and soccer_enabled:
-                                    # Soccer uses dedicated SoccerMultiLeague cache (240+ leagues)
-                                    soccer_slugs = thread_league_detector._find_soccer_leagues_for_teams(raw_team1, raw_team2)
-                                    slug_to_code = get_soccer_slug_mapping()
-                                    sport_leagues = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
-                                else:
-                                    sport_leagues = [l for l in enabled_leagues if LEAGUE_TO_SPORT.get(l) == indicator_sport]
-
-                                for try_league in sport_leagues:
-                                    if any_custom_enabled:
-                                        candidate = thread_team_matcher.extract_teams_with_selective_regex(
-                                            stream_name, try_league,
-                                            teams_pattern=db_group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                                            date_pattern=db_group.get('custom_regex_date'), date_enabled=date_enabled,
-                                            time_pattern=db_group.get('custom_regex_time'), time_enabled=time_enabled
-                                        )
-                                    else:
-                                        candidate = thread_team_matcher.extract_teams(stream_name, try_league)
-
-                                    if candidate.get('matched'):
-                                        team_result = candidate
-                                        detected_league = try_league
-                                        break
-
-                            # Step 4: Tier 3 - Use caches to find candidate leagues from team names
-                            if not team_result or not team_result.get('matched'):
-                                # Find candidate leagues from TeamLeagueCache (non-soccer)
-                                candidate_leagues = thread_league_detector.find_candidate_leagues(
-                                    raw_team1, raw_team2, include_soccer=False
+                                stream_cache.set(
+                                    internal_group_id, stream_id, stream_name,
+                                    event_id, detected_league, cached_data, current_generation
                                 )
-                                # Filter to enabled leagues
-                                candidate_leagues = [l for l in candidate_leagues if l in enabled_leagues]
-
-                                # Also check soccer cache if enabled
-                                if soccer_enabled:
-                                    soccer_slugs = thread_league_detector._find_soccer_leagues_for_teams(raw_team1, raw_team2)
-                                    # Map ESPN slugs (esp.1) to league_config codes (laliga)
-                                    slug_to_code = get_soccer_slug_mapping()
-                                    soccer_codes = [slug_to_code.get(slug) for slug in soccer_slugs[:10] if slug in slug_to_code]
-                                    candidate_leagues.extend(soccer_codes)
-
-                                # Try each candidate league - collect all matches first
-                                # Then disambiguate by checking which has an actual game in the window
-                                matched_candidates = []
-                                for try_league in candidate_leagues:
-                                    if any_custom_enabled:
-                                        candidate = thread_team_matcher.extract_teams_with_selective_regex(
-                                            stream_name, try_league,
-                                            teams_pattern=db_group.get('custom_regex_teams'), teams_enabled=teams_enabled,
-                                            date_pattern=db_group.get('custom_regex_date'), date_enabled=date_enabled,
-                                            time_pattern=db_group.get('custom_regex_time'), time_enabled=time_enabled
-                                        )
-                                    else:
-                                        candidate = thread_team_matcher.extract_teams(stream_name, try_league)
-
-                                    if candidate.get('matched'):
-                                        matched_candidates.append((try_league, candidate))
-
-                                # If only one match, use it directly
-                                if len(matched_candidates) == 1:
-                                    detected_league, team_result = matched_candidates[0]
-                                elif len(matched_candidates) > 1:
-                                    # Multiple leagues have these teams - check ALL for games
-                                    # Then pick the one with the best time match (Tier 3 disambiguation)
-                                    leagues_with_games = []
-                                    leagues_with_final_games = []  # Track leagues that have final/past games
-                                    for try_league, candidate in matched_candidates:
-                                        test_result = thread_event_matcher.find_event(
-                                            candidate['away_team_id'],
-                                            candidate['home_team_id'],
-                                            try_league,
-                                            game_date=candidate.get('game_date'),
-                                            game_time=candidate.get('game_time'),
-                                            include_final_events=include_final_events
-                                        )
-                                        if test_result.get('found'):
-                                            # Calculate time difference if we have target time
-                                            time_diff = float('inf')
-                                            if candidate.get('game_time') and test_result.get('event_date'):
-                                                from datetime import datetime
-                                                from zoneinfo import ZoneInfo
-                                                try:
-                                                    event_dt = datetime.fromisoformat(test_result['event_date'].replace('Z', '+00:00'))
-                                                    target_time = candidate['game_time']
-                                                    # Convert both to minutes from midnight for comparison
-                                                    event_mins = event_dt.hour * 60 + event_dt.minute
-                                                    target_mins = target_time.hour * 60 + target_time.minute
-                                                    time_diff = abs(event_mins - target_mins)
-                                                except Exception:
-                                                    pass
-                                            leagues_with_games.append((try_league, candidate, test_result, time_diff))
-                                        else:
-                                            # Track if the game was found but is final/past
-                                            reason = test_result.get('reason', '')
-                                            if 'completed' in reason.lower() or 'past' in reason.lower() or 'final' in reason.lower():
-                                                leagues_with_final_games.append((try_league, candidate, test_result))
-
-                                    if len(leagues_with_games) == 1:
-                                        # Only one league has a game - use it
-                                        detected_league, team_result, _, _ = leagues_with_games[0]
-                                    elif len(leagues_with_games) > 1:
-                                        # Multiple leagues have games - pick best time match
-                                        leagues_with_games.sort(key=lambda x: x[3])  # Sort by time_diff
-                                        detected_league, team_result, _, _ = leagues_with_games[0]
-                                        logger.debug(f"Multi-league disambiguation: {len(leagues_with_games)} leagues have games, "
-                                                   f"selected {detected_league} (time_diff={leagues_with_games[0][3]} mins)")
-
-                                    # If no active game found but we found final games, use that league
-                                    # This ensures we return "game final" instead of "no game in lookahead"
-                                    if not detected_league and leagues_with_final_games:
-                                        detected_league, team_result, _ = leagues_with_final_games[0]
-                                    # If no game found in any league, fall back to first match
-                                    elif not detected_league and matched_candidates:
-                                        detected_league, team_result = matched_candidates[0]
-
-                            if not team_result or not team_result.get('matched'):
-                                return {
-                                    'stream': stream,
-                                    'team_result': {'matched': False, 'reason': 'NO_TEAMS'},
-                                    'event_result': None
-                                }
-
-                            if not detected_league:
-                                return {
-                                    'stream': stream,
-                                    'team_result': {'matched': False, 'reason': 'NO_LEAGUE_DETECTED'},
-                                    'event_result': None
-                                }
-
-                            # Add detected league to team_result
-                            team_result['detected_league'] = detected_league
-
-                            # Find event in the detected league
-                            event_result = thread_event_matcher.find_event(
-                                team_result['away_team_id'],
-                                team_result['home_team_id'],
-                                detected_league,
-                                game_date=team_result.get('game_date'),
-                                game_time=team_result.get('game_time'),
-                                include_final_events=include_final_events
-                            )
-
-                            # If no game found, try alternate team combinations (disambiguation)
-                            if not event_result.get('found'):
-                                raw_away = team_result.get('raw_away', '') or raw_team1
-                                raw_home = team_result.get('raw_home', '') or raw_team2
-
-                                if raw_away and raw_home:
-                                    all_away_teams = thread_team_matcher.get_all_matching_teams(raw_away, detected_league, max_results=5)
-                                    all_home_teams = thread_team_matcher.get_all_matching_teams(raw_home, detected_league, max_results=5)
-
-                                    tried_pairs = {(team_result['away_team_id'], team_result['home_team_id'])}
-
-                                    for away_candidate in all_away_teams:
-                                        for home_candidate in all_home_teams:
-                                            pair = (away_candidate['id'], home_candidate['id'])
-                                            if pair in tried_pairs:
-                                                continue
-                                            tried_pairs.add(pair)
-
-                                            alt_result = thread_event_matcher.find_event(
-                                                away_candidate['id'],
-                                                home_candidate['id'],
-                                                detected_league,
-                                                game_date=team_result.get('game_date'),
-                                                game_time=team_result.get('game_time'),
-                                                include_final_events=include_final_events
-                                            )
-
-                                            if alt_result.get('found'):
-                                                # Update team_result with alternate teams
-                                                team_result['away_team_id'] = away_candidate['id']
-                                                team_result['away_team_name'] = away_candidate['name']
-                                                team_result['away_team_abbrev'] = away_candidate.get('abbrev', '')
-                                                team_result['home_team_id'] = home_candidate['id']
-                                                team_result['home_team_name'] = home_candidate['name']
-                                                team_result['home_team_abbrev'] = home_candidate.get('abbrev', '')
-                                                team_result['disambiguated'] = True
-                                                event_result = alt_result
-                                                break
-                                        if event_result.get('found'):
-                                            break
 
                             return {
+                                'stream': stream,
+                                'team_result': result.team_result,
+                                'event_result': event_result,
+                                'detected_league': result.detected_league,
+                                'detection_tier': result.detection_tier
+                            }
+                        else:
+                            # Not matched - build team_result with failure info
+                            if result.parsed_teams:
+                                team_result = {
+                                    'matched': False,
+                                    'reason': result.reason,
+                                    'detail': result.detail,
+                                    'parsed_teams': result.parsed_teams
+                                }
+                            elif result.reason == 'NO_LEAGUE_DETECTED':
+                                team_result = {'matched': False, 'reason': 'NO_LEAGUE_DETECTED'}
+                            else:
+                                team_result = {'matched': False, 'reason': result.reason or 'NO_TEAMS'}
+
+                            # If we have team_result from matcher but event wasn't found
+                            if result.team_result:
+                                team_result = result.team_result
+                                team_result['matched'] = True  # Teams matched, just no event
+                                event_result = {'found': False, 'reason': result.reason}
+                                return {
+                                    'stream': stream,
+                                    'team_result': team_result,
+                                    'event_result': event_result,
+                                    'detected_league': result.detected_league,
+                                    'detection_tier': result.detection_tier
+                                }
+
+                            # Include league_not_enabled info if present
+                            return_dict = {
                                 'stream': stream,
                                 'team_result': team_result,
-                                'event_result': event_result
+                                'event_result': None,
+                                'detected_league': result.detected_league,
+                                'detection_tier': result.detection_tier
                             }
-
-                        except Exception as e:
-                            import traceback
-                            app.logger.error(f"Error matching stream {stream.get('name')}: {e}\n{traceback.format_exc()}")
-                            return {
-                                'stream': stream,
-                                'error': str(e)
-                            }
+                            if result.league_not_enabled:
+                                return_dict['league_not_enabled'] = True
+                                return_dict['league_name'] = result.league_name
+                            return return_dict
 
                     # Select the appropriate matcher
                     match_func = match_single_stream_multi if is_multi_sport else match_single_stream_single
 
-                    # Process streams in parallel (max 50 workers)
+                    # Process streams in parallel (max 100 workers)
                     match_results = []
                     if streams:
-                        with ThreadPoolExecutor(max_workers=min(len(streams), 50)) as executor:
+                        with ThreadPoolExecutor(max_workers=min(len(streams), 100)) as executor:
                             match_results = list(executor.map(match_func, streams))
 
                     # Process results
@@ -4886,6 +5057,14 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                         else:
                             team_result = match_data.get('team_result', {})
                             event_result = match_data.get('event_result')
+                            # Convert FilterReason constants to display text for team_match
+                            # Include league_name for LEAGUE_NOT_ENABLED reason
+                            if team_result.get('reason'):
+                                league_name = match_data.get('league_name')
+                                team_result['reason'] = get_display_text(
+                                    team_result['reason'],
+                                    league_name=league_name
+                                )
                             stream['team_match'] = team_result
 
                             if event_result:
@@ -4898,21 +5077,25 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
 
                                 if not event_result['found']:
                                     reason = event_result.get('reason', 'No event found')
-                                    normalized = INTERNAL_REASONS.get(reason, reason)
-                                    if normalized == FilterReason.GAME_FINAL_EXCLUDED:
+                                    # Use normalize_reason() to handle both enum and string values
+                                    reason_str = normalize_reason(reason)
+                                    if reason_str == 'event_final':
                                         event_match_data['is_final'] = True
-                                        event_match_data['reason'] = get_display_text(FilterReason.GAME_FINAL_EXCLUDED)
-                                    elif normalized == FilterReason.GAME_PAST:
+                                        event_match_data['reason'] = get_display_text(FilteredReason.EVENT_FINAL)
+                                    elif reason_str == 'event_past':
                                         event_match_data['is_past'] = True
-                                        event_match_data['reason'] = get_display_text(FilterReason.GAME_PAST)
-                                    elif normalized == FilterReason.NO_GAME_FOUND:
-                                        event_match_data['reason'] = get_display_text(FilterReason.NO_GAME_FOUND, lookahead_days)
+                                        event_match_data['reason'] = get_display_text(FilteredReason.EVENT_PAST)
+                                    elif reason_str == 'no_event_found':
+                                        event_match_data['reason'] = get_display_text(FailedReason.NO_EVENT_FOUND, lookahead_days)
                                     else:
-                                        event_match_data['reason'] = reason
+                                        event_match_data['reason'] = get_display_text(reason)
 
                                 stream['event_match'] = event_match_data
                             else:
-                                stream['event_match'] = {'found': False, 'reason': team_result.get('reason')}
+                                # Convert FilterReason constants to display text
+                                raw_reason = team_result.get('reason')
+                                display_reason = get_display_text(raw_reason) if raw_reason else 'No event found'
+                                stream['event_match'] = {'found': False, 'reason': display_reason}
 
                 # Sort streams alphabetically
                 streams.sort(key=lambda s: s.get('name', '').lower())
@@ -7520,28 +7703,18 @@ def sync_timezone_from_env():
 def initialize_soccer_cache():
     """
     Initialize soccer multi-league cache on startup.
-    Builds cache if empty, logs migration summary for existing teams.
+    Always refreshes to ensure new leagues are included.
     """
     from epg.soccer_multi_league import SoccerMultiLeague
-    from epg.league_config import is_soccer_league
 
     try:
-        # Check if cache is empty
-        if SoccerMultiLeague.is_cache_empty():
-            app.logger.info("⚽ Soccer league cache is empty, building initial cache...")
-            result = SoccerMultiLeague.refresh_cache()
+        app.logger.info("⚽ Refreshing soccer league cache on startup...")
+        result = SoccerMultiLeague.refresh_cache()
 
-            if result['success']:
-                app.logger.info(f"✅ Soccer cache built: {result['teams_indexed']} teams across {result['leagues_processed']} leagues ({result['duration_seconds']:.1f}s)")
-            else:
-                app.logger.warning(f"⚠️ Soccer cache build failed: {result.get('error', 'Unknown error')}")
+        if result['success']:
+            app.logger.info(f"✅ Soccer cache refreshed: {result['teams_indexed']} teams across {result['leagues_processed']} leagues ({result['duration_seconds']:.1f}s)")
         else:
-            # Cache exists - log status
-            stats = SoccerMultiLeague.get_cache_stats()
-            if stats.is_stale:
-                app.logger.info(f"⚽ Soccer cache is {stats.staleness_days} days old (will refresh per schedule)")
-            else:
-                app.logger.info(f"⚽ Soccer cache ready: {stats.teams_indexed} teams, {stats.leagues_processed} leagues")
+            app.logger.warning(f"⚠️ Soccer cache refresh failed: {result.get('error', 'Unknown error')}")
 
     except Exception as e:
         app.logger.warning(f"⚠️ Soccer cache initialization skipped: {e}")
@@ -7550,27 +7723,18 @@ def initialize_soccer_cache():
 def initialize_team_league_cache():
     """
     Initialize team-league cache on startup.
-    Builds cache if empty, logs status for existing cache.
+    Always refreshes to ensure new leagues are included.
     """
     from epg.team_league_cache import TeamLeagueCache
 
     try:
-        # Check if cache is empty
-        if TeamLeagueCache.is_cache_empty():
-            app.logger.info("🏈 Team-league cache is empty, building initial cache...")
-            result = TeamLeagueCache.refresh_cache()
+        app.logger.info("🏈 Refreshing team-league cache on startup...")
+        result = TeamLeagueCache.refresh_cache()
 
-            if result['success']:
-                app.logger.info(f"✅ Team-league cache built: {result['teams_indexed']} teams across {result['leagues_processed']} leagues ({result['duration_seconds']:.1f}s)")
-            else:
-                app.logger.warning(f"⚠️ Team-league cache build failed: {result.get('error', 'Unknown error')}")
+        if result['success']:
+            app.logger.info(f"✅ Team-league cache refreshed: {result['teams_indexed']} teams across {result['leagues_processed']} leagues ({result['duration_seconds']:.1f}s)")
         else:
-            # Cache exists - log status
-            stats = TeamLeagueCache.get_cache_stats()
-            if stats.is_stale:
-                app.logger.info(f"🏈 Team-league cache is {stats.staleness_days} days old (will refresh per schedule)")
-            else:
-                app.logger.info(f"🏈 Team-league cache ready: {stats.teams_indexed} teams, {stats.leagues_processed} leagues")
+            app.logger.warning(f"⚠️ Team-league cache refresh failed: {result.get('error', 'Unknown error')}")
 
     except Exception as e:
         app.logger.warning(f"⚠️ Team-league cache initialization skipped: {e}")

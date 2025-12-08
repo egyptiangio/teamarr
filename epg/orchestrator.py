@@ -237,11 +237,11 @@ class EPGOrchestrator:
                 logger.error(f"Error processing team {team_name}: {e}", exc_info=True)
                 return (team_id, [], str(e))
 
-        # Process all teams in parallel (max 50 workers) with progress updates
+        # Process all teams in parallel (max 100 workers) with progress updates
         if progress_callback:
             progress_callback(0, total_teams, "", f"Processing {total_teams} teams...")
 
-        with ThreadPoolExecutor(max_workers=min(len(teams_list), 50)) as executor:
+        with ThreadPoolExecutor(max_workers=min(len(teams_list), 100)) as executor:
             # Submit all tasks
             futures = {executor.submit(process_single_team, team): team for team in teams_list}
 
@@ -671,6 +671,22 @@ class EPGOrchestrator:
             epg_timezone,
             epg_start_datetime
         )
+
+        # For soccer leagues, also discover future games for .next context (beyond EPG window)
+        # Soccer schedule API returns no future games, so we need scoreboard for extended_events too
+        # Non-soccer uses schedule API for 30 days; soccer needs scoreboard for same coverage
+        if is_soccer_league(team_league):
+            # Discover future games for extended_events (30 days from now, consistent with non-soccer)
+            # This ensures .next variables work for soccer teams
+            epg_tz = ZoneInfo(epg_timezone)
+            now_local = datetime.now(epg_tz)
+            extended_events = self._discover_and_enrich_from_scoreboard(
+                extended_events,
+                team,
+                30,  # Look 30 days ahead for extended context (same as non-soccer)
+                epg_timezone,
+                now_local  # Start from now (same as non-soccer extended schedule)
+            )
 
         # Enrich past events with scoreboard data to get actual scores
         if extended_events:
@@ -2067,15 +2083,15 @@ class EPGOrchestrator:
         }
 
     def _get_head_coach(self, team_id: str, league: str) -> str:
-        """Fetch head coach name from roster API"""
+        """Fetch head coach name from roster API (cached per generation)"""
         # ESPN's soccer coach data is completely unreliable - returns wrong managers
         # or managers who never even worked at those clubs. Skip for soccer leagues.
         if SoccerCompat.should_skip_coach(league):
             return ''
 
         try:
-            url = f"{self.espn.base_url}/{league}/teams/{team_id}/roster"
-            roster_data = self.espn._make_request(url)
+            # Use cached roster fetch
+            roster_data = self.espn.get_team_roster(league, team_id)
 
             if roster_data and 'coach' in roster_data and roster_data['coach']:
                 coaches = roster_data['coach']

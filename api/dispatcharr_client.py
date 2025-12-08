@@ -22,6 +22,7 @@ class DispatcharrAuth:
     - Proactive token refresh before expiry
     - Automatic re-authentication on token failure
     - Thread-safe session management
+    - HTTP connection pooling via requests.Session for performance
 
     Usage:
         auth = DispatcharrAuth("http://localhost:9191", "admin", "password")
@@ -31,6 +32,9 @@ class DispatcharrAuth:
 
     # Class-level session storage for multi-instance support
     _sessions: Dict[str, Dict] = {}
+
+    # Class-level HTTP session storage (connection pooling)
+    _http_sessions: Dict[str, requests.Session] = {}
 
     # Token refresh buffer (refresh this many minutes before expiry)
     TOKEN_REFRESH_BUFFER_MINUTES = 1
@@ -60,13 +64,31 @@ class DispatcharrAuth:
         self.timeout = timeout
         self._session_key = f"{self.url}_{self.username}"
 
-        # Initialize session if not exists
+        # Initialize token session if not exists
         if self._session_key not in self._sessions:
             self._sessions[self._session_key] = {
                 "access_token": None,
                 "refresh_token": None,
                 "token_expiry": None
             }
+
+        # Initialize HTTP session for connection pooling (one per base URL)
+        if self.url not in self._http_sessions:
+            session = requests.Session()
+            # Configure connection pooling - keep connections alive for reuse
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=10,   # Number of connection pools (per host)
+                pool_maxsize=100,      # Max connections per pool (matches ThreadPoolExecutor workers)
+                max_retries=0          # We handle retries ourselves
+            )
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
+            self._http_sessions[self.url] = session
+
+    @property
+    def _http_session(self) -> requests.Session:
+        """Get the HTTP session for connection pooling"""
+        return self._http_sessions[self.url]
 
     @property
     def _session(self) -> Dict:
@@ -92,7 +114,7 @@ class DispatcharrAuth:
             return False
 
         try:
-            response = requests.post(
+            response = self._http_session.post(
                 f"{self.url}/api/accounts/token/refresh/",
                 json={"refresh": self._session["refresh_token"]},
                 timeout=self.timeout
@@ -125,7 +147,7 @@ class DispatcharrAuth:
         try:
             logger.debug(f"Authenticating to {self.url} as {self.username}")
 
-            response = requests.post(
+            response = self._http_session.post(
                 f"{self.url}/api/accounts/token/",
                 json={
                     "username": self.username,
@@ -221,13 +243,13 @@ class DispatcharrAuth:
 
         try:
             if method.upper() == "GET":
-                response = requests.get(full_url, headers=headers, timeout=self.timeout)
+                response = self._http_session.get(full_url, headers=headers, timeout=self.timeout)
             elif method.upper() == "POST":
-                response = requests.post(full_url, headers=headers, json=data, timeout=self.timeout)
+                response = self._http_session.post(full_url, headers=headers, json=data, timeout=self.timeout)
             elif method.upper() == "PATCH":
-                response = requests.patch(full_url, headers=headers, json=data, timeout=self.timeout)
+                response = self._http_session.patch(full_url, headers=headers, json=data, timeout=self.timeout)
             elif method.upper() == "DELETE":
-                response = requests.delete(full_url, headers=headers, timeout=self.timeout)
+                response = self._http_session.delete(full_url, headers=headers, timeout=self.timeout)
             else:
                 logger.error(f"Unsupported HTTP method: {method}")
                 return None
@@ -983,8 +1005,15 @@ class ChannelManager:
     Handles channel CRUD operations for the Channel Lifecycle Management feature.
     Creates, updates, and deletes channels in Dispatcharr when event streams are matched.
 
+    Performance optimizations:
+    - Channel cache: Avoids repeated get_channels() calls during EPG generation
+    - Logo cache: Avoids repeated logo lookups for duplicate URL checks
+    - Caches are class-level (shared across instances) keyed by URL
+    - Call clear_cache() at the start of each EPG generation cycle
+
     Usage:
         manager = ChannelManager("http://localhost:9191", "admin", "password")
+        manager.clear_cache()  # Start fresh for EPG generation
         channel = manager.create_channel(
             name="Giants @ Cowboys",
             channel_number=5001,
@@ -994,8 +1023,149 @@ class ChannelManager:
         manager.delete_channel(channel['id'])
     """
 
+    # Class-level caches shared across all instances (keyed by URL)
+    # This ensures multiple get_lifecycle_manager() calls benefit from same cache
+    _caches: Dict[str, Dict] = {}
+
     def __init__(self, url: str, username: str, password: str):
         self.auth = DispatcharrAuth(url, username, password)
+        self._url = url.rstrip("/")
+
+        # Initialize cache structure for this URL if not exists
+        if self._url not in self._caches:
+            self._caches[self._url] = {
+                'channels_cache': None,
+                'channels_by_id': {},
+                'channels_by_tvg_id': {},
+                'channels_by_number': {},
+                'logos_cache': None,
+                'logos_by_url': {},
+            }
+
+    @property
+    def _cache(self) -> Dict:
+        """Get cache dict for this URL"""
+        return self._caches[self._url]
+
+    @property
+    def _channels_cache(self) -> Optional[List[Dict]]:
+        return self._cache['channels_cache']
+
+    @_channels_cache.setter
+    def _channels_cache(self, value):
+        self._cache['channels_cache'] = value
+
+    @property
+    def _channels_by_id(self) -> Dict[int, Dict]:
+        return self._cache['channels_by_id']
+
+    @_channels_by_id.setter
+    def _channels_by_id(self, value):
+        self._cache['channels_by_id'] = value
+
+    @property
+    def _channels_by_tvg_id(self) -> Dict[str, Dict]:
+        return self._cache['channels_by_tvg_id']
+
+    @_channels_by_tvg_id.setter
+    def _channels_by_tvg_id(self, value):
+        self._cache['channels_by_tvg_id'] = value
+
+    @property
+    def _channels_by_number(self) -> Dict[str, Dict]:
+        return self._cache['channels_by_number']
+
+    @_channels_by_number.setter
+    def _channels_by_number(self, value):
+        self._cache['channels_by_number'] = value
+
+    @property
+    def _logos_cache(self) -> Optional[List[Dict]]:
+        return self._cache['logos_cache']
+
+    @_logos_cache.setter
+    def _logos_cache(self, value):
+        self._cache['logos_cache'] = value
+
+    @property
+    def _logos_by_url(self) -> Dict[str, Dict]:
+        return self._cache['logos_by_url']
+
+    @_logos_by_url.setter
+    def _logos_by_url(self, value):
+        self._cache['logos_by_url'] = value
+
+    def clear_cache(self):
+        """
+        Clear all caches. Call at the start of each EPG generation cycle.
+        """
+        self._cache['channels_cache'] = None
+        self._cache['channels_by_id'] = {}
+        self._cache['channels_by_tvg_id'] = {}
+        self._cache['channels_by_number'] = {}
+        self._cache['logos_cache'] = None
+        self._cache['logos_by_url'] = {}
+        logger.debug("ChannelManager caches cleared")
+
+    def _ensure_channels_cache(self) -> List[Dict]:
+        """
+        Ensure channels cache is populated. Returns cached channels list.
+        """
+        if self._channels_cache is None:
+            self._channels_cache = self._paginated_get(
+                "/api/channels/channels/?page_size=1000",
+                error_context="channels"
+            )
+            # Build lookup indexes
+            self._channels_by_id = {}
+            self._channels_by_tvg_id = {}
+            self._channels_by_number = {}
+            for ch in self._channels_cache:
+                ch_id = ch.get('id')
+                if ch_id:
+                    self._channels_by_id[ch_id] = ch
+                tvg_id = ch.get('tvg_id')
+                if tvg_id:
+                    self._channels_by_tvg_id[tvg_id] = ch
+                ch_num = ch.get('channel_number')
+                if ch_num:
+                    self._channels_by_number[str(ch_num)] = ch
+            logger.debug(f"Cached {len(self._channels_cache)} channels")
+        return self._channels_cache
+
+    def _invalidate_channel_in_cache(self, channel_id: int):
+        """
+        Remove a channel from cache after deletion.
+        """
+        if channel_id in self._channels_by_id:
+            channel = self._channels_by_id.pop(channel_id)
+            tvg_id = channel.get('tvg_id')
+            if tvg_id and tvg_id in self._channels_by_tvg_id:
+                del self._channels_by_tvg_id[tvg_id]
+            ch_num = channel.get('channel_number')
+            if ch_num and str(ch_num) in self._channels_by_number:
+                del self._channels_by_number[str(ch_num)]
+            if self._channels_cache:
+                self._channels_cache = [c for c in self._channels_cache if c.get('id') != channel_id]
+
+    def _update_channel_in_cache(self, channel: Dict):
+        """
+        Update a channel in cache after create/update.
+        """
+        ch_id = channel.get('id')
+        if ch_id:
+            # Remove old version first
+            self._invalidate_channel_in_cache(ch_id)
+            # Add new version
+            self._channels_by_id[ch_id] = channel
+            tvg_id = channel.get('tvg_id')
+            if tvg_id:
+                self._channels_by_tvg_id[tvg_id] = channel
+            ch_num = channel.get('channel_number')
+            if ch_num:
+                self._channels_by_number[str(ch_num)] = channel
+            if self._channels_cache is not None:
+                self._channels_cache.append(channel)
 
     # =========================================================================
     # HELPER METHODS - Consolidated patterns for pagination and error handling
@@ -1083,33 +1253,52 @@ class ChannelManager:
         except Exception:
             return f"HTTP {response.status_code}"
 
-    def get_channels(self, page_size: int = 1000) -> List[Dict]:
+    def get_channels(self, page_size: int = 1000, use_cache: bool = True) -> List[Dict]:
         """
         Get all channels from Dispatcharr.
 
-        Handles pagination automatically.
+        Handles pagination automatically. Uses cache by default during EPG generation.
+
+        Args:
+            page_size: Page size for API pagination (default: 1000)
+            use_cache: Whether to use/populate the cache (default: True)
 
         Returns:
             List of channel dicts
         """
+        if use_cache:
+            return self._ensure_channels_cache()
         return self._paginated_get(
             f"/api/channels/channels/?page_size={page_size}",
             error_context="channels"
         )
 
-    def get_channel(self, channel_id: int) -> Optional[Dict]:
+    def get_channel(self, channel_id: int, use_cache: bool = True) -> Optional[Dict]:
         """
         Get a single channel by ID.
 
+        Uses cache by default during EPG generation for O(1) lookup.
+
         Args:
             channel_id: Dispatcharr channel ID
+            use_cache: Whether to use cache (default: True)
 
         Returns:
             Channel dict or None if not found
         """
+        if use_cache:
+            self._ensure_channels_cache()
+            cached = self._channels_by_id.get(channel_id)
+            if cached:
+                return cached
+
+        # Cache miss or cache disabled - fetch from API
         response = self.auth.get(f"/api/channels/channels/{channel_id}/")
         if response and response.status_code == 200:
-            return response.json()
+            channel = response.json()
+            if use_cache:
+                self._update_channel_in_cache(channel)
+            return channel
         return None
 
     def create_channel(
@@ -1164,7 +1353,9 @@ class ChannelManager:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code in (200, 201):
-            return {"success": True, "channel": response.json()}
+            channel = response.json()
+            self._update_channel_in_cache(channel)
+            return {"success": True, "channel": channel}
 
         return {"success": False, "error": self._parse_api_error(response)}
 
@@ -1189,7 +1380,9 @@ class ChannelManager:
             return {"success": False, "error": self._parse_api_error(response)}
 
         if response.status_code == 200:
-            return {"success": True, "channel": response.json()}
+            channel = response.json()
+            self._update_channel_in_cache(channel)
+            return {"success": True, "channel": channel}
 
         return {"success": False, "error": self._parse_api_error(response)}
 
@@ -1212,10 +1405,12 @@ class ChannelManager:
 
         if response.status_code in (200, 204):
             logger.debug(f"Delete channel {channel_id}: Success (status {response.status_code})")
+            self._invalidate_channel_in_cache(channel_id)
             return {"success": True}
 
         if response.status_code == 404:
             logger.debug(f"Delete channel {channel_id}: Not found (already deleted?)")
+            self._invalidate_channel_in_cache(channel_id)
             return {"success": False, "error": "Channel not found"}
 
         logger.warning(f"Delete channel {channel_id}: Failed (status {response.status_code})")
@@ -1253,21 +1448,22 @@ class ChannelManager:
         """
         Find a channel by its channel number.
 
+        Uses O(1) lookup via cache index.
+
         Args:
             channel_number: Channel number to search for
 
         Returns:
             Channel dict or None if not found
         """
-        channels = self.get_channels()
-        for channel in channels:
-            if str(channel.get('channel_number')) == str(channel_number):
-                return channel
-        return None
+        self._ensure_channels_cache()
+        return self._channels_by_number.get(str(channel_number))
 
     def find_channel_by_tvg_id(self, tvg_id: str) -> Optional[Dict]:
         """
         Find a channel by its TVG ID.
+
+        Uses O(1) lookup via cache index.
 
         Args:
             tvg_id: TVG ID to search for
@@ -1275,11 +1471,8 @@ class ChannelManager:
         Returns:
             Channel dict or None if not found
         """
-        channels = self.get_channels()
-        for channel in channels:
-            if channel.get('tvg_id') == tvg_id:
-                return channel
-        return None
+        self._ensure_channels_cache()
+        return self._channels_by_tvg_id.get(tvg_id)
 
     def set_channel_epg(self, channel_id: int, epg_data_id: int) -> Dict[str, Any]:
         """
@@ -1338,7 +1531,8 @@ class ChannelManager:
     def find_epg_data_by_tvg_id(
         self,
         tvg_id: str,
-        epg_source_id: int = None
+        epg_source_id: int = None,
+        epg_lookup: Dict[str, Dict] = None
     ) -> Optional[Dict]:
         """
         Find EPGData by tvg_id, optionally filtered by EPG source.
@@ -1349,10 +1543,18 @@ class ChannelManager:
         Args:
             tvg_id: The tvg_id to search for (e.g., "teamarr-event-401547679")
             epg_source_id: Optional EPG source ID to filter by
+            epg_lookup: Optional pre-built dict of tvg_id -> epg_data for batch lookups.
+                        If provided, uses this instead of fetching the EPG data list.
+                        Build with build_epg_lookup() for efficiency.
 
         Returns:
             EPGData dict if found, None otherwise
         """
+        # Use pre-built lookup if provided (batch optimization)
+        if epg_lookup is not None:
+            return epg_lookup.get(tvg_id)
+
+        # Otherwise fetch and search (single lookup fallback)
         epg_data_list = self.get_epg_data_list(epg_source_id)
 
         for epg_data in epg_data_list:
@@ -1360,6 +1562,22 @@ class ChannelManager:
                 return epg_data
 
         return None
+
+    def build_epg_lookup(self, epg_source_id: int = None) -> Dict[str, Dict]:
+        """
+        Build a tvg_id -> epg_data lookup dict for efficient batch lookups.
+
+        Fetches the EPG data list once and returns a dict for O(1) lookups.
+        Use this when you need to look up multiple tvg_ids.
+
+        Args:
+            epg_source_id: Optional EPG source ID to filter by
+
+        Returns:
+            Dict mapping tvg_id -> epg_data dict
+        """
+        epg_data_list = self.get_epg_data_list(epg_source_id)
+        return {e.get('tvg_id'): e for e in epg_data_list if e.get('tvg_id')}
 
     def upload_logo(self, name: str, url: str) -> Dict[str, Any]:
         """
@@ -1417,9 +1635,22 @@ class ChannelManager:
 
         return {"success": False, "error": f"HTTP {response.status_code}", "status": "error"}
 
+    def _ensure_logos_cache(self) -> List[Dict]:
+        """Ensure logos cache is populated."""
+        if self._logos_cache is None:
+            self._logos_cache = self._paginated_get(
+                "/api/channels/logos/?page_size=500",
+                error_context="logos"
+            )
+            self._logos_by_url = {logo.get('url'): logo for logo in self._logos_cache if logo.get('url')}
+            logger.debug(f"Cached {len(self._logos_cache)} logos")
+        return self._logos_cache
+
     def _find_logo_by_url(self, url: str) -> Optional[Dict]:
         """
         Find an existing logo by its URL.
+
+        Uses O(1) lookup via cache index.
 
         Args:
             url: Logo URL to search for
@@ -1427,16 +1658,8 @@ class ChannelManager:
         Returns:
             Logo dict or None if not found
         """
-        logos = self._paginated_get(
-            "/api/channels/logos/?page_size=100",
-            error_context="logos"
-        )
-
-        for logo in logos:
-            if logo.get('url') == url:
-                return logo
-
-        return None
+        self._ensure_logos_cache()
+        return self._logos_by_url.get(url)
 
     def get_logo(self, logo_id: int) -> Optional[Dict]:
         """

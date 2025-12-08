@@ -61,44 +61,79 @@
                     </div>
                 </div>
 
-                <!-- Parent Group Selection - FIRST before sport/league -->
-                <div class="form-group" style="margin-top: 1rem;">
-                    <label for="parent_group_id">Group Type</label>
-                    <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()">
-                        <option value="">Independent Group (creates its own channels)</option>
-                    </select>
-                    <small class="form-help">Child groups add streams to their parent's channels instead of creating new ones.</small>
-                </div>
-
-                <!-- Child Group Notice - shown when parent selected -->
-                <div id="child-group-notice" class="child-group-notice" style="display: none;">
-                    <div class="notice-icon">↳</div>
-                    <div class="notice-content">
-                        <strong>Child Group Mode</strong>
-                        <p>This group will add its matched streams to the parent group's channels. Sport, league, template and channel settings are inherited from the parent. Custom regex settings remain available to match your provider's stream names.</p>
-                    </div>
-                </div>
-
-                <div class="form-row" id="sport-league-row">
-                    <div class="form-group">
-                        <label for="assigned_sport">Sport <span class="required" id="sport-required">*</span></label>
-                        <select id="assigned_sport" name="assigned_sport" class="form-control" onchange="updateLeagueOptions()" required>
-                            <option value="">Loading sports...</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" id="league-group">
-                        <label for="assigned_league">League <span class="required" id="league-required">*</span></label>
-                        <select id="assigned_league" name="assigned_league" class="form-control" required>
-                            <option value="">Select sport first...</option>
-                        </select>
-                    </div>
-                </div>
-
                 <!-- Hidden field for multi-sport mode -->
-                <input type="hidden" id="is_multi_sport" name="is_multi_sport" value="{{ '1' if group and group.is_multi_sport else '0' }}">
+                <input type="hidden" id="is_multi_sport" name="is_multi_sport" value="0">
 
-                <!-- Multi-Sport Settings (shown when toggle enabled) -->
+                <!-- Group Type Selection (immutable after accept) -->
+                <div id="group-type-selector" class="group-type-selector">
+                    <label class="form-label">Group Type <span class="required">*</span></label>
+                    <div class="group-type-options">
+                        <label class="group-type-option">
+                            <input type="radio" name="group_type_choice" value="single" checked>
+                            <div class="option-content">
+                                <strong>Single League</strong>
+                                <span>Match streams to events in one specific league (e.g., NFL, NBA, EPL)</span>
+                            </div>
+                        </label>
+                        <label class="group-type-option">
+                            <input type="radio" name="group_type_choice" value="multi">
+                            <div class="option-content">
+                                <strong>Multi-Sport / Multi-League</strong>
+                                <span>Match streams across multiple sports and leagues (e.g., ESPN+)</span>
+                            </div>
+                        </label>
+                    </div>
+                    <button type="button" id="accept-group-type" class="btn btn-primary" style="margin-top: 1rem;" onclick="acceptGroupType()">
+                        Continue
+                    </button>
+                </div>
+
+                <!-- Locked indicator (shown after type accepted) -->
+                <div id="group-type-locked" class="group-type-locked" style="display: none;">
+                    <div class="locked-badge">
+                        <span class="lock-icon">🔒</span>
+                        <span id="locked-type-label">Single League</span>
+                    </div>
+                </div>
+
+                <!-- Single League Settings (shown after accepting single league type) -->
+                <div id="single-league-settings" style="display: none;">
+                    <!-- Parent Group Selection -->
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label for="parent_group_id">Group Hierarchy</label>
+                        <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()">
+                            <option value="">Independent Group (creates its own channels)</option>
+                        </select>
+                        <small class="form-help">Child groups add streams to their parent's channels instead of creating new ones.</small>
+                    </div>
+
+                    <!-- Child Group Notice - shown when parent selected -->
+                    <div id="child-group-notice" class="child-group-notice" style="display: none;">
+                        <div class="notice-icon">↳</div>
+                        <div class="notice-content">
+                            <strong>Child Group Mode</strong>
+                            <p>This group will add its matched streams to the parent group's channels. Sport, league, template and channel settings are inherited from the parent. Custom regex settings remain available to match your provider's stream names.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row" id="sport-league-row">
+                        <div class="form-group">
+                            <label for="assigned_sport">Sport <span class="required" id="sport-required">*</span></label>
+                            <select id="assigned_sport" name="assigned_sport" class="form-control" onchange="updateLeagueOptions()" required>
+                                <option value="">Loading sports...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" id="league-group">
+                            <label for="assigned_league">League <span class="required" id="league-required">*</span></label>
+                            <select id="assigned_league" name="assigned_league" class="form-control" required>
+                                <option value="">Select sport first...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Multi-Sport Settings (shown after accepting multi-sport type) -->
                 <div id="multi-sport-settings" class="multi-sport-panel" style="display: none;">
                     <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem;">Multi-Sport / Multi-League Configuration</h4>
 
@@ -137,14 +172,25 @@
             {% endif %}
 
             {% if mode == 'edit' %}
-            <!-- Parent Group Selection for edit mode (disabled for multi-sport) -->
-            <div class="form-group" style="margin-top: 1rem;{% if group.is_multi_sport %} opacity: 0.5;{% endif %}">
-                <label for="parent_group_id">Group Type</label>
-                <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()"
-                        {% if group.is_multi_sport %}disabled title="Multi-sport groups cannot be child groups"{% endif %}>
+            <!-- Hidden field for multi-sport mode (edit mode) -->
+            <input type="hidden" id="is_multi_sport" name="is_multi_sport" value="{{ '1' if group and group.is_multi_sport else '0' }}">
+
+            <!-- Locked Group Type Indicator (edit mode) -->
+            <div class="group-type-locked" style="margin-top: 1rem;">
+                <div class="locked-badge">
+                    <span class="lock-icon">🔒</span>
+                    <span>{% if group.is_multi_sport %}Multi-Sport / Multi-League{% else %}Single League{% endif %}</span>
+                </div>
+            </div>
+
+            {% if not group.is_multi_sport %}
+            <!-- Single League Edit Mode: Show parent/child selection -->
+            <div class="form-group" style="margin-top: 1rem;">
+                <label for="parent_group_id">Group Hierarchy</label>
+                <select id="parent_group_id" name="parent_group_id" class="form-control" onchange="handleParentGroupChange()">
                     <option value="">Independent Group (creates its own channels)</option>
                 </select>
-                <small class="form-help">{% if group.is_multi_sport %}Multi-sport groups must be independent.{% else %}Child groups add streams to their parent's channels instead of creating new ones.{% endif %}</small>
+                <small class="form-help">Child groups add streams to their parent's channels instead of creating new ones.</small>
             </div>
 
             <!-- Child Group Notice - shown when parent selected -->
@@ -155,9 +201,7 @@
                     <p>This group inherits template and channel settings from its parent. Only custom regex settings are editable below.</p>
                 </div>
             </div>
-
-            <!-- Hidden field for multi-sport mode (edit mode) -->
-            <input type="hidden" id="is_multi_sport" name="is_multi_sport" value="{{ '1' if group and group.is_multi_sport else '0' }}">
+            {% endif %}
 
             <!-- Multi-Sport Settings for edit mode (shown if group is multi-sport) -->
             {% if group and group.is_multi_sport %}
@@ -200,8 +244,8 @@
             {% endif %}
         </div>
 
-        <!-- Independent Group Settings (hidden for child groups) -->
-        <div id="independent-settings">
+        <!-- Independent Group Settings (hidden for child groups, hidden in add mode until type accepted) -->
+        <div id="independent-settings"{% if mode == 'add' %} class="hidden"{% endif %}>
             <div class="form-section">
                 <h2>Template & Channel Settings</h2>
 
@@ -460,6 +504,59 @@ document.addEventListener('DOMContentLoaded', async function() {
 // League options loaded from database
 let leaguesBySport = {};
 
+// Track if group type has been accepted (add mode only)
+let groupTypeAccepted = false;
+
+/**
+ * Accept the group type selection and unlock the rest of the form.
+ * Called when user clicks "Continue" after selecting Single League or Multi-Sport.
+ */
+function acceptGroupType() {
+    const selectedType = document.querySelector('input[name="group_type_choice"]:checked').value;
+    const isMultiSport = selectedType === 'multi';
+
+    // Update hidden field
+    document.getElementById('is_multi_sport').value = isMultiSport ? '1' : '0';
+
+    // Hide selector, show locked indicator
+    document.getElementById('group-type-selector').style.display = 'none';
+    const lockedDiv = document.getElementById('group-type-locked');
+    lockedDiv.style.display = 'block';
+    document.getElementById('locked-type-label').textContent = isMultiSport ? 'Multi-Sport / Multi-League' : 'Single League';
+
+    // Show appropriate settings section
+    if (isMultiSport) {
+        document.getElementById('multi-sport-settings').style.display = 'block';
+        document.getElementById('single-league-settings').style.display = 'none';
+
+        // Set dummy values for sport/league (multi-sport doesn't use them)
+        const sportSelect = document.getElementById('assigned_sport');
+        const leagueSelect = document.getElementById('assigned_league');
+        if (sportSelect) {
+            sportSelect.innerHTML = '<option value="multi" selected>N/A</option>';
+            sportSelect.removeAttribute('required');
+        }
+        if (leagueSelect) {
+            leagueSelect.innerHTML = '<option value="multi" selected>N/A</option>';
+            leagueSelect.removeAttribute('required');
+        }
+
+        // Load leagues picker for multi-sport
+        loadLeaguesPicker();
+    } else {
+        document.getElementById('single-league-settings').style.display = 'block';
+        document.getElementById('multi-sport-settings').style.display = 'none';
+
+        // Populate parent group dropdown for single-league mode
+        populateParentGroups();
+    }
+
+    // Show independent settings (template, channel config, etc.)
+    document.getElementById('independent-settings').classList.remove('hidden');
+
+    groupTypeAccepted = true;
+}
+
 async function loadLeagues() {
     try {
         const response = await fetch('/api/leagues');
@@ -478,25 +575,13 @@ async function loadLeagues() {
                 });
             });
 
-            // Update sport dropdown with available sports
+            // Update sport dropdown with available sports (no multi-sport option - handled by radio)
             const sportSelect = document.getElementById('assigned_sport');
             if (sportSelect) {
                 const currentValue = sportSelect.value;
                 sportSelect.innerHTML = '<option value="">Select sport...</option>';
 
-                // Add Multi-Sport option first
-                const multiOption = document.createElement('option');
-                multiOption.value = 'multi';
-                multiOption.textContent = '--- Multi-Sport / Multi-League ---';
-                sportSelect.appendChild(multiOption);
-
-                // Add separator
-                const sep = document.createElement('option');
-                sep.disabled = true;
-                sep.textContent = '────────────────';
-                sportSelect.appendChild(sep);
-
-                // Add regular sports
+                // Add regular sports only
                 Object.keys(leaguesBySport).sort().forEach(sport => {
                     const option = document.createElement('option');
                     option.value = sport;
@@ -515,66 +600,21 @@ function updateLeagueOptions() {
     const sport = document.getElementById('assigned_sport').value;
     const leagueSelect = document.getElementById('assigned_league');
     const leagueGroup = document.getElementById('league-group');
-    const multiSportSettings = document.getElementById('multi-sport-settings');
-    const isMultiSportInput = document.getElementById('is_multi_sport');
-    const parentGroupSelect = document.getElementById('parent_group_id');
 
-    if (sport === 'multi') {
-        // Multi-sport mode selected
-        isMultiSportInput.value = '1';
+    // Single-league mode: just populate league dropdown based on sport selection
+    if (leagueGroup) {
+        leagueGroup.style.display = 'block';
+    }
+    leagueSelect.setAttribute('required', 'required');
+    leagueSelect.innerHTML = '<option value="">Select league...</option>';
 
-        // Hide league dropdown and set it to 'multi' for backend validation
-        if (leagueGroup) {
-            leagueGroup.style.display = 'none';
-        }
-        leagueSelect.removeAttribute('required');
-        leagueSelect.innerHTML = '<option value="multi" selected>N/A - Multi-league mode</option>';
-
-        // Show multi-sport settings
-        if (multiSportSettings) {
-            multiSportSettings.style.display = 'block';
-            loadLeaguesPicker();
-        }
-
-        // Disable parent/child selection - multi-sport groups must be independent
-        if (parentGroupSelect) {
-            parentGroupSelect.value = '';
-            parentGroupSelect.disabled = true;
-            parentGroupSelect.title = 'Multi-sport groups cannot be child groups';
-            parentGroupSelect.closest('.form-group').style.opacity = '0.5';
-        }
-
-    } else {
-        // Regular single-sport mode
-        isMultiSportInput.value = '0';
-
-        // Show league dropdown
-        if (leagueGroup) {
-            leagueGroup.style.display = 'block';
-        }
-        leagueSelect.setAttribute('required', 'required');
-        leagueSelect.innerHTML = '<option value="">Select league...</option>';
-
-        if (sport && leaguesBySport[sport]) {
-            leaguesBySport[sport].forEach(league => {
-                const option = document.createElement('option');
-                option.value = league.value;
-                option.textContent = league.label;
-                leagueSelect.appendChild(option);
-            });
-        }
-
-        // Hide multi-sport settings
-        if (multiSportSettings) {
-            multiSportSettings.style.display = 'none';
-        }
-
-        // Re-enable parent/child selection
-        if (parentGroupSelect) {
-            parentGroupSelect.disabled = false;
-            parentGroupSelect.title = '';
-            parentGroupSelect.closest('.form-group').style.opacity = '1';
-        }
+    if (sport && leaguesBySport[sport]) {
+        leaguesBySport[sport].forEach(league => {
+            const option = document.createElement('option');
+            option.value = league.value;
+            option.textContent = league.label;
+            leagueSelect.appendChild(option);
+        });
     }
 }
 
@@ -891,8 +931,18 @@ async function loadEventGroups() {
     }
 }
 
+/**
+ * Populate parent groups dropdown (called after group type accepted).
+ * Only shows single-league parent groups (multi-sport groups can't be parents).
+ */
+function populateParentGroups() {
+    renderEventGroups();
+}
+
 function renderEventGroups() {
     const select = document.getElementById('parent_group_id');
+    if (!select) return;
+
     const currentValue = select.value;
 
     // Keep the "None" option
@@ -904,31 +954,22 @@ function renderEventGroups() {
     const currentGroupId = null;
     {% endif %}
 
-    // Add a separator if there are parent groups available
-    let hasParentOptions = false;
-    eventGroups.forEach(group => {
-        if (currentGroupId && group.id === currentGroupId) return;
-        if (group.parent_group_id) return;
-        hasParentOptions = true;
+    // Filter to single-league parent groups only (multi-sport groups can't have children)
+    const eligibleParents = eventGroups.filter(group => {
+        if (currentGroupId && group.id === currentGroupId) return false;
+        if (group.parent_group_id) return false;  // Already a child
+        if (group.is_multi_sport) return false;   // Multi-sport groups can't be parents
+        return true;
     });
 
-    if (hasParentOptions) {
+    if (eligibleParents.length > 0) {
         const separator = document.createElement('option');
         separator.disabled = true;
         separator.textContent = '── Child of: ──';
         select.appendChild(separator);
     }
 
-    eventGroups.forEach(group => {
-        // Don't show current group as potential parent (avoid circular reference)
-        if (currentGroupId && group.id === currentGroupId) {
-            return;
-        }
-        // Don't show groups that are already children (no multi-level nesting)
-        if (group.parent_group_id) {
-            return;
-        }
-
+    eligibleParents.forEach(group => {
         const option = document.createElement('option');
         option.value = group.id;
         option.textContent = `↳ ${group.group_name} (${group.assigned_league.toUpperCase()})`;
@@ -1227,34 +1268,38 @@ document.getElementById('event-group-form').addEventListener('submit', async fun
 // ============================================================================
 
 // League definitions for the picker
+// Sorted alphabetically by sport name
+// League values use ESPN API slugs for consistency with database storage
+// The database normalizes all league codes to these slugs via normalize_league_codes()
 const multiSportLeagues = {
-    'hockey': [
-        { value: 'nhl', label: 'NHL' },
-        { value: 'ncaah', label: 'NCAA Hockey' },
-    ],
-    'basketball': [
-        { value: 'nba', label: 'NBA' },
-        { value: 'nba-g', label: 'NBA G-League' },
-        { value: 'wnba', label: 'WNBA' },
-        { value: 'ncaam', label: 'NCAA Men\'s Basketball' },
-        { value: 'ncaaw', label: 'NCAA Women\'s Basketball' },
-    ],
-    'football': [
-        { value: 'nfl', label: 'NFL' },
-        { value: 'ncaaf', label: 'NCAA Football' },
-    ],
     'baseball': [
         { value: 'mlb', label: 'MLB' },
     ],
-    'volleyball': [
-        { value: 'ncaavb-m', label: 'NCAA Men\'s Volleyball' },
-        { value: 'ncaavb-w', label: 'NCAA Women\'s Volleyball' },
+    'basketball': [
+        { value: 'nba', label: 'NBA' },
+        { value: 'nba-development', label: 'NBA G-League' },
+        { value: 'wnba', label: 'WNBA' },
+        { value: 'mens-college-basketball', label: 'NCAA Men\'s Basketball' },
+        { value: 'womens-college-basketball', label: 'NCAA Women\'s Basketball' },
+    ],
+    'football': [
+        { value: 'nfl', label: 'NFL' },
+        { value: 'college-football', label: 'NCAA Football' },
+    ],
+    'hockey': [
+        { value: 'nhl', label: 'NHL' },
+        { value: 'mens-college-hockey', label: 'NCAA Men\'s Hockey' },
+        { value: 'womens-college-hockey', label: 'NCAA Women\'s Hockey' },
     ],
     'soccer': [
-        { value: 'ncaas', label: 'NCAA Men\'s Soccer' },
-        { value: 'ncaaws', label: 'NCAA Women\'s Soccer' },
+        { value: 'usa.ncaa.m.1', label: 'NCAA Men\'s Soccer' },
+        { value: 'usa.ncaa.w.1', label: 'NCAA Women\'s Soccer' },
         { value: 'soccer_all', label: 'Professional Soccer (All)' },
-    ]
+    ],
+    'volleyball': [
+        { value: 'mens-college-volleyball', label: 'NCAA Men\'s Volleyball' },
+        { value: 'womens-college-volleyball', label: 'NCAA Women\'s Volleyball' },
+    ],
 };
 
 // Soccer professional leagues uses SoccerMultiLeague cache with 240+ leagues
@@ -1448,6 +1493,95 @@ function updateEnabledLeagues() {
 /* Independent settings hidden state */
 #independent-settings.hidden {
     display: none;
+}
+
+/* Group Type Selector (add mode) */
+.group-type-selector {
+    margin-top: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.group-type-selector .form-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+}
+
+.group-type-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.group-type-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.group-type-option:hover {
+    border-color: var(--primary);
+    background: var(--bg-hover);
+}
+
+.group-type-option input[type="radio"] {
+    margin-top: 0.25rem;
+    accent-color: var(--primary);
+}
+
+.group-type-option input[type="radio"]:checked + .option-content strong {
+    color: var(--primary);
+}
+
+.group-type-option:has(input:checked) {
+    border-color: var(--primary);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.option-content {
+    flex: 1;
+}
+
+.option-content strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text);
+}
+
+.option-content span {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Locked Group Type Badge */
+.group-type-locked {
+    margin-top: 1rem;
+}
+
+.locked-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.locked-badge .lock-icon {
+    font-size: 0.85rem;
 }
 
 .form-group {

@@ -24,6 +24,75 @@ from utils.regex_helper import REGEX_MODULE
 logger = get_logger(__name__)
 
 
+def fix_mojibake(text: str) -> str:
+    """
+    Fix UTF-8 mojibake (double-encoding) in stream names.
+
+    This happens when UTF-8 bytes are incorrectly decoded as Latin-1/Windows-1252,
+    resulting in garbled characters like:
+    - Ã© instead of é
+    - Ã¼ instead of ü
+    - Ã± instead of ñ
+    - Ã¶ instead of ö
+
+    Args:
+        text: Potentially mojibake'd text
+
+    Returns:
+        Fixed text with proper Unicode characters
+    """
+    if not text:
+        return text
+
+    # Common mojibake patterns (Latin-1 interpretation of UTF-8 bytes)
+    # Only fix if we see these specific patterns to avoid breaking valid text
+    mojibake_patterns = [
+        ('Ã©', 'é'),  # e-acute
+        ('Ã¨', 'è'),  # e-grave
+        ('Ã±', 'ñ'),  # n-tilde
+        ('Ã¼', 'ü'),  # u-umlaut
+        ('Ã¶', 'ö'),  # o-umlaut
+        ('Ã¤', 'ä'),  # a-umlaut
+        ('Ã³', 'ó'),  # o-acute
+        ('Ã¡', 'á'),  # a-acute
+        ('Ã­', 'í'),  # i-acute
+        ('Ãº', 'ú'),  # u-acute
+        ('Ã§', 'ç'),  # c-cedilla
+        ('Ã£', 'ã'),  # a-tilde
+        ('Ãµ', 'õ'),  # o-tilde
+        ('Ã', 'Á'),   # A-acute (uppercase) - must come after others
+    ]
+
+    result = text
+    for wrong, right in mojibake_patterns:
+        result = result.replace(wrong, right)
+
+    return result
+
+
+# Name variant mappings - all variants map to ESPN's canonical form
+# This is ONE-WAY: stream variant → ESPN name (no back-and-forth replacement)
+# ESPN uses a MIX of English and German names - verified against soccer_team_leagues cache
+CITY_NAME_VARIANTS = {
+    # ESPN uses ENGLISH for these cities
+    'münchen': 'munich',
+    'munchen': 'munich',
+    'köln': 'cologne',
+    'koln': 'cologne',
+    # ESPN uses GERMAN (with umlauts) for these
+    'nuremberg': 'nürnberg',
+    'nurnberg': 'nürnberg',
+    'dusseldorf': 'düsseldorf',
+    'furth': 'fürth',
+    'monchengladbach': 'mönchengladbach',
+    'munster': 'münster',
+    # German team name variants → ESPN canonical
+    'hertha bsc': 'hertha berlin',
+    'hamburger sv': 'hamburg sv',
+    'sv werder bremen': 'werder bremen',
+}
+
+
 # Module-level shared cache for team data across all TeamMatcher instances
 # This prevents redundant ESPN API calls when processing streams in parallel
 _shared_team_cache: Dict[str, Dict] = {}
@@ -242,14 +311,63 @@ class TeamMatcher:
         """
         return get_league_config(league_code, self.db_connection_func, self._league_config)
 
+    def _load_teams_from_db_cache(self, league_code: str) -> Optional[List[Dict]]:
+        """
+        Load teams from TeamLeagueCache database table.
+
+        The team_league_cache table is pre-populated on startup and contains
+        all teams for non-soccer leagues. This avoids hitting ESPN API during
+        EPG generation.
+
+        Args:
+            league_code: League code (e.g., 'nfl', 'mens-college-basketball')
+
+        Returns:
+            List of team dicts or None if not found in DB cache
+        """
+        if not self.db_connection_func:
+            return None
+
+        try:
+            conn = self.db_connection_func()
+            cursor = conn.execute("""
+                SELECT espn_team_id, team_name, team_abbrev, team_short_name, sport
+                FROM team_league_cache
+                WHERE league_code = ?
+            """, (league_code.lower(),))
+            rows = cursor.fetchall()
+
+            if not rows:
+                return None
+
+            # Convert DB rows to team dicts matching ESPN API format
+            teams = []
+            for row in rows:
+                team = {
+                    'id': row[0],
+                    'displayName': row[1],
+                    'name': row[1],  # Use full name as name too
+                    'abbreviation': row[2],
+                    'shortName': row[3],
+                    'slug': row[1].lower().replace(' ', '-') if row[1] else '',
+                }
+                teams.append(team)
+
+            logger.debug(f"Loaded {len(teams)} teams for {league_code} from DB cache")
+            return teams
+
+        except Exception as e:
+            logger.warning(f"Error loading teams from DB cache for {league_code}: {e}")
+            return None
+
     def _get_teams_for_league(self, league_code: str) -> List[Dict]:
         """
         Get all teams for a league, using shared cache when available.
 
-        Uses module-level shared cache to prevent redundant API calls when
-        multiple TeamMatcher instances are used in parallel threads.
-        Fetches from ESPN API and caches for CACHE_DURATION.
-        College leagues use conference-based fetching to get all teams.
+        Priority order:
+        1. In-memory cache (fastest, per-generation)
+        2. TeamLeagueCache DB (pre-warmed on startup, no API call)
+        3. ESPN API (fallback for uncached leagues)
 
         Args:
             league_code: League code (e.g., 'nfl', 'epl', 'ncaam')
@@ -280,37 +398,42 @@ class TeamMatcher:
 
         # Double-check lock pattern: re-check cache after acquiring lock
         # Another thread may have populated the cache while we were getting config
+        # IMPORTANT: Fetch must happen INSIDE the lock to prevent race conditions
         with _shared_team_cache_lock:
             if league_lower in _shared_team_cache:
                 cached = _shared_team_cache[league_lower]
                 if datetime.now() - cached['fetched_at'] < self.CACHE_DURATION:
                     return cached['teams']
 
-        # College leagues need conference-based fetching
-        if is_college_league(league_lower) or is_college_league(league):
-            teams = self._fetch_college_teams(sport, league)
-        else:
-            # Pro leagues - simple team list
-            logger.info(f"Fetching teams for {league_code} from ESPN API")
-            teams = self.espn.get_league_teams(sport, league)
+            # Try TeamLeagueCache DB first (pre-warmed on startup, no API call needed)
+            # This eliminates ~23 seconds of API calls during EPG generation
+            teams = self._load_teams_from_db_cache(league_lower)
+            if teams:
+                logger.info(f"Loaded {len(teams)} teams for {league_code} from DB cache (no API call)")
+            else:
+                # Fallback to ESPN API for leagues not in DB cache
+                if is_college_league(league_lower) or is_college_league(league):
+                    teams = self._fetch_college_teams(sport, league)
+                else:
+                    logger.info(f"Fetching teams for {league_code} from ESPN API")
+                    teams = self.espn.get_league_teams(sport, league)
 
-        if not teams:
-            logger.warning(f"No teams returned for {league_code}")
-            return []
+            if not teams:
+                logger.warning(f"No teams returned for {league_code}")
+                return []
 
-        # Build search index with normalized names
-        for team in teams:
-            team['_search_names'] = self._build_search_names(team)
+            # Build search index with normalized names
+            for team in teams:
+                team['_search_names'] = self._build_search_names(team)
 
-        # Cache results in shared cache (with lock)
-        with _shared_team_cache_lock:
+            # Cache results
             _shared_team_cache[league_lower] = {
                 'teams': teams,
                 'fetched_at': datetime.now()
             }
 
-        logger.info(f"Cached {len(teams)} teams for {league_code}")
-        return teams
+            logger.info(f"Cached {len(teams)} teams for {league_code}")
+            return teams
 
     def _fetch_college_teams(self, sport: str, league: str) -> List[Dict]:
         """
@@ -439,8 +562,23 @@ class TeamMatcher:
         # Underscore → space (e.g., "Gardner_Webb" → "Gardner Webb")
         text = text.replace('_', ' ')
 
-        # Remove parenthetical content
-        text = re.sub(r'\([^)]*\)', '', text)
+        # Remove parenthetical content EXCEPT US state abbreviations like (OH), (FL), (PA)
+        # These are used to disambiguate teams like "Miami (OH)" vs "Miami"
+        # State codes are exactly 2 uppercase letters
+        def remove_non_state_parens(match):
+            content = match.group(1).strip().upper()
+            # US state abbreviations (2 letters) - preserve these
+            us_states = {
+                'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+                'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+                'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+                'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+                'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+            }
+            if content in us_states:
+                return match.group(0)  # Preserve the parenthetical
+            return ''  # Remove it
+        text = re.sub(r'\(([^)]*)\)', remove_non_state_parens, text)
 
         # Remove common channel prefixes (ncaa covers ncaaf, ncaam, ncaaw, ncaab)
         # Include optional colon after prefix (e.g., "NCAAM: Duke vs UNC")
@@ -484,41 +622,174 @@ class TeamMatcher:
 
         return text.strip()
 
-    def _strip_prefix_at_colon(self, text: str) -> str:
+    def _mask_times_in_text(self, text: str) -> Tuple[str, List[Tuple[str, int, int]]]:
+        """
+        Find and mask all time patterns in text, returning masked text and positions.
+
+        Handles:
+        - 12-hour with minutes: 8:15pm, 8:15 PM, 1:30 PM ET (NOT 01:12pm - leading zeros only for 24h)
+        - 12-hour hour-only: 12pm, 4pm, 8am (hour followed immediately by am/pm)
+        - 24-hour: 18:00, 20:15
+
+        Args:
+            text: Raw text that may contain times
+
+        Returns:
+            Tuple of (masked_text, list of (original, start, end) tuples)
+        """
+        masked = text
+        found_times = []
+
+        # Pattern 1: 12-hour with minutes (8:15pm, 8:15 PM, 1:00 PM ET)
+        # Key insight: 12-hour times don't use leading zeros on hour (1:30pm not 01:30pm)
+        # Leading zeros are only used in 24-hour format (01:30 = 1:30 AM)
+        # So we need to ensure hour is 1-12 (valid 12h) and NOT preceded by another digit
+        time_12h_pattern = re.compile(
+            r'(?<!\d)(\d{1,2}):(\d{2})\s*(am|pm)(\s*(et|est|pt|pst|ct|cst|mt|mst))?',
+            re.IGNORECASE
+        )
+        for match in time_12h_pattern.finditer(text):
+            hour = int(match.group(1))
+            # Valid 12-hour times: 1-12 (not 0, not >12)
+            # Also reject if it looks like "01:12pm" (leading zero on single-digit hour)
+            # In 12h format, you write "1:12pm" not "01:12pm"
+            if 1 <= hour <= 12:
+                # Check for leading zero anomaly: if hour < 10 and starts with '0', skip
+                hour_str = match.group(1)
+                if hour < 10 and hour_str.startswith('0'):
+                    # This is like "01:12pm" - not a valid 12h time, skip
+                    continue
+                found_times.append((match.group(0), match.start(), match.end()))
+
+        # Pattern 2: 12-hour hour-only (12pm, 4pm, 8am) - hour directly followed by am/pm
+        # This catches "CB01:12pm" -> the "12pm" part, and standalone "4pm"
+        hour_only_pattern = re.compile(r'\b(\d{1,2})(am|pm)\b', re.IGNORECASE)
+        for match in hour_only_pattern.finditer(text):
+            # Avoid duplicating times already found (like the minutes part of 8:15pm)
+            overlap = False
+            for _, start, end in found_times:
+                if match.start() >= start and match.end() <= end:
+                    overlap = True
+                    break
+            if not overlap:
+                found_times.append((match.group(0), match.start(), match.end()))
+
+        # Pattern 3: 24-hour format (18:00, 20:15)
+        time_24h_pattern = re.compile(r'\b(\d{2}:\d{2})\b')
+        for match in time_24h_pattern.finditer(text):
+            # Check if it's a valid 24-hour time (not already captured)
+            time_str = match.group(1)
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                hour, minute = int(parts[0]), int(parts[1])
+                if 0 <= hour < 24 and 0 <= minute < 60:
+                    overlap = False
+                    for _, start, end in found_times:
+                        if match.start() >= start and match.end() <= end:
+                            overlap = True
+                            break
+                    if not overlap:
+                        found_times.append((match.group(0), match.start(), match.end()))
+
+        # Sort by position (reverse) so we can replace from end to start without offset issues
+        found_times.sort(key=lambda x: x[1], reverse=True)
+
+        # Replace each time with a placeholder
+        for original, start, end in found_times:
+            masked = masked[:start] + ('_' * (end - start)) + masked[end:]
+
+        return masked, found_times
+
+    def _mask_dates_in_text(self, text: str) -> Tuple[str, List[Tuple[str, int, int]]]:
+        """
+        Find and mask all date patterns in text, returning masked text and positions.
+
+        Handles:
+        - ISO: 2025-11-30
+        - US with year: 11/30/2025, 11/30/25
+        - US without year: 11/30
+        - Text month: Nov 30, November 30
+
+        Args:
+            text: Raw text that may contain dates
+
+        Returns:
+            Tuple of (masked_text, list of (original, start, end) tuples)
+        """
+        masked = text
+        found_dates = []
+
+        # Pattern 1: ISO format (2025-11-30)
+        iso_pattern = re.compile(r'\d{4}-\d{2}-\d{2}')
+        for match in iso_pattern.finditer(text):
+            found_dates.append((match.group(0), match.start(), match.end()))
+
+        # Pattern 2: US format with year (11/30/2025 or 11/30/25)
+        us_full_pattern = re.compile(r'\d{1,2}/\d{1,2}/\d{2,4}')
+        for match in us_full_pattern.finditer(text):
+            found_dates.append((match.group(0), match.start(), match.end()))
+
+        # Pattern 3: US format without year (11/30) - avoid matching if already part of longer pattern
+        us_short_pattern = re.compile(r'\d{1,2}/\d{1,2}(?!/)')
+        for match in us_short_pattern.finditer(text):
+            overlap = False
+            for _, start, end in found_dates:
+                if match.start() >= start and match.end() <= end:
+                    overlap = True
+                    break
+            if not overlap:
+                found_dates.append((match.group(0), match.start(), match.end()))
+
+        # Pattern 4: Text month format (Nov 30, November 30)
+        text_month_pattern = re.compile(
+            r'(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|'
+            r'jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
+            r'\s+\d{1,2}\b',
+            re.IGNORECASE
+        )
+        for match in text_month_pattern.finditer(text):
+            found_dates.append((match.group(0), match.start(), match.end()))
+
+        # Sort by position (reverse) for replacement
+        found_dates.sort(key=lambda x: x[1], reverse=True)
+
+        # Replace each date with a placeholder
+        for original, start, end in found_dates:
+            masked = masked[:start] + ('_' * (end - start)) + masked[end:]
+
+        return masked, found_dates
+
+    def _strip_prefix_at_colon(self, text: str, masked_text: str = None) -> str:
         """
         Strip everything before first colon, if the colon appears before the game separator.
 
         This handles stream names like "NCAAW B 14: Washington State vs BYU" where
         everything before the colon is metadata (league, sport code, stream number).
 
-        Avoids stripping at time colons (e.g., "8:15 PM") by checking if the colon
-        has digits on both sides (digit:digit pattern).
+        When masked_text is provided, uses it to detect colons (times already masked),
+        making the logic simple: any colon in masked text is a metadata colon.
 
         Args:
-            text: Stream name text
+            text: Original stream name text
+            masked_text: Text with times/dates masked (optional, for simpler detection)
 
         Returns:
             Text with prefix stripped, or original if no valid prefix colon found
         """
-        # Find game separator position
+        # Use masked text for colon detection if provided
+        detect_text = masked_text if masked_text else text
+
+        # Find game separator position in original text
         sep_pos = len(text)
         for sep in self.SEPARATORS:
             pos = text.lower().find(sep)
             if pos > 0 and pos < sep_pos:
                 sep_pos = pos
 
-        # Find first colon that's NOT part of a time (digit:digit)
-        colon_pos = -1
-        for i, char in enumerate(text):
-            if char == ':':
-                has_digit_before = i > 0 and text[i-1].isdigit()
-                has_digit_after = i < len(text)-1 and text[i+1].isdigit()
-                if has_digit_before and has_digit_after:
-                    continue  # This is a time like "8:15", skip it
-                colon_pos = i
-                break
+        # Find first colon in masked text (times already masked, so any colon is metadata)
+        colon_pos = detect_text.find(':')
 
-        # Only strip if valid colon found before separator
+        # Only strip if colon found before separator
         if colon_pos > 0 and colon_pos < sep_pos:
             return text[colon_pos + 1:].strip()
 
@@ -531,13 +802,22 @@ class TeamMatcher:
         More aggressive than _normalize_text - removes more noise
         that's common in IPTV stream names.
 
+        Architecture (mask-then-strip):
+        0. Fix mojibake (UTF-8 double-encoding)
+        1. Apply simple prefix removals that don't affect colon positions
+        2. Mask times (so colons in times don't confuse prefix detection)
+        3. Strip prefix at colon (now simple - any remaining colon is metadata)
+        4. Apply standard normalization
+        5. Apply city name variants (München→Munich, Köln→Cologne)
+
         Args:
             stream_name: Raw stream/channel name
 
         Returns:
             Cleaned string with just team matchup info
         """
-        text = stream_name
+        # Step 0: Fix mojibake first (e.g., "Ã©" → "é")
+        text = fix_mojibake(stream_name)
 
         # Remove country/region prefixes like "(UK)", "(US)", "CA"
         text = re.sub(r'^\(?\s*(uk|us|usa|ca|au)\s*\)?[\s|:]*', '', text, flags=re.I)
@@ -551,12 +831,30 @@ class TeamMatcher:
         # Remove standalone league prefixes like "NCAA Basketball:", "NCAAM:", "College Basketball:"
         text = re.sub(r'^(ncaa[mfwb]?|college)\s*(basketball|football|hockey)?\s*:?\s*', '', text, flags=re.I)
 
-        # Strip metadata prefix at colon (e.g., "B 14: Team vs Team" -> "Team vs Team")
-        # This handles stream names like "NCAAW B 14: Washington State vs BYU"
-        text = self._strip_prefix_at_colon(text)
+        # NOW mask times on the cleaned text (so text and masked_text stay in sync)
+        # This makes colon detection trivial - any remaining colon is metadata
+        masked_text, _ = self._mask_times_in_text(text)
 
-        # Now apply standard normalization
-        return self._normalize_text(text)
+        # Strip metadata prefix at colon using masked text for detection
+        # "CB01:12pm 10 ISU @ 1 PUR" -> masked "CB01:____ 10 ISU @ 1 PUR" -> strips at colon
+        text = self._strip_prefix_at_colon(text, masked_text)
+
+        # Remove language broadcast prefixes like "En Español-", "En Espanol-", "Spanish-"
+        text = re.sub(r'^(?:En\s+Espa[ñn]ol|Spanish|Espa[ñn]ol|French|Portuguese|German)\s*[-:]\s*', '', text, flags=re.I)
+
+        # Remove parenthesized language codes like "(ESP)", "(SPA)", "(FRA)", "(GER)", "(POR)", "(ITA)", "(ARA)"
+        text = re.sub(r'^\((?:ESP|SPA|FRA|GER|POR|ITA|ARA)\)\s*[-:]?\s*', '', text, flags=re.I)
+
+        # Apply standard normalization first
+        text = self._normalize_text(text)
+
+        # Apply city/team name variants to match ESPN format
+        # nuremberg→nürnberg, hertha bsc→hertha berlin, etc.
+        for variant, canonical in CITY_NAME_VARIANTS.items():
+            # Use word boundary matching to avoid partial replacements
+            text = re.sub(r'\b' + re.escape(variant) + r'\b', canonical, text, flags=re.I)
+
+        return text
 
     def _find_separator(self, text: str) -> Tuple[Optional[str], int]:
         """
@@ -1472,13 +1770,15 @@ class TeamMatcher:
             result['game_time'] = extract_time_from_text(stream_name)
 
         # Try to detect league from indicators in stream name
-        from epg.league_detector import LEAGUE_INDICATORS, SPORT_INDICATORS, LEAGUE_TO_SPORT
+        from epg.league_detector import LEAGUE_INDICATORS, SPORT_INDICATORS, get_sport_for_league
+        from database import normalize_league_code
         import re
 
         for pattern, league in LEAGUE_INDICATORS.items():
             if re.search(pattern, stream_name, re.IGNORECASE):
-                result['detected_league'] = league
-                result['detected_sport'] = LEAGUE_TO_SPORT.get(league)
+                # Normalize alias to ESPN slug (single source of truth)
+                result['detected_league'] = normalize_league_code(league)
+                result['detected_sport'] = get_sport_for_league(league)
                 break
 
         if not result['detected_league']:

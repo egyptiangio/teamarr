@@ -5,6 +5,104 @@ All notable changes to TeamArr will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2025-12-06
+
+### Fixed
+- **Timezone handling for "today" calculation** - Games at 7pm EST on Dec 6 no longer appear as
+  "yesterday" at midnight UTC. Now uses user's configured timezone for day comparison.
+- **Improved past game messaging** - Past games now show "Event already passed" instead of
+  misleading "No game found" message.
+- **Disabled word-overlap team matching** - Removed Tier 5 word-overlap matching that caused
+  false positives (e.g., "Tampa Bay Lightning" matching "Monterey Bay F.C." via shared word 'bay').
+  The feature provided no actual value since ESPN uses English names and accent-stripping
+  already handles variants like "Bayern München".
+- **Tier 4 matches showing "? @ ?" in test modal** - Now populates team names from event data
+  after successful Tier 4/4b+ schedule search.
+- **FCS college football detection** - Team league cache now includes all college football teams
+  (FBS + FCS + DII/DIII, ~740 teams), enabling multi-sport detection for FCS playoff games
+  (e.g., Yale vs Montana State). UI team picker unchanged (still shows FBS by conference only).
+
+### Changed
+- Added `get_user_timezone()` and `get_today_in_user_tz()` helpers to `utils/time_format.py`
+- Increased ESPN team API limit from 500 to 1000 to accommodate all college football divisions
+
+---
+
+## [1.4.0] - 2025-12-06
+
+### Added
+
+#### Multi-Sport Event Groups
+- **Per-stream league detection** for ESPN+, ESPN Xtra, and similar mixed-sport providers
+- **Tiered detection system** (Tier 1-4) with increasing flexibility:
+  - Tier 1: League prefix detection (`NHL:`, `NBA:`)
+  - Tier 2: Sport prefix detection (`Hockey:`, `Basketball:`)
+  - Tier 3a/3b/3c: Team cache lookup with date/time disambiguation
+  - Tier 4a/4b: Single-team schedule search for opponent name matching
+- **LeagueDetector module** (`epg/league_detector.py`) orchestrates detection
+- **TeamLeagueCache** (`epg/team_league_cache.py`) provides team→league reverse lookups
+- **Detection tier logging** for debugging: `[TIER 3a] stream → LEAGUE`
+- **Non-enabled league detection** - When teams are found in a league not enabled for the group,
+  displays helpful message like "Found in NCAA Women's Hockey (not enabled)" instead of generic
+  "teams not found" error. Excluded from match rate calculation.
+
+#### Advanced Team Matching
+- **Tiered name normalization** in TeamMatcher:
+  - Exact match
+  - Accent-stripped (ñ→n, ü→u, é→e)
+  - Number-stripped ("1. FC Heidenheim 1846" → "FC Heidenheim")
+  - Article-stripped (de, del, da, do, di, du)
+- **International team support** with Unicode normalization
+- **Ranking pattern support** in stream names (`@ 4 Texas T`, `#8 Alabama`)
+- **Language prefix stripping** (En Español, Deportes, etc.)
+
+#### Stream Filtering Improvements
+- **Game indicator detection** now supports rankings before team names
+- **Time/date masking** for accurate colon-based prefix detection
+- **NCAA soccer recognition** in scoreboard fallback (`usa.ncaa.m.1`, `usa.ncaa.w.1`)
+
+### Changed
+- **League code normalization** - ESPN slugs used as primary identifiers throughout
+- **League ID aliases** updated for volleyball: `ncaavb`/`ncaawvb`
+- **Database schema version** updated to 18
+
+### Technical Details
+
+#### New Files
+- `epg/league_detector.py` - Multi-sport league detection (~1700 lines)
+- `epg/team_league_cache.py` - Team→league reverse lookup cache
+- `epg/event_enricher.py` - Unified event enrichment pipeline
+- `utils/keyword_matcher.py` - Exception keyword matching
+- `utils/regex_helper.py` - Variable-width lookbehind regex support
+
+#### Database Changes (Migration 16-18)
+- `team_league_cache` table for non-soccer team→league mappings
+- `league_id_aliases` table for friendly league code aliases
+- Multi-sport settings in `event_epg_groups`
+
+---
+
+## [1.3.x] - 2025-11-24 to 2025-12-05
+
+### Added
+- **Channel Lifecycle V2** - Multi-stream support, reconciliation, history tracking
+- **Parent/Child Group Architecture** - Stream consolidation across providers
+- **Soccer Multi-League Support** - 240+ leagues, weekly cache refresh
+- **Consolidation Exception Keywords** - Global keywords with behaviors
+- **{exception_keyword} Template Variable** - Include matched keyword in channel names
+- **Stream Include/Exclude Regex** - Filter streams before matching
+- **Parallel Processing Optimizations** - ThreadPoolExecutor for API calls
+- **Advanced Regex Module** - Variable-width lookbehind support
+- **Event Enricher Module** - Unified enrichment pipeline
+
+### Fixed
+- Final game showing pregame instead of postgame
+- Score variables empty in postgame filler
+- .next template variables empty in filler
+- Timezone edge cases for midnight UTC games
+
+---
+
 ## [1.0.0] - 2025-11-23
 
 ### ⚠️ BREAKING CHANGES

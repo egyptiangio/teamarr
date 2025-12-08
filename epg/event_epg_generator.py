@@ -138,8 +138,8 @@ class EventEPGGenerator:
             return group_info
 
         # Derive sport from league
-        from epg.league_detector import LEAGUE_TO_SPORT
-        detected_sport = LEAGUE_TO_SPORT.get(detected_league)
+        from epg.league_detector import get_sport_for_league
+        detected_sport = get_sport_for_league(detected_league)
 
         # Build effective group_info with overrides
         effective = dict(group_info)

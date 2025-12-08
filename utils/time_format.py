@@ -188,3 +188,63 @@ def format_game_time(
         timezone = settings.get('default_timezone', 'America/Detroit')
 
     return format_time(event_datetime, time_format, show_timezone, timezone)
+
+
+def get_user_timezone(db_connection_func=None) -> str:
+    """
+    Get user's timezone from database settings.
+
+    Args:
+        db_connection_func: Function that returns DB connection.
+                           If not provided, falls back to database.get_connection.
+
+    Returns:
+        Timezone string (e.g., 'America/Detroit', 'America/New_York')
+        Falls back to 'America/Detroit' if not set.
+    """
+    DEFAULT_TZ = 'America/Detroit'
+
+    if db_connection_func is None:
+        try:
+            from database import get_connection
+            db_connection_func = get_connection
+        except ImportError:
+            return DEFAULT_TZ
+
+    try:
+        conn = db_connection_func()
+        cursor = conn.cursor()
+        cursor.execute("SELECT default_timezone FROM settings WHERE id = 1")
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+    except Exception:
+        pass
+
+    return DEFAULT_TZ
+
+
+def get_today_in_user_tz(db_connection_func=None) -> datetime:
+    """
+    Get current date in user's timezone.
+
+    This is important for "today/yesterday" comparisons because
+    a game at 7pm EST on Dec 6 becomes Dec 7 at midnight UTC.
+    We want to compare against the user's concept of "today".
+
+    Args:
+        db_connection_func: Function that returns DB connection.
+
+    Returns:
+        datetime.date in user's timezone
+    """
+    user_tz_str = get_user_timezone(db_connection_func)
+    try:
+        user_tz = ZoneInfo(user_tz_str)
+    except Exception:
+        user_tz = ZoneInfo('America/Detroit')
+
+    now_utc = datetime.now(ZoneInfo('UTC'))
+    now_user = now_utc.astimezone(user_tz)
+    return now_user.date()

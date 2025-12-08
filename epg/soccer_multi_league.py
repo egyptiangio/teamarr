@@ -16,6 +16,8 @@ Usage:
 """
 
 import requests
+from requests.adapters import HTTPAdapter
+import threading
 import time
 import re
 import json
@@ -28,6 +30,30 @@ from database import get_connection
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# Module-level HTTP session for connection pooling
+_soccer_session: Optional[requests.Session] = None
+_soccer_session_lock = threading.Lock()
+
+
+def _get_soccer_session() -> requests.Session:
+    """Get or create a shared HTTP session for soccer API calls."""
+    global _soccer_session
+    if _soccer_session is None:
+        with _soccer_session_lock:
+            if _soccer_session is None:
+                session = requests.Session()
+                adapter = HTTPAdapter(
+                    pool_connections=10,
+                    pool_maxsize=100,  # Match MAX_WORKERS for parallel league fetching
+                    max_retries=0
+                )
+                session.mount('http://', adapter)
+                session.mount('https://', adapter)
+                _soccer_session = session
+                logger.debug("Soccer HTTP session created with connection pooling")
+    return _soccer_session
 
 
 # =============================================================================
@@ -128,7 +154,7 @@ LEAGUE_TAG_PATTERNS = {
 }
 
 # Thread pool size for parallel fetching
-MAX_WORKERS = 50
+MAX_WORKERS = 100
 
 
 # =============================================================================
@@ -323,7 +349,7 @@ class SoccerMultiLeague:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{any_known_league}/teams/{espn_team_id}"
 
         try:
-            resp = requests.get(url, timeout=10)
+            resp = _get_soccer_session().get(url, timeout=10)
             if resp.status_code != 200:
                 logger.debug(f"Failed to fetch team {espn_team_id}: HTTP {resp.status_code}")
                 return None
@@ -543,7 +569,7 @@ class SoccerMultiLeague:
     def _fetch_all_league_slugs(cls) -> List[str]:
         """Fetch all soccer league slugs from ESPN."""
         try:
-            resp = requests.get(ESPN_LEAGUES_URL, timeout=10)
+            resp = _get_soccer_session().get(ESPN_LEAGUES_URL, timeout=10)
             resp.raise_for_status()
             data = resp.json()
 
@@ -573,7 +599,7 @@ class SoccerMultiLeague:
     def _fetch_league_slug(cls, ref_url: str) -> Optional[str]:
         """Fetch a single league's slug from its ref URL."""
         try:
-            resp = requests.get(ref_url, timeout=10)
+            resp = _get_soccer_session().get(ref_url, timeout=10)
             if resp.status_code == 200:
                 return resp.json().get('slug')
         except:
@@ -659,7 +685,7 @@ class SoccerMultiLeague:
         url = ESPN_TEAMS_URL.format(slug=slug)
 
         try:
-            resp = requests.get(url, timeout=10)
+            resp = _get_soccer_session().get(url, timeout=10)
             if resp.status_code != 200:
                 return None
 

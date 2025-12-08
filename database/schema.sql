@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS settings (
     team_cache_refresh_frequency TEXT DEFAULT 'weekly',    -- daily, every_3_days, weekly, manual
 
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 16,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 22,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -398,6 +398,15 @@ CREATE TABLE IF NOT EXISTS epg_history (
     event_based_pregame INTEGER DEFAULT 0,
     event_based_postgame INTEGER DEFAULT 0,
 
+    -- Event Filtering Stats (aggregated from all groups)
+    event_filtered_no_indicator INTEGER DEFAULT 0,       -- No vs/@/at
+    event_filtered_include_regex INTEGER DEFAULT 0,      -- Didn't match inclusion regex
+    event_filtered_exclude_regex INTEGER DEFAULT 0,      -- Matched exclusion regex
+    event_filtered_outside_lookahead INTEGER DEFAULT 0,  -- Past events
+    event_filtered_final INTEGER DEFAULT 0,              -- Final events excluded
+    event_filtered_league_not_enabled INTEGER DEFAULT 0, -- League not enabled
+    event_filtered_unsupported_sport INTEGER DEFAULT 0,  -- Unsupported sports
+
     -- Quality/Error Stats
     unresolved_vars_count INTEGER DEFAULT 0,
     coverage_gaps_count INTEGER DEFAULT 0,
@@ -408,7 +417,10 @@ CREATE TABLE IF NOT EXISTS epg_history (
 
     -- Status
     status TEXT DEFAULT 'success',          -- 'success', 'error', 'partial'
-    error_message TEXT
+    error_message TEXT,
+
+    -- Trigger Source (added in migration 24)
+    triggered_by TEXT DEFAULT 'manual'      -- 'manual', 'scheduler', 'api'
 );
 
 CREATE INDEX IF NOT EXISTS idx_epg_history_generated ON epg_history(generated_at);
@@ -472,32 +484,76 @@ CREATE TABLE IF NOT EXISTS league_config (
 );
 
 -- Pre-populate league configurations
+-- NOTE: league_code uses ESPN slugs for consistency with multi-league detection
 INSERT OR IGNORE INTO league_config (league_code, league_name, sport, api_path, default_category, record_format, logo_url) VALUES
+    -- US Sports (league_code matches ESPN slug)
     ('nba', 'NBA', 'basketball', 'basketball/nba', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png'),
     ('wnba', 'WNBA', 'basketball', 'basketball/wnba', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png'),
+    ('nba-development', 'NBA G League', 'basketball', 'basketball/nba-development', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba_gleague.png'),
     ('nfl', 'NFL', 'football', 'football/nfl', 'Football', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png'),
     ('mlb', 'MLB', 'baseball', 'baseball/mlb', 'Baseball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png'),
     ('nhl', 'NHL', 'hockey', 'hockey/nhl', 'Hockey', 'wins-losses-ties', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png'),
-    ('mls', 'MLS', 'soccer', 'soccer/usa.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
-    ('nwsl', 'NWSL', 'soccer', 'soccer/usa.nwsl', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png'),
-    ('epl', 'English Premier League', 'soccer', 'soccer/eng.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png'),
-    ('efl', 'EFL Championship', 'soccer', 'soccer/eng.2', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png'),
-    ('efl1', 'EFL League One', 'soccer', 'soccer/eng.3', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png'),
-    ('laliga', 'La Liga', 'soccer', 'soccer/esp.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png'),
-    ('bundesliga', 'Bundesliga', 'soccer', 'soccer/ger.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png'),
-    ('seriea', 'Serie A', 'soccer', 'soccer/ita.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png'),
-    ('ligue1', 'Ligue 1', 'soccer', 'soccer/fra.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png'),
-    ('ncaaf', 'NCAA Football', 'football', 'football/college-football', 'College Football', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png'),
-    ('ncaam', 'NCAA Men''s Basketball', 'basketball', 'basketball/mens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
-    ('ncaaw', 'NCAA Women''s Basketball', 'basketball', 'basketball/womens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
-    ('nba-g', 'NBA G League', 'basketball', 'basketball/nba-development', 'Basketball', 'wins-losses', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba-g-league.png'),
-    ('ncaavb-w', 'NCAA Women''s Volleyball', 'volleyball', 'volleyball/womens-college-volleyball', 'Volleyball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png'),
-    ('ncaavb-m', 'NCAA Men''s Volleyball', 'volleyball', 'volleyball/mens-college-volleyball', 'Volleyball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png'),
-    ('ncaah', 'NCAA Men''s Hockey', 'hockey', 'hockey/mens-college-hockey', 'Hockey', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/hockey.png'),
-    ('ncaas', 'NCAA Men''s Soccer', 'soccer', 'soccer/usa.ncaa.m.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png'),
-    ('ncaaws', 'NCAA Women''s Soccer', 'soccer', 'soccer/usa.ncaa.w.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png');
+    -- College Sports (league_code uses ESPN slug)
+    ('college-football', 'NCAA Football', 'football', 'football/college-football', 'College Football', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png'),
+    ('mens-college-basketball', 'NCAA Men''s Basketball', 'basketball', 'basketball/mens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
+    ('womens-college-basketball', 'NCAA Women''s Basketball', 'basketball', 'basketball/womens-college-basketball', 'College Basketball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png'),
+    ('mens-college-hockey', 'NCAA Men''s Hockey', 'hockey', 'hockey/mens-college-hockey', 'Hockey', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png'),
+    ('womens-college-hockey', 'NCAA Women''s Hockey', 'hockey', 'hockey/womens-college-hockey', 'Hockey', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png'),
+    ('mens-college-volleyball', 'NCAA Men''s Volleyball', 'volleyball', 'volleyball/mens-college-volleyball', 'Volleyball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png'),
+    ('womens-college-volleyball', 'NCAA Women''s Volleyball', 'volleyball', 'volleyball/womens-college-volleyball', 'Volleyball', 'wins-losses', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png'),
+    -- Soccer (league_code uses ESPN slug)
+    ('usa.1', 'MLS', 'soccer', 'soccer/usa.1', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
+    ('usa.nwsl', 'NWSL', 'soccer', 'soccer/usa.nwsl', 'Soccer', 'wins-losses-ties', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png'),
+    ('eng.1', 'English Premier League', 'soccer', 'soccer/eng.1', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png'),
+    ('eng.2', 'EFL Championship', 'soccer', 'soccer/eng.2', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png'),
+    ('eng.3', 'EFL League One', 'soccer', 'soccer/eng.3', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png'),
+    ('esp.1', 'La Liga', 'soccer', 'soccer/esp.1', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png'),
+    ('ger.1', 'Bundesliga', 'soccer', 'soccer/ger.1', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png'),
+    ('ita.1', 'Serie A', 'soccer', 'soccer/ita.1', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png'),
+    ('fra.1', 'Ligue 1', 'soccer', 'soccer/fra.1', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png'),
+    ('uefa.champions', 'UEFA Champions League', 'soccer', 'soccer/uefa.champions', 'Soccer', 'wins-draws-losses', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png'),
+    -- NCAA Soccer (league_code uses ESPN slug)
+    ('usa.ncaa.m.1', 'NCAA Men''s Soccer', 'soccer', 'soccer/usa.ncaa.m.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png'),
+    ('usa.ncaa.w.1', 'NCAA Women''s Soccer', 'soccer', 'soccer/usa.ncaa.w.1', 'Soccer', 'wins-losses-ties', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png');
 
 CREATE INDEX IF NOT EXISTS idx_league_code ON league_config(league_code);
+
+-- =============================================================================
+-- LEAGUE_ID_ALIASES TABLE
+-- Admin-managed mappings from ESPN slugs to friendly short codes
+-- Used by {league_id} template variable for consistent output
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS league_id_aliases (
+    espn_slug TEXT PRIMARY KEY,             -- ESPN API slug (e.g., 'eng.1', 'mens-college-basketball')
+    alias TEXT NOT NULL,                    -- Friendly short code (e.g., 'epl', 'ncaam')
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Pre-populate league aliases for friendly {league_id} output
+INSERT OR IGNORE INTO league_id_aliases (espn_slug, alias) VALUES
+    -- Soccer
+    ('eng.1', 'epl'),
+    ('esp.1', 'laliga'),
+    ('ger.1', 'bundesliga'),
+    ('ita.1', 'seriea'),
+    ('fra.1', 'ligue1'),
+    ('usa.1', 'mls'),
+    ('usa.nwsl', 'nwsl'),
+    ('eng.2', 'efl'),
+    ('eng.3', 'efl1'),
+    ('uefa.champions', 'ucl'),
+    -- College sports
+    ('mens-college-basketball', 'ncaam'),
+    ('womens-college-basketball', 'ncaaw'),
+    ('college-football', 'ncaaf'),
+    ('mens-college-hockey', 'ncaah'),
+    ('womens-college-hockey', 'ncaawh'),
+    ('nba-development', 'nbag'),
+    ('mens-college-volleyball', 'ncaavbm'),
+    ('womens-college-volleyball', 'ncaavbw'),
+    ('usa.ncaa.m.1', 'ncaas'),
+    ('usa.ncaa.w.1', 'ncaaws');
 
 -- =============================================================================
 -- CONDITION_PRESETS TABLE
@@ -676,8 +732,18 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
 
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated
-    stream_count INTEGER DEFAULT 0,                -- Number of streams in group
-    matched_count INTEGER DEFAULT 0                -- Number of streams matched to ESPN events
+    total_stream_count INTEGER DEFAULT 0,          -- Raw stream count from provider
+    stream_count INTEGER DEFAULT 0,                -- Eligible streams (after filtering/exclusions)
+    matched_count INTEGER DEFAULT 0,               -- Number of streams matched to ESPN events
+
+    -- Filtering Stats (for match rate calculation and UI display)
+    filtered_no_indicator INTEGER DEFAULT 0,       -- No vs/@/at (built-in filter)
+    filtered_include_regex INTEGER DEFAULT 0,      -- Didn't match user's inclusion regex
+    filtered_exclude_regex INTEGER DEFAULT 0,      -- Matched user's exclusion regex
+    filtered_outside_lookahead INTEGER DEFAULT 0,  -- Date outside lookahead window (past events)
+    filtered_final INTEGER DEFAULT 0,              -- Final events (when exclude setting on)
+    filtered_league_not_enabled INTEGER DEFAULT 0, -- Event in league not enabled for this group
+    filtered_unsupported_sport INTEGER DEFAULT 0   -- Beach soccer, boxing/MMA, futsal
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_epg_groups_league ON event_epg_groups(assigned_league);
@@ -703,6 +769,16 @@ CREATE TABLE IF NOT EXISTS consolidation_exception_keywords (
     behavior TEXT NOT NULL DEFAULT 'consolidate',  -- consolidate, separate, ignore
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Pre-populate default language exception keywords for sub-consolidation
+-- These ensure non-English language streams get their own channel, separate from English
+INSERT OR IGNORE INTO consolidation_exception_keywords (keywords, behavior) VALUES
+    ('En Español, (ESP), Spanish, Español', 'consolidate'),
+    ('En Français, (FRA), French, Français', 'consolidate'),
+    ('(GER), German, Deutsch', 'consolidate'),
+    ('(POR), Portuguese, Português', 'consolidate'),
+    ('(ITA), Italian, Italiano', 'consolidate'),
+    ('(ARA), Arabic, العربية', 'consolidate');
 
 -- =============================================================================
 -- TEAM ALIASES TABLE (Event Channel EPG Feature)
