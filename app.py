@@ -1851,9 +1851,10 @@ def _check_team_league_cache_refresh(settings: dict):
 
 
 def scheduler_loop():
-    """Background thread that runs the scheduler"""
+    """Background thread that runs the scheduler using cron expressions"""
     global scheduler_running, last_run_time
     from datetime import timezone
+    from croniter import croniter
 
     app.logger.info("🚀 EPG Auto-Generation Scheduler started")
 
@@ -1867,8 +1868,9 @@ def scheduler_loop():
                 time.sleep(60)  # Check every minute if disabled
                 continue
 
-            frequency = settings.get('auto_generate_frequency', 'daily')
-            schedule_time = settings.get('schedule_time', '00')
+            # Get cron expression (default: every hour at minute 0)
+            cron_expression = settings.get('cron_expression', '0 * * * *')
+
             # Use UTC for all comparisons to avoid timezone issues
             now = datetime.now(timezone.utc)
 
@@ -1881,58 +1883,30 @@ def scheduler_loop():
             if effective_last_run and effective_last_run.tzinfo is None:
                 effective_last_run = effective_last_run.replace(tzinfo=timezone.utc)
 
-            # Check if it's time to run based on frequency and last run time
+            # Check if it's time to run based on cron expression
             should_run = False
 
-            if frequency == 'hourly':
-                # Run once per hour at the specified minute
-                # schedule_time should be "00" to "59"
-                try:
-                    target_minute = int(schedule_time) if schedule_time else 0
-                    target_minute = max(0, min(59, target_minute))  # Clamp to valid range
-                except ValueError:
-                    target_minute = 0
+            try:
+                # Use effective_last_run as base time for croniter
+                # If never run, use 24 hours ago to catch any missed runs
+                base_time = effective_last_run or (now - timedelta(hours=24))
 
-                if effective_last_run is None:
-                    # Never run before - check if we're past the target minute this hour
-                    if now.minute >= target_minute:
-                        app.logger.debug(f"Scheduler: No previous run, past target minute {target_minute}")
-                        should_run = True
-                else:
-                    # Check if we're in a new hour AND past the target minute
-                    last_hour = effective_last_run.replace(minute=0, second=0, microsecond=0)
-                    current_hour = now.replace(minute=0, second=0, microsecond=0)
-                    if current_hour > last_hour and now.minute >= target_minute:
-                        app.logger.info(f"⏰ New hour detected, past minute {target_minute}, triggering scheduled generation")
-                        should_run = True
+                cron = croniter(cron_expression, base_time)
+                next_run = cron.get_next(datetime)
 
-            elif frequency == 'daily':
-                # Run once per day at the specified time
-                # schedule_time should be "HH:MM" format (e.g., "03:00")
-                try:
-                    if ':' in (schedule_time or ''):
-                        parts = schedule_time.split(':')
-                        target_hour = int(parts[0])
-                        target_minute = int(parts[1]) if len(parts) > 1 else 0
-                    else:
-                        target_hour = int(schedule_time) if schedule_time else 0
-                        target_minute = 0
-                    target_hour = max(0, min(23, target_hour))
-                    target_minute = max(0, min(59, target_minute))
-                except ValueError:
-                    target_hour = 0
-                    target_minute = 0
+                # Make next_run timezone-aware if it isn't
+                if next_run.tzinfo is None:
+                    next_run = next_run.replace(tzinfo=timezone.utc)
 
-                if effective_last_run is None:
-                    # Never run before - check if we're past the target time today
-                    if now.hour > target_hour or (now.hour == target_hour and now.minute >= target_minute):
-                        should_run = True
-                else:
-                    # Check if we're on a new day AND past the target time
-                    if now.date() > effective_last_run.date():
-                        if now.hour > target_hour or (now.hour == target_hour and now.minute >= target_minute):
-                            app.logger.info(f"⏰ New day detected, past {target_hour:02d}:{target_minute:02d}, triggering scheduled generation")
-                            should_run = True
+                if now >= next_run:
+                    app.logger.info(f"⏰ Cron trigger: '{cron_expression}' - scheduled time {next_run.strftime('%H:%M')} reached")
+                    should_run = True
+
+            except Exception as e:
+                app.logger.error(f"Invalid cron expression '{cron_expression}': {e}")
+                # Fall back to hourly at minute 0 if cron is invalid
+                if now.minute == 0 and (effective_last_run is None or now.hour != effective_last_run.hour):
+                    should_run = True
 
             if should_run:
                 run_scheduled_generation()
@@ -2909,7 +2883,7 @@ def settings_update():
             'game_duration_baseball', 'game_duration_soccer',
             'cache_enabled', 'cache_duration_hours',
             'xmltv_generator_name', 'xmltv_generator_url',
-            'auto_generate_enabled', 'auto_generate_frequency', 'schedule_time',
+            'auto_generate_enabled', 'cron_expression',
             'dispatcharr_enabled', 'dispatcharr_url', 'dispatcharr_username',
             'dispatcharr_password', 'dispatcharr_epg_id',
             'channel_create_timing', 'channel_delete_timing', 'include_final_events',
@@ -2933,6 +2907,23 @@ def settings_update():
                         ZoneInfo(value)  # Validate - raises if invalid
                     except Exception:
                         flash(f'Invalid timezone: "{value}". Timezone names are case-sensitive (e.g., America/Chicago, not America/chicago).', 'error')
+                        conn.close()
+                        return redirect(url_for('settings_form'))
+                # Validate cron expression
+                elif field == 'cron_expression':
+                    value = value.strip() if value else '0 * * * *'
+                    # Basic validation: must have 5 fields
+                    parts = value.split()
+                    if len(parts) != 5:
+                        flash('Invalid cron expression: must have 5 fields (minute hour day month weekday)', 'error')
+                        conn.close()
+                        return redirect(url_for('settings_form'))
+                    # Validate with croniter
+                    try:
+                        from croniter import croniter
+                        croniter(value)  # Raises if invalid
+                    except Exception as e:
+                        flash(f'Invalid cron expression: {str(e)}', 'error')
                         conn.close()
                         return redirect(url_for('settings_form'))
                 # Handle numeric fields

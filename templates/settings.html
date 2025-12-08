@@ -283,23 +283,62 @@
                 </label>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="auto_generate_frequency">Frequency</label>
-                    <select id="auto_generate_frequency" name="auto_generate_frequency" class="form-control" onchange="updateScheduleTimeUI()">
-                        <option value="hourly" {% if settings.auto_generate_frequency == 'hourly' %}selected{% endif %}>Hourly</option>
-                        <option value="daily" {% if settings.auto_generate_frequency == 'daily' %}selected{% endif %}>Daily</option>
-                    </select>
+            <div class="form-group">
+                <label style="margin-bottom: 0.5rem;">Quick Presets</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 * * * *')">Every Hour</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 */2 * * *')">Every 2 Hours</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 */6 * * *')">Every 6 Hours</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 3 * * *')">Daily 3 AM</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 6 * * *')">Daily 6 AM</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 6,18 * * *')">Twice Daily</button>
                 </div>
-                <div class="form-group">
-                    <label for="schedule_time" id="schedule_time_label">Run at minute</label>
-                    <input type="text" id="schedule_time" name="schedule_time" class="form-control"
-                           value="{{ settings.schedule_time or '00' }}"
-                           placeholder="00"
-                           style="max-width: 80px;"
-                           oninput="validateScheduleTime(this)">
-                    <small id="schedule_time_help" class="form-text text-muted">0-59</small>
+            </div>
+
+            <div class="form-group">
+                <label for="cron_expression">Cron Expression</label>
+                <input type="text" id="cron_expression" name="cron_expression" class="form-control"
+                       value="{{ settings.cron_expression or '0 * * * *' }}"
+                       placeholder="0 * * * *"
+                       style="max-width: 200px; font-family: monospace;"
+                       oninput="validateAndDescribeCron()">
+                <small id="cron_description" class="form-text" style="color: var(--text-secondary);">Every hour at minute 0</small>
+            </div>
+
+            <div id="cron_helper" style="background: var(--bg-tertiary); border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                    <div style="text-align: center; min-width: 60px;">
+                        <select id="cron_minute" class="form-control" style="font-size: 0.75rem; padding: 0.25rem;" onchange="updateCronFromHelper()">
+                            <option value="0">0</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="45">45</option>
+                        </select>
+                        <small style="color: var(--text-muted); font-size: 0.625rem;">Minute</small>
+                    </div>
+                    <div style="text-align: center; min-width: 60px;">
+                        <select id="cron_hour" class="form-control" style="font-size: 0.75rem; padding: 0.25rem;" onchange="updateCronFromHelper()">
+                            <option value="*">Every</option>
+                            <option value="*/2">Every 2h</option>
+                            <option value="*/4">Every 4h</option>
+                            <option value="*/6">Every 6h</option>
+                            <option value="*/12">Every 12h</option>
+                            <option value="0">12 AM</option>
+                            <option value="3">3 AM</option>
+                            <option value="6">6 AM</option>
+                            <option value="9">9 AM</option>
+                            <option value="12">12 PM</option>
+                            <option value="15">3 PM</option>
+                            <option value="18">6 PM</option>
+                            <option value="21">9 PM</option>
+                        </select>
+                        <small style="color: var(--text-muted); font-size: 0.625rem;">Hour</small>
+                    </div>
                 </div>
+                <small style="color: var(--text-muted); font-size: 0.6875rem;">
+                    Format: minute hour day month weekday (UTC) &bull;
+                    <a href="https://crontab.guru/" target="_blank" style="color: var(--primary);">crontab.guru</a>
+                </small>
             </div>
         </div>
 
@@ -827,61 +866,172 @@ select.form-control {
 </style>
 
 <script>
-// Schedule time UI based on frequency selection
-function updateScheduleTimeUI() {
-    const frequency = document.getElementById('auto_generate_frequency').value;
-    const label = document.getElementById('schedule_time_label');
-    const input = document.getElementById('schedule_time');
-    const help = document.getElementById('schedule_time_help');
+// Cron expression descriptions
+const CRON_DESCRIPTIONS = {
+    '0 * * * *': 'Every hour at minute 0',
+    '0 */2 * * *': 'Every 2 hours at minute 0',
+    '0 */4 * * *': 'Every 4 hours at minute 0',
+    '0 */6 * * *': 'Every 6 hours at minute 0',
+    '0 */12 * * *': 'Every 12 hours at minute 0',
+    '0 0 * * *': 'Daily at midnight (12 AM)',
+    '0 3 * * *': 'Daily at 3 AM',
+    '0 6 * * *': 'Daily at 6 AM',
+    '0 6,18 * * *': 'Twice daily at 6 AM and 6 PM',
+    '0 9 * * *': 'Daily at 9 AM',
+    '0 12 * * *': 'Daily at noon (12 PM)',
+    '0 15 * * *': 'Daily at 3 PM',
+    '0 18 * * *': 'Daily at 6 PM',
+    '0 21 * * *': 'Daily at 9 PM',
+};
 
-    if (frequency === 'hourly') {
-        label.textContent = 'Run at minute';
-        input.placeholder = '00';
-        help.textContent = '0-59 (e.g., 15 = run at :15 each hour)';
-        input.style.maxWidth = '80px';
-        // Convert HH:MM to just minutes if needed
-        if (input.value.includes(':')) {
-            input.value = input.value.split(':')[1] || '00';
-        }
-    } else {
-        label.textContent = 'Run at time';
-        input.placeholder = '00:00';
-        help.textContent = 'HH:MM in 24h format (e.g., 03:00 = 3am)';
-        input.style.maxWidth = '100px';
-        // Convert minutes to HH:MM if needed
-        if (!input.value.includes(':') && input.value.length <= 2) {
-            input.value = '00:' + input.value.padStart(2, '0');
-        }
-    }
-    validateScheduleTime(input);
+function setCronPreset(cron) {
+    document.getElementById('cron_expression').value = cron;
+    validateAndDescribeCron();
+    syncHelperFromCron();
 }
 
-function validateScheduleTime(input) {
-    const frequency = document.getElementById('auto_generate_frequency').value;
-    let value = input.value.trim();
-    let isValid = false;
+function validateAndDescribeCron() {
+    const input = document.getElementById('cron_expression');
+    const description = document.getElementById('cron_description');
+    const value = input.value.trim();
 
-    if (frequency === 'hourly') {
-        // Should be 0-59
-        const num = parseInt(value, 10);
-        isValid = !isNaN(num) && num >= 0 && num <= 59;
-    } else {
-        // Should be HH:MM format
-        const match = value.match(/^(\d{1,2}):(\d{2})$/);
-        if (match) {
-            const hour = parseInt(match[1], 10);
-            const minute = parseInt(match[2], 10);
-            isValid = hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
-        }
+    // Check for known descriptions first
+    if (CRON_DESCRIPTIONS[value]) {
+        description.textContent = CRON_DESCRIPTIONS[value];
+        description.style.color = 'var(--text-secondary)';
+        input.style.borderColor = '';
+        return true;
     }
 
-    input.style.borderColor = isValid ? '' : 'var(--danger)';
+    // Validate cron format (5 fields)
+    const parts = value.split(/\s+/);
+    if (parts.length !== 5) {
+        description.textContent = 'Invalid: must have 5 fields (min hour day month weekday)';
+        description.style.color = 'var(--danger)';
+        input.style.borderColor = 'var(--danger)';
+        return false;
+    }
+
+    // Basic validation of each field
+    const isValid = validateCronField(parts[0], 0, 59) &&  // minute
+                    validateCronField(parts[1], 0, 23) &&  // hour
+                    validateCronField(parts[2], 1, 31) &&  // day
+                    validateCronField(parts[3], 1, 12) &&  // month
+                    validateCronField(parts[4], 0, 6);     // weekday
+
+    if (isValid) {
+        description.textContent = describeCron(parts);
+        description.style.color = 'var(--text-secondary)';
+        input.style.borderColor = '';
+    } else {
+        description.textContent = 'Invalid cron expression';
+        description.style.color = 'var(--danger)';
+        input.style.borderColor = 'var(--danger)';
+    }
     return isValid;
 }
 
-// Initialize schedule time UI on page load
+function validateCronField(field, min, max) {
+    if (field === '*') return true;
+    if (field.startsWith('*/')) {
+        const step = parseInt(field.slice(2), 10);
+        return !isNaN(step) && step > 0 && step <= max;
+    }
+    // Handle comma-separated values
+    const values = field.split(',');
+    for (const v of values) {
+        // Handle ranges like 1-5
+        if (v.includes('-')) {
+            const [start, end] = v.split('-').map(Number);
+            if (isNaN(start) || isNaN(end) || start < min || end > max || start > end) {
+                return false;
+            }
+        } else {
+            const num = parseInt(v, 10);
+            if (isNaN(num) || num < min || num > max) return false;
+        }
+    }
+    return true;
+}
+
+function describeCron(parts) {
+    const [minute, hour, day, month, weekday] = parts;
+    let desc = '';
+
+    // Describe hour
+    if (hour === '*') {
+        desc = 'Every hour';
+    } else if (hour.startsWith('*/')) {
+        desc = `Every ${hour.slice(2)} hours`;
+    } else if (hour.includes(',')) {
+        const hours = hour.split(',').map(h => formatHour(parseInt(h, 10))).join(' and ');
+        desc = `Daily at ${hours}`;
+    } else {
+        desc = `Daily at ${formatHour(parseInt(hour, 10))}`;
+    }
+
+    // Add minute
+    if (minute !== '0' && minute !== '*') {
+        if (minute.startsWith('*/')) {
+            desc += `, every ${minute.slice(2)} minutes`;
+        } else {
+            desc += ` at minute ${minute}`;
+        }
+    } else if (minute === '0' && hour !== '*') {
+        // Already implied in "Daily at X"
+    } else if (minute === '0') {
+        desc += ' at minute 0';
+    }
+
+    // Day/month/weekday constraints
+    if (day !== '*' || month !== '*' || weekday !== '*') {
+        desc += ' (custom schedule)';
+    }
+
+    return desc;
+}
+
+function formatHour(h) {
+    if (h === 0) return '12 AM';
+    if (h === 12) return '12 PM';
+    if (h < 12) return `${h} AM`;
+    return `${h - 12} PM`;
+}
+
+function updateCronFromHelper() {
+    const minute = document.getElementById('cron_minute').value;
+    const hour = document.getElementById('cron_hour').value;
+    const cron = `${minute} ${hour} * * *`;
+    document.getElementById('cron_expression').value = cron;
+    validateAndDescribeCron();
+}
+
+function syncHelperFromCron() {
+    const cron = document.getElementById('cron_expression').value.trim();
+    const parts = cron.split(/\s+/);
+    if (parts.length !== 5) return;
+
+    const [minute, hour] = parts;
+
+    // Sync minute selector
+    const minuteSelect = document.getElementById('cron_minute');
+    const minuteOptions = Array.from(minuteSelect.options).map(o => o.value);
+    if (minuteOptions.includes(minute)) {
+        minuteSelect.value = minute;
+    }
+
+    // Sync hour selector
+    const hourSelect = document.getElementById('cron_hour');
+    const hourOptions = Array.from(hourSelect.options).map(o => o.value);
+    if (hourOptions.includes(hour)) {
+        hourSelect.value = hour;
+    }
+}
+
+// Initialize cron UI on page load
 document.addEventListener('DOMContentLoaded', function() {
-    updateScheduleTimeUI();
+    validateAndDescribeCron();
+    syncHelperFromCron();
 });
 
 function toggleDispatcharrFields() {

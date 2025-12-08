@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir \
     flask \
     requests \
-    regex
+    regex \
+    croniter
 
 # Copy application code
 COPY api/ ./api/

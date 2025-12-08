@@ -224,8 +224,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
     -- Auto-generation Settings
     auto_generate_enabled BOOLEAN DEFAULT 1,
-    auto_generate_frequency TEXT DEFAULT 'hourly',
-    schedule_time TEXT DEFAULT '00',  -- For hourly: minute (00-59), for daily: HH:MM (00:00-23:59)
+    auto_generate_frequency TEXT DEFAULT 'hourly',  -- DEPRECATED: Use cron_expression instead
+    schedule_time TEXT DEFAULT '00',                -- DEPRECATED: Use cron_expression instead
+    cron_expression TEXT DEFAULT '0 * * * *',       -- Cron expression for scheduling (min hour dom month dow)
 
     -- Dispatcharr Integration Settings
     dispatcharr_enabled BOOLEAN DEFAULT 0,

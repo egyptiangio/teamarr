@@ -336,7 +336,7 @@ def get_league_alias(slug: str) -> str:
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 25
+CURRENT_SCHEMA_VERSION = 26
 
 
 def get_schema_version(conn) -> int:
@@ -1743,6 +1743,65 @@ def run_migrations(conn):
 
         except Exception as e:
             print(f"    ⚠️ Migration 25 error: {e}")
+            conn.rollback()
+
+    # =========================================================================
+    # 26. Cron-based scheduler (replaces auto_generate_frequency + schedule_time)
+    # =========================================================================
+    if current_version < 26:
+        print("  🔄 Migration 26: Converting to cron-based scheduling...")
+        try:
+            # Add cron_expression column
+            add_columns_if_missing("settings", [
+                ("cron_expression", "TEXT DEFAULT '0 * * * *'"),
+            ])
+
+            # Convert existing settings to cron expression
+            cursor.execute("""
+                SELECT auto_generate_frequency, schedule_time FROM settings WHERE id = 1
+            """)
+            row = cursor.fetchone()
+
+            if row:
+                frequency = row[0] or 'hourly'
+                schedule_time = row[1] or '00'
+
+                if frequency == 'hourly':
+                    # schedule_time is minute (0-59)
+                    try:
+                        minute = int(schedule_time) if schedule_time else 0
+                        minute = max(0, min(59, minute))
+                    except ValueError:
+                        minute = 0
+                    cron_expr = f"{minute} * * * *"
+                else:  # daily
+                    # schedule_time is HH:MM or just HH
+                    try:
+                        if ':' in (schedule_time or ''):
+                            parts = schedule_time.split(':')
+                            hour = int(parts[0])
+                            minute = int(parts[1]) if len(parts) > 1 else 0
+                        else:
+                            hour = int(schedule_time) if schedule_time else 0
+                            minute = 0
+                        hour = max(0, min(23, hour))
+                        minute = max(0, min(59, minute))
+                    except ValueError:
+                        hour = 0
+                        minute = 0
+                    cron_expr = f"{minute} {hour} * * *"
+
+                cursor.execute("""
+                    UPDATE settings SET cron_expression = ? WHERE id = 1
+                """, (cron_expr,))
+                print(f"    📝 Converted {frequency} @ {schedule_time} → cron '{cron_expr}'")
+
+            conn.commit()
+            migrations_run += 1
+            print("    ✅ Migration 26 complete: Cron-based scheduling enabled")
+
+        except Exception as e:
+            print(f"    ⚠️ Migration 26 error: {e}")
             conn.rollback()
 
     # =========================================================================
