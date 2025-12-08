@@ -1412,8 +1412,25 @@ class ChannelLifecycleManager:
                 # ESPN client returns venue.name (not fullName) and broadcasts as a list
                 venue_obj = event.get('venue', {})
                 venue = venue_obj.get('name', '') or venue_obj.get('fullName', '') if venue_obj else ''
+
+                # Normalize broadcast - handle both string list and dict list formats
                 broadcasts = event.get('broadcasts', [])
-                broadcast = broadcasts[0] if broadcasts else ''
+                broadcast = ''
+                for b in broadcasts:
+                    if b is None:
+                        continue
+                    if isinstance(b, str):
+                        broadcast = b
+                        break
+                    elif isinstance(b, dict):
+                        # Handle {"names": ["ESPN"]} or {"name": "ESPN"} format
+                        names = b.get('names', [])
+                        if names:
+                            broadcast = names[0]
+                            break
+                        elif b.get('name'):
+                            broadcast = b['name']
+                            break
 
                 # Get logo URL from template if present
                 logo_url_source = None

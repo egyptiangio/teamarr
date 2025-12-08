@@ -366,8 +366,22 @@ class EventTemplateEngine:
 
         broadcasts = event.get('broadcasts', [])
         if broadcasts:
-            # Filter out None values and get network names
-            broadcast_names = [b for b in broadcasts if b is not None]
+            # Normalize broadcasts - handle both string list and dict list formats
+            # ESPN can return [{"names": ["ESPN"]}] or ["ESPN"] depending on code path
+            broadcast_names = []
+            for b in broadcasts:
+                if b is None:
+                    continue
+                if isinstance(b, str):
+                    broadcast_names.append(b)
+                elif isinstance(b, dict):
+                    # Handle {"names": ["ESPN"]} or {"name": "ESPN"} format
+                    names = b.get('names', [])
+                    if names:
+                        broadcast_names.extend(names)
+                    elif b.get('name'):
+                        broadcast_names.append(b['name'])
+
             variables['broadcast_simple'] = ', '.join(broadcast_names[:3])
             variables['broadcast_network'] = broadcast_names[0] if broadcast_names else ''
         else:
