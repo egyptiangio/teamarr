@@ -1102,78 +1102,92 @@ class ChannelLifecycleManager:
                     })
                 continue  # Don't process further - stream is handled
 
-            # Check for exception keyword match (only relevant when base mode is 'consolidate')
+            # Check for exception keyword match
+            # Keywords are detected for ALL duplicate modes because:
+            # 1. Keywords are used for channel naming (via {exception_keyword} template variable)
+            # 2. Keywords can override the effective mode for that specific stream
             matched_keyword = None
             effective_mode = duplicate_mode  # Default to group's duplicate mode
 
-            if duplicate_mode == 'consolidate':
-                # Use pre-detected keyword from matching phase if available
-                pre_detected_keyword = matched.get('exception_keyword')
-                if pre_detected_keyword:
-                    matched_keyword = pre_detected_keyword
-                    # Look up the behavior for this keyword
-                    _, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
-                    effective_mode = exception_behavior or 'consolidate'
+            # Use pre-detected keyword from matching phase if available
+            pre_detected_keyword = matched.get('exception_keyword')
+            if pre_detected_keyword:
+                matched_keyword = pre_detected_keyword
+                # Look up the behavior for this keyword
+                _, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                if exception_behavior:
+                    effective_mode = exception_behavior
+                logger.debug(
+                    f"Stream '{stream['name']}' using pre-detected keyword '{matched_keyword}' "
+                    f"→ behavior: {effective_mode}"
+                )
+            elif exception_keywords:
+                # Fallback: detect from stream name (for streams not processed through MultiSportMatcher)
+                keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
+                if keyword:
+                    matched_keyword = keyword
+                    if exception_behavior:
+                        effective_mode = exception_behavior
                     logger.debug(
-                        f"Stream '{stream['name']}' using pre-detected keyword '{matched_keyword}' "
+                        f"Stream '{stream['name']}' matched exception keyword '{keyword}' "
                         f"→ behavior: {effective_mode}"
                     )
-                elif exception_keywords:
-                    # Fallback: detect from stream name (for streams not processed through MultiSportMatcher)
-                    keyword, exception_behavior = check_exception_keyword(stream.get('name', ''), exception_keywords)
-                    if keyword:
-                        matched_keyword = keyword
-                        effective_mode = exception_behavior
-                        logger.debug(
-                            f"Stream '{stream['name']}' matched exception keyword '{keyword}' "
-                            f"→ behavior: {exception_behavior}"
-                        )
 
-                # If a keyword was matched (from either source), remove stream from non-keyword channel
-                # (handles case where stream was added before keyword was configured)
-                if matched_keyword:
-                    non_keyword_channel = find_existing_channel(
-                        group_id=group['id'],
-                        event_id=espn_event_id,
-                        exception_keyword=None,
-                        mode='consolidate'
-                    )
-                    if non_keyword_channel and stream_exists_on_channel(non_keyword_channel['id'], stream['id']):
-                        try:
-                            remove_stream_from_channel(non_keyword_channel['id'], stream['id'])
-                            # Also remove from Dispatcharr
-                            with self._dispatcharr_lock:
-                                current_channel = self.channel_api.get_channel(non_keyword_channel['dispatcharr_channel_id'])
-                                if current_channel:
-                                    current_streams = current_channel.get('streams', [])
-                                    if stream['id'] in current_streams:
-                                        current_streams.remove(stream['id'])
-                                        self.channel_api.update_channel(
-                                            non_keyword_channel['dispatcharr_channel_id'],
-                                            {'streams': current_streams}
-                                        )
-                            logger.info(
-                                f"Removed stream '{stream['name']}' from non-keyword channel "
-                                f"'{non_keyword_channel['channel_name']}' (now using keyword '{matched_keyword}')"
-                            )
-                        except Exception as e:
-                            logger.warning(f"Failed to remove stream from non-keyword channel: {e}")
+            # If base mode is 'consolidate' and keyword was matched, remove stream from non-keyword channel
+            # (handles case where stream was added before keyword was configured)
+            if duplicate_mode == 'consolidate' and matched_keyword:
+                non_keyword_channel = find_existing_channel(
+                    group_id=group['id'],
+                    event_id=espn_event_id,
+                    exception_keyword=None,
+                    mode='consolidate'
+                )
+                if non_keyword_channel and stream_exists_on_channel(non_keyword_channel['id'], stream['id']):
+                    try:
+                        remove_stream_from_channel(non_keyword_channel['id'], stream['id'])
+                        # Also remove from Dispatcharr
+                        with self._dispatcharr_lock:
+                            current_channel = self.channel_api.get_channel(non_keyword_channel['dispatcharr_channel_id'])
+                            if current_channel:
+                                current_streams = current_channel.get('streams', [])
+                                if stream['id'] in current_streams:
+                                    current_streams.remove(stream['id'])
+                                    self.channel_api.update_channel(
+                                        non_keyword_channel['dispatcharr_channel_id'],
+                                        {'streams': current_streams}
+                                    )
+                        logger.info(
+                            f"Removed stream '{stream['name']}' from non-keyword channel "
+                            f"'{non_keyword_channel['channel_name']}' (now using keyword '{matched_keyword}')"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to remove stream from non-keyword channel: {e}")
 
             # V2: Check for existing channel based on duplicate handling mode
-            # For keyword-based consolidation, we need a different lookup strategy
+            # Keyword 'consolidate': all streams with same keyword → one channel (lookup by keyword)
+            # Keyword 'separate': each stream with keyword → its own channel (lookup by stream_id)
+            # No keyword: use group's duplicate_mode
             if matched_keyword and effective_mode == 'consolidate':
-                # Find existing channel for this event+keyword combination
+                # Keyword consolidate: find channel for this event+keyword combination
                 existing = find_existing_channel(
                     group_id=group['id'],
                     event_id=espn_event_id,
                     exception_keyword=matched_keyword,
                     mode='consolidate'
                 )
-            else:
+            elif effective_mode == 'separate':
+                # Separate mode (keyword or stream-based): each stream gets its own channel
                 existing = find_existing_channel(
                     group_id=group['id'],
                     event_id=espn_event_id,
-                    stream_id=stream.get('id') if effective_mode == 'separate' else None,
+                    stream_id=stream.get('id'),
+                    mode='separate'
+                )
+            else:
+                # Default consolidate/ignore without keywords
+                existing = find_existing_channel(
+                    group_id=group['id'],
+                    event_id=espn_event_id,
                     mode=effective_mode
                 )
 
@@ -1242,7 +1256,7 @@ class ChannelLifecycleManager:
                         'action': 'consolidated'
                     })
 
-                else:  # duplicate_mode == 'separate' - channel found for this stream
+                else:  # effective_mode == 'separate' - channel found for this stream
                     results['existing'].append({
                         'stream': stream['name'],
                         'channel_id': existing['dispatcharr_channel_id'],
