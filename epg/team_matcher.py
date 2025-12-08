@@ -99,6 +99,100 @@ _shared_team_cache: Dict[str, Dict] = {}
 _shared_team_cache_lock = threading.Lock()
 
 
+def parse_date_from_regex_match(match, stream_name: str = None) -> Optional[datetime]:
+    """
+    Parse a date from a regex match object with flexible group support.
+
+    Supports two patterns:
+    1. Single date group: (?P<date>...) - passes to extract_date_from_text()
+    2. Separate groups: (?P<day>...), (?P<month>...), and optionally (?P<year>...)
+       - This gives users full control over DD/MM vs MM/DD interpretation
+
+    Args:
+        match: Regex match object with named groups
+        stream_name: Original stream name (fallback for extract_date_from_text)
+
+    Returns:
+        datetime object or None
+    """
+    from datetime import datetime
+
+    if not match:
+        return None
+
+    groups = match.groupdict()
+    current_year = datetime.now().year
+
+    # Check for separate day/month/year groups first (explicit control)
+    if 'day' in groups and 'month' in groups:
+        try:
+            day = int(groups['day']) if groups['day'] else None
+            month_raw = groups['month']
+
+            if not day or not month_raw:
+                return None
+
+            # Month can be numeric or text (Jan, January, etc.)
+            month_names = {
+                'jan': 1, 'january': 1, 'feb': 2, 'february': 2,
+                'mar': 3, 'march': 3, 'apr': 4, 'april': 4,
+                'may': 5, 'jun': 6, 'june': 6, 'jul': 7, 'july': 7,
+                'aug': 8, 'august': 8, 'sep': 9, 'september': 9,
+                'oct': 10, 'october': 10, 'nov': 11, 'november': 11,
+                'dec': 12, 'december': 12
+            }
+
+            # Try numeric first, then text
+            try:
+                month = int(month_raw)
+            except ValueError:
+                month = month_names.get(month_raw.lower().strip())
+
+            if not month or month < 1 or month > 12:
+                return None
+            if day < 1 or day > 31:
+                return None
+
+            # Year is optional - default to current/next year
+            year = current_year
+            if 'year' in groups and groups['year']:
+                try:
+                    year = int(groups['year'])
+                    if year < 100:
+                        year += 2000
+                except ValueError:
+                    pass
+
+            date = datetime(year, month, day)
+
+            # If no explicit year and date is >6 months in past, assume next year
+            if 'year' not in groups or not groups['year']:
+                if (datetime.now() - date).days > 180:
+                    date = datetime(year + 1, month, day)
+
+            return date
+        except (ValueError, TypeError):
+            return None
+
+    # Fall back to single (?P<date>...) group
+    if 'date' in groups and groups['date']:
+        return extract_date_from_text(groups['date'].strip())
+
+    # Try first capture group or full match
+    try:
+        date_text = match.group(1) if match.groups() else match.group(0)
+        if date_text:
+            return extract_date_from_text(date_text.strip())
+    except (IndexError, AttributeError):
+        pass
+
+    # Last resort: parse from original stream name
+    if stream_name:
+        return extract_date_from_text(stream_name)
+
+    return None
+
+
 def extract_date_from_text(text: str) -> Optional[datetime]:
     """
     Extract a date from stream name text.
@@ -1462,17 +1556,12 @@ class TeamMatcher:
         result['raw_home'] = team2_text
 
         # Extract optional date (uses regex module for advanced pattern support)
+        # Supports: (?P<date>...) OR separate (?P<day>...), (?P<month>...), (?P<year>...)
         if date_pattern:
             try:
                 date_match = REGEX_MODULE.search(date_pattern, stream_name, REGEX_MODULE.IGNORECASE)
                 if date_match:
-                    # Try named group first, then first capture group, then full match
-                    try:
-                        date_text = date_match.group('date')
-                    except IndexError:
-                        date_text = date_match.group(1) if date_match.groups() else date_match.group(0)
-                    if date_text:
-                        result['game_date'] = extract_date_from_text(date_text.strip())
+                    result['game_date'] = parse_date_from_regex_match(date_match, stream_name)
             except Exception as e:
                 result['reason'] = f'Invalid date pattern: {e}'
                 return result
@@ -1567,18 +1656,12 @@ class TeamMatcher:
 
         # Now handle date/time - override with custom if enabled, otherwise keep defaults
         # Uses REGEX_MODULE for advanced pattern support like variable-width lookbehind
+        # Supports: (?P<date>...) OR separate (?P<day>...), (?P<month>...), (?P<year>...)
         if date_enabled and date_pattern:
             try:
                 date_match = REGEX_MODULE.search(date_pattern, stream_name, REGEX_MODULE.IGNORECASE)
                 if date_match:
-                    try:
-                        date_text = date_match.group('date')
-                    except (IndexError, Exception):
-                        date_text = date_match.group(1) if date_match.groups() else date_match.group(0)
-                    if date_text:
-                        result['game_date'] = extract_date_from_text(date_text.strip())
-                    else:
-                        result['game_date'] = None
+                    result['game_date'] = parse_date_from_regex_match(date_match, stream_name)
                 else:
                     result['game_date'] = None
             except Exception as e:
@@ -1742,13 +1825,12 @@ class TeamMatcher:
         }
 
         # Extract date using custom or default pattern
+        # Supports: (?P<date>...) OR separate (?P<day>...), (?P<month>...), (?P<year>...)
         if custom_regex_date_enabled and custom_regex_date:
             try:
                 date_match = REGEX_MODULE.search(custom_regex_date, stream_name, REGEX_MODULE.IGNORECASE)
                 if date_match:
-                    date_str = date_match.group('date') if 'date' in date_match.groupdict() else date_match.group(1)
-                    if date_str:
-                        result['game_date'] = extract_date_from_text(date_str)
+                    result['game_date'] = parse_date_from_regex_match(date_match, stream_name)
             except Exception as e:
                 logger.warning(f"Custom date regex failed: {e}")
                 result['game_date'] = extract_date_from_text(stream_name)
