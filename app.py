@@ -4971,7 +4971,7 @@ def api_event_epg_dispatcharr_streams_sse(group_id):
                             # Cache successful match for future EPG runs
                             if result.event and result.event.get('id'):
                                 event_id = result.event.get('id')
-                                detected_league = result.league or ''
+                                detected_league = result.detected_league or ''
                                 cached_data = {
                                     'event': result.event,
                                     'team_result': result.team_result
