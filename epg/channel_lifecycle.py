@@ -1039,6 +1039,7 @@ class ChannelLifecycleManager:
             stream = matched['stream']
             event = matched['event']
             teams = matched.get('teams', {})
+            cross_group_channel = matched.get('existing_channel')  # Channel from another group
 
             espn_event_id = event.get('id')
             if not espn_event_id:
@@ -1047,6 +1048,59 @@ class ChannelLifecycleManager:
                     'error': 'No ESPN event ID'
                 })
                 continue
+
+            # Handle cross-group consolidation (stream matches event owned by another group)
+            if cross_group_channel:
+                # Add stream to the existing channel from another group
+                if not stream_exists_on_channel(cross_group_channel['id'], stream['id']):
+                    try:
+                        # Add stream to channel in Dispatcharr
+                        with self._dispatcharr_lock:
+                            current_channel = self.channel_api.get_channel(cross_group_channel['dispatcharr_channel_id'])
+                            if current_channel:
+                                current_streams = current_channel.get('streams', [])
+                                if stream['id'] not in current_streams:
+                                    current_streams.append(stream['id'])
+                                    self.channel_api.update_channel(
+                                        cross_group_channel['dispatcharr_channel_id'],
+                                        {'streams': current_streams}
+                                    )
+
+                        # Track in DB
+                        add_stream_to_channel(
+                            managed_channel_id=cross_group_channel['id'],
+                            dispatcharr_stream_id=stream['id'],
+                            stream_name=stream.get('name', ''),
+                            source_group_id=group['id'],
+                            source_group_type='cross_group',
+                            m3u_account_id=group.get('dispatcharr_account_id'),
+                            m3u_account_name=group.get('account_name')
+                        )
+
+                        results['existing'].append({
+                            'stream': stream['name'],
+                            'channel_id': cross_group_channel['dispatcharr_channel_id'],
+                            'channel_number': cross_group_channel['channel_number'],
+                            'action': 'added_cross_group'
+                        })
+                        logger.info(
+                            f"Added stream '{stream['name']}' to cross-group channel "
+                            f"#{cross_group_channel['channel_number']} (group {cross_group_channel.get('group_id', 'unknown')})"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to add stream to cross-group channel: {e}")
+                        results['errors'].append({
+                            'stream': stream['name'],
+                            'error': f'Failed to add to cross-group channel: {e}'
+                        })
+                else:
+                    results['existing'].append({
+                        'stream': stream['name'],
+                        'channel_id': cross_group_channel['dispatcharr_channel_id'],
+                        'channel_number': cross_group_channel['channel_number'],
+                        'action': 'already_exists_cross_group'
+                    })
+                continue  # Don't process further - stream is handled
 
             # Check for exception keyword match (only relevant when base mode is 'consolidate')
             matched_keyword = None

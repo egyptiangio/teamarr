@@ -728,7 +728,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     is_multi_sport INTEGER DEFAULT 0,              -- 1 = detect league per-stream
     enabled_leagues TEXT,                          -- JSON array of league codes (NULL = all)
     channel_sort_order TEXT DEFAULT 'time',        -- time, sport_time, league_time
-    overlap_handling TEXT DEFAULT 'add_stream',    -- add_stream, skip, create_all
+    overlap_handling TEXT DEFAULT 'add_stream',    -- add_stream, add_only, create_all, skip
 
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated

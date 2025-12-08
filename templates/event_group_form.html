@@ -159,11 +159,12 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="overlap_handling">Duplicate Stream Handling</label>
+                            <label for="overlap_handling">Cross-Group Event Handling</label>
                             <select id="overlap_handling" name="overlap_handling" class="form-control">
-                                <option value="add_stream" {% if not group or group.overlap_handling == 'add_stream' %}selected{% endif %}>Add stream to existing channel (consolidate)</option>
-                                <option value="skip" {% if group and group.overlap_handling == 'skip' %}selected{% endif %}>Skip (don't create or modify)</option>
-                                <option value="create_all" {% if group and group.overlap_handling == 'create_all' %}selected{% endif %}>Create separate channel</option>
+                                <option value="add_stream" {% if not group or group.overlap_handling == 'add_stream' %}selected{% endif %}>Add to existing channel, or create new</option>
+                                <option value="add_only" {% if group and group.overlap_handling == 'add_only' %}selected{% endif %}>Add to existing only (no new channels)</option>
+                                <option value="create_all" {% if group and group.overlap_handling == 'create_all' %}selected{% endif %}>Create separate channel for each stream</option>
+                                <option value="skip" {% if group and group.overlap_handling == 'skip' %}selected{% endif %}>Skip (don't add or create)</option>
                             </select>
                             <small class="form-help">What to do when another group already has a channel for the same event</small>
                         </div>
@@ -230,11 +231,12 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="overlap_handling">Duplicate Stream Handling</label>
+                        <label for="overlap_handling">Cross-Group Event Handling</label>
                         <select id="overlap_handling" name="overlap_handling" class="form-control">
-                            <option value="add_stream" {% if group.overlap_handling == 'add_stream' %}selected{% endif %}>Add stream to existing channel (consolidate)</option>
-                            <option value="skip" {% if group.overlap_handling == 'skip' %}selected{% endif %}>Skip (don't create or modify)</option>
-                            <option value="create_all" {% if group.overlap_handling == 'create_all' %}selected{% endif %}>Create separate channel</option>
+                            <option value="add_stream" {% if group.overlap_handling == 'add_stream' %}selected{% endif %}>Add to existing channel, or create new</option>
+                            <option value="add_only" {% if group.overlap_handling == 'add_only' %}selected{% endif %}>Add to existing only (no new channels)</option>
+                            <option value="create_all" {% if group.overlap_handling == 'create_all' %}selected{% endif %}>Create separate channel for each stream</option>
+                            <option value="skip" {% if group.overlap_handling == 'skip' %}selected{% endif %}>Skip (don't add or create)</option>
                         </select>
                         <small class="form-help">What to do when another group already has a channel for the same event</small>
                     </div>

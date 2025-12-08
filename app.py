@@ -558,20 +558,44 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                     return {'type': 'filtered', 'reason': normalized, 'stream': stream}
 
             # Matched! Now check overlap handling (not in matcher - EPG builder specific)
+            # This handles streams that match events already owned by OTHER groups
             event = result.event
             event_id = event.get('id')
-            overlap_handling = group.get('overlap_handling', 'consolidate')
+            overlap_handling = group.get('overlap_handling', 'add_stream')
 
-            if overlap_handling == 'consolidate' and event_id:
+            # Check for existing channel in other groups (except for create_all mode)
+            if event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
                 existing_channel = find_any_channel_for_event(event_id, exclude_group_id=group_id)
                 if existing_channel:
+                    if overlap_handling == 'skip':
+                        # Skip - don't add stream to existing channel
+                        return {
+                            'type': 'filtered',
+                            'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
+                            'stream': stream,
+                            'existing_channel': existing_channel
+                        }
+                    else:
+                        # add_stream or add_only - return as matched but flag for adding to existing channel
+                        return {
+                            'type': 'matched',
+                            'stream': stream,
+                            'teams': result.team_result,
+                            'event': event,
+                            'detected_league': result.detected_league,
+                            'detection_tier': result.detection_tier,
+                            'exception_keyword': result.exception_keyword,
+                            'existing_channel': existing_channel  # Flag to add to this channel
+                        }
+                elif overlap_handling == 'add_only':
+                    # add_only but no existing channel - skip this stream (no new channel creation)
                     return {
                         'type': 'filtered',
-                        'reason': 'EVENT_OWNED_BY_OTHER_GROUP',
-                        'stream': stream,
-                        'existing_channel': existing_channel
+                        'reason': 'NO_EXISTING_CHANNEL',
+                        'stream': stream
                     }
 
+            # No existing channel (and not add_only) or create_all mode - return as normal match
             return {
                 'type': 'matched',
                 'stream': stream,
@@ -703,7 +727,8 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                     'stream': stream,
                     'teams': teams,
                     'event': event,
-                    'exception_keyword': result.get('exception_keyword')
+                    'exception_keyword': result.get('exception_keyword'),
+                    'existing_channel': result.get('existing_channel')  # For cross-group consolidation
                 })
                 # Capture for matched streams log
                 if generation is not None:
