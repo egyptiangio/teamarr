@@ -2002,8 +2002,8 @@ class ChannelLifecycleManager:
         for ms_group_id, ms_group in multi_sport_groups.items():
             overlap_handling = ms_group.get('overlap_handling', 'add_stream')
 
-            # Only consolidate if overlap_handling is 'add_stream' or 'add_only'
-            if overlap_handling not in ('add_stream', 'add_only'):
+            # create_all mode: keep separate channels, no consolidation
+            if overlap_handling == 'create_all':
                 continue
 
             ms_channels = get_managed_channels_for_group(ms_group_id)
@@ -2024,72 +2024,78 @@ class ChannelLifecycleManager:
                 if not sl_channel or sl_channel.get('event_epg_group_id') not in single_league_groups:
                     continue
 
-                # Found a duplicate! Move streams and delete multi-sport channel
+                # Found a duplicate! Handle based on overlap_handling mode
+                # - add_stream/add_only: Move streams to single-league channel, delete multi-sport
+                # - skip: Just delete multi-sport channel (don't move streams)
                 try:
-                    # Get streams from multi-sport channel
                     with self._dispatcharr_lock:
-                        ms_dispatcharr = self.channel_api.get_channel(ms_channel['dispatcharr_channel_id'])
-                        if not ms_dispatcharr:
-                            continue
+                        # For add_stream/add_only: move streams before deleting
+                        if overlap_handling in ('add_stream', 'add_only'):
+                            # Get streams from multi-sport channel
+                            ms_dispatcharr = self.channel_api.get_channel(ms_channel['dispatcharr_channel_id'])
+                            if not ms_dispatcharr:
+                                continue
 
-                        ms_streams = ms_dispatcharr.get('streams', [])
+                            ms_streams = ms_dispatcharr.get('streams', [])
 
-                        # Get current streams on single-league channel
-                        sl_dispatcharr = self.channel_api.get_channel(sl_channel['dispatcharr_channel_id'])
-                        if not sl_dispatcharr:
-                            continue
+                            # Get current streams on single-league channel
+                            sl_dispatcharr = self.channel_api.get_channel(sl_channel['dispatcharr_channel_id'])
+                            if not sl_dispatcharr:
+                                continue
 
-                        sl_streams = sl_dispatcharr.get('streams', [])
+                            sl_streams = sl_dispatcharr.get('streams', [])
 
-                        # Add multi-sport streams to single-league channel
-                        streams_to_add = [s for s in ms_streams if s not in sl_streams]
-                        if streams_to_add:
-                            new_streams = sl_streams + streams_to_add
-                            update_result = self.channel_api.update_channel(
-                                sl_channel['dispatcharr_channel_id'],
-                                {'streams': new_streams}
-                            )
-
-                            if update_result.get('success'):
-                                # Track in DB
-                                for stream_id in streams_to_add:
-                                    if not stream_exists_on_channel(sl_channel['id'], stream_id):
-                                        add_stream_to_channel(
-                                            managed_channel_id=sl_channel['id'],
-                                            dispatcharr_stream_id=stream_id,
-                                            source_group_id=ms_group_id,
-                                            source_group_type='cross_group',
-                                            stream_name=f"(from {ms_group.get('group_name', 'multi-sport')})"
-                                        )
-                                        results['streams_moved'] += 1
-
-                                log_channel_history(
-                                    managed_channel_id=sl_channel['id'],
-                                    change_type='stream_added',
-                                    change_source='cross_group_enforcement',
-                                    notes=f"Moved {len(streams_to_add)} stream(s) from multi-sport channel #{ms_channel['channel_number']}"
+                            # Add multi-sport streams to single-league channel
+                            streams_to_add = [s for s in ms_streams if s not in sl_streams]
+                            if streams_to_add:
+                                new_streams = sl_streams + streams_to_add
+                                update_result = self.channel_api.update_channel(
+                                    sl_channel['dispatcharr_channel_id'],
+                                    {'streams': new_streams}
                                 )
 
-                        # Delete the multi-sport channel
+                                if update_result.get('success'):
+                                    # Track in DB
+                                    for stream_id in streams_to_add:
+                                        if not stream_exists_on_channel(sl_channel['id'], stream_id):
+                                            add_stream_to_channel(
+                                                managed_channel_id=sl_channel['id'],
+                                                dispatcharr_stream_id=stream_id,
+                                                source_group_id=ms_group_id,
+                                                source_group_type='cross_group',
+                                                stream_name=f"(from {ms_group.get('group_name', 'multi-sport')})"
+                                            )
+                                            results['streams_moved'] += 1
+
+                                    log_channel_history(
+                                        managed_channel_id=sl_channel['id'],
+                                        change_type='stream_added',
+                                        change_source='cross_group_enforcement',
+                                        notes=f"Moved {len(streams_to_add)} stream(s) from multi-sport channel #{ms_channel['channel_number']}"
+                                    )
+
+                        # Delete the multi-sport channel (for add_stream, add_only, and skip)
                         delete_result = self.channel_api.delete_channel(ms_channel['dispatcharr_channel_id'])
                         if delete_result.get('success'):
                             # Mark as deleted in DB
                             from database import mark_managed_channel_deleted
                             mark_managed_channel_deleted(ms_channel['id'])
 
+                            action = "Skipped (deleted)" if overlap_handling == 'skip' else "Consolidated into"
                             log_channel_history(
                                 managed_channel_id=ms_channel['id'],
                                 change_type='deleted',
                                 change_source='cross_group_enforcement',
-                                notes=f"Consolidated into single-league channel #{sl_channel['channel_number']}"
+                                notes=f"{action} single-league channel #{sl_channel['channel_number']}"
                             )
 
                             results['channels_deleted'] += 1
                             results['consolidated'] += 1
 
+                            action_log = "Deleted" if overlap_handling == 'skip' else "Consolidated"
                             logger.info(
-                                f"🔄 Consolidated multi-sport channel #{ms_channel['channel_number']} "
-                                f"into single-league channel #{sl_channel['channel_number']} "
+                                f"🔄 {action_log} multi-sport channel #{ms_channel['channel_number']} "
+                                f"({'skipped' if overlap_handling == 'skip' else 'into'} single-league channel #{sl_channel['channel_number']}) "
                                 f"(event: {event_id})"
                             )
 
