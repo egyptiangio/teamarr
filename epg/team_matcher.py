@@ -90,6 +90,9 @@ CITY_NAME_VARIANTS = {
     'hertha bsc': 'hertha berlin',
     'hamburger sv': 'hamburg sv',
     'sv werder bremen': 'werder bremen',
+    # Italian team name variants → ESPN canonical
+    'inter milan': 'internazionale',
+    'inter': 'internazionale',
 }
 
 

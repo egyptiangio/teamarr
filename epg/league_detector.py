@@ -44,8 +44,20 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from utils.logger import get_logger
+from epg.team_matcher import CITY_NAME_VARIANTS
 
 logger = get_logger(__name__)
+
+
+def apply_name_variants(name: str) -> str:
+    """
+    Apply team/city name variants to match ESPN's canonical naming.
+    E.g., "inter milan" → "internazionale", "hertha bsc" → "hertha berlin"
+    """
+    result = name.lower()
+    for variant, canonical in CITY_NAME_VARIANTS.items():
+        result = re.sub(r'\b' + re.escape(variant) + r'\b', canonical, result, flags=re.I)
+    return result
 
 
 def strip_team_numbers(name: str) -> str:
@@ -725,8 +737,9 @@ class LeagueDetector:
             cursor = conn.cursor()
 
             # Normalize team names for fuzzy matching
-            team1_lower = team1.lower().strip()
-            team2_lower = team2.lower().strip()
+            # Apply name variants first (inter milan → internazionale, etc.)
+            team1_lower = apply_name_variants(team1.lower().strip())
+            team2_lower = apply_name_variants(team2.lower().strip())
 
             def find_leagues_for_team(team_name: str) -> set:
                 """
@@ -919,7 +932,8 @@ class LeagueDetector:
                 3. Number-stripped match (SV Elversberg -> SV 07 Elversberg)
                 4. Article-stripped match (Atlético de Madrid -> Atlético Madrid)
                 """
-                team_lower = team_name.lower().strip()
+                # Apply name variants first (inter milan → internazionale, etc.)
+                team_lower = apply_name_variants(team_name.lower().strip())
                 team_accent_stripped = strip_accents(team_lower)
                 team_stripped = normalize_team_name(team_lower, strip_articles=False)
                 team_normalized = normalize_team_name(team_lower, strip_articles=True)
