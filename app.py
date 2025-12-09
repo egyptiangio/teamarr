@@ -571,12 +571,14 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
 
             # Matched! Now check overlap handling (not in matcher - EPG builder specific)
             # This handles streams that match events already owned by OTHER groups
+            # Only applies to multi-sport groups - single-league groups handle duplicates
+            # within their own group via duplicate_event_handling
             event = result.event
             event_id = event.get('id')
             overlap_handling = group.get('overlap_handling', 'add_stream')
 
-            # Check for existing channel in other groups (except for create_all mode)
-            if event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
+            # Check for existing channel in other groups (multi-sport only, except create_all mode)
+            if is_multi_sport and event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
                 # First try to find channel matching stream's exception keyword
                 stream_keyword = result.exception_keyword
                 existing_channel = None
@@ -667,13 +669,14 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
                         stream_cache.touch(group_id, stream_id, stream_name, generation)
 
                         # Check for cross-group consolidation (same logic as non-cached path)
-                        # This must happen even for cache hits to honor overlap_handling settings
+                        # Only applies to multi-sport groups - single-league groups handle
+                        # duplicates within their own group via duplicate_event_handling
                         refreshed_event = refreshed.get('event', {})
                         refreshed_event_id = refreshed_event.get('id')
                         overlap_handling = group.get('overlap_handling', 'add_stream')
                         existing_channel = None
 
-                        if refreshed_event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
+                        if is_multi_sport and refreshed_event_id and overlap_handling in ('add_stream', 'add_only', 'skip'):
                             # First try to find channel matching stream's exception keyword
                             stream_keyword = stream.get('exception_keyword')
                             if stream_keyword:
