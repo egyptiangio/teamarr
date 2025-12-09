@@ -1578,7 +1578,11 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                 ordering_results = lifecycle_mgr.enforce_keyword_channel_ordering()
                 channels_reordered = ordering_results.get('reordered', 0)
 
-                lifecycle_stats['channels_deleted'] = disabled_deleted + scheduled_deleted
+                # 3f: Enforce cross-group consolidation (multi-sport → single-league)
+                cross_group_results = lifecycle_mgr.enforce_cross_group_consolidation()
+                cross_group_consolidated = cross_group_results.get('consolidated', 0)
+
+                lifecycle_stats['channels_deleted'] = disabled_deleted + scheduled_deleted + cross_group_results.get('channels_deleted', 0)
                 lifecycle_stats['streams_moved'] = streams_moved
                 lifecycle_stats['channels_reordered'] = channels_reordered
                 lifecycle_stats['reconciliation'] = reconciliation_stats
