@@ -645,6 +645,7 @@ def refresh_event_group_core(group, m3u_manager, skip_m3u_refresh=False, epg_sta
             On cache hit: refresh dynamic fields from ESPN and return cached match
             On cache miss: run full matching, cache successful results
             """
+            from database import find_any_channel_for_event
             nonlocal cache_stats
             stream_id = stream.get('id')
             stream_name = stream.get('name', '')
