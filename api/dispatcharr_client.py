@@ -557,7 +557,17 @@ class EPGManager:
             # Still in progress (fetching, parsing, idle)
             # Continue polling
 
-        # Timeout - include final status for debugging
+        # Timeout - but check if status is actually success
+        # When no channels are mapped, Dispatcharr completes instantly but updated_at doesn't change
+        # Status 'success' means the EPG was parsed - "No channels mapped" is informational
+        if last_status == 'success':
+            return {
+                "success": True,
+                "message": last_message or 'EPG refresh completed (no channels mapped yet)',
+                "duration": timeout,
+                "source": None  # Don't have final source state
+            }
+
         return {
             "success": False,
             "message": f"EPG refresh timed out after {timeout} seconds (last status: {last_status}, message: {last_message})",

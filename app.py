@@ -1689,7 +1689,7 @@ def generate_all_epg(progress_callback=None, settings=None, save_history=True, t
                 manager = EPGManager(dispatcharr_url, dispatcharr_username, dispatcharr_password)
 
                 # Use wait_for_refresh to ensure EPG import completes before associating
-                refresh_result = manager.wait_for_refresh(dispatcharr_epg_id, timeout=120)
+                refresh_result = manager.wait_for_refresh(dispatcharr_epg_id, timeout=60)
 
                 if refresh_result.get('success'):
                     duration = refresh_result.get('duration', 0)
