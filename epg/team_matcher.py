@@ -883,11 +883,12 @@ class TeamMatcher:
             if pos > 0 and pos < sep_pos:
                 sep_pos = pos
 
-        # Find first colon in masked text (times already masked, so any colon is metadata)
-        colon_pos = detect_text.find(':')
+        # Find LAST colon in masked text before separator (times already masked, so any colon is metadata)
+        # This handles nested colons like "Channel: Event Context: Team @ Team"
+        colon_pos = detect_text.rfind(':', 0, sep_pos)
 
         # Only strip if colon found before separator
-        if colon_pos > 0 and colon_pos < sep_pos:
+        if colon_pos > 0:
             return text[colon_pos + 1:].strip()
 
         return text
