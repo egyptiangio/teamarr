@@ -862,9 +862,28 @@ class ChannelLifecycleManager:
                     update_managed_channel(existing['id'], {'dispatcharr_stream_id': new_stream_id})
 
             # Check channel_profile_ids (handled separately - profiles maintain channel lists)
-            # Both are lists (or empty lists)
-            group_profile_ids = set(group.get('channel_profile_ids') or [])
-            stored_profile_ids = set(existing.get('channel_profile_ids') or [])
+            # Both should be lists - parse JSON string if needed
+            import json
+            raw_group_profiles = group.get('channel_profile_ids')
+            if isinstance(raw_group_profiles, str):
+                try:
+                    raw_group_profiles = json.loads(raw_group_profiles) or []
+                except (json.JSONDecodeError, TypeError):
+                    raw_group_profiles = []
+            elif not isinstance(raw_group_profiles, list):
+                raw_group_profiles = []
+
+            raw_stored_profiles = existing.get('channel_profile_ids')
+            if isinstance(raw_stored_profiles, str):
+                try:
+                    raw_stored_profiles = json.loads(raw_stored_profiles) or []
+                except (json.JSONDecodeError, TypeError):
+                    raw_stored_profiles = []
+            elif not isinstance(raw_stored_profiles, list):
+                raw_stored_profiles = []
+
+            group_profile_ids = set(raw_group_profiles)
+            stored_profile_ids = set(raw_stored_profiles)
 
             if group_profile_ids != stored_profile_ids:
                 from database import update_managed_channel
@@ -1008,7 +1027,18 @@ class ChannelLifecycleManager:
         channel_start = group.get('channel_start')
         channel_group_id = group.get('channel_group_id')  # Dispatcharr channel group
         stream_profile_id = group.get('stream_profile_id')  # Dispatcharr stream profile
-        channel_profile_ids = group.get('channel_profile_ids') or []  # Dispatcharr channel profiles (list)
+        # Dispatcharr channel profiles - ensure it's a list (could be unparsed JSON string)
+        raw_profile_ids = group.get('channel_profile_ids')
+        if isinstance(raw_profile_ids, str):
+            try:
+                import json
+                channel_profile_ids = json.loads(raw_profile_ids) or []
+            except (json.JSONDecodeError, TypeError):
+                channel_profile_ids = []
+        elif isinstance(raw_profile_ids, list):
+            channel_profile_ids = raw_profile_ids
+        else:
+            channel_profile_ids = []
         create_timing = global_settings['channel_create_timing']
         delete_timing = global_settings['channel_delete_timing']
         sport = group.get('assigned_sport')
