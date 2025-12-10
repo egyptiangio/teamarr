@@ -3589,6 +3589,38 @@ def _calculate_auto_channel_start(cursor, group_id: int, sort_order: int) -> Opt
     return effective_start
 
 
+def get_auto_group_block_start(group_id: int) -> Optional[int]:
+    """
+    Get the calculated block start for an AUTO group.
+
+    This returns where the group's channel block SHOULD start based on
+    sort_order and preceding groups, regardless of what channels currently exist.
+
+    Args:
+        group_id: The AUTO group's ID
+
+    Returns:
+        The block start channel number, or None if not an AUTO group or error
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        # Get the group's assignment mode and sort_order
+        group = cursor.execute(
+            "SELECT channel_assignment_mode, sort_order FROM event_epg_groups WHERE id = ?",
+            (group_id,)
+        ).fetchone()
+
+        if not group or group['channel_assignment_mode'] != 'auto':
+            return None
+
+        # Use the existing calculation function
+        return _calculate_auto_channel_start(cursor, group_id, group['sort_order'])
+    finally:
+        conn.close()
+
+
 def cleanup_old_deleted_channels(days_old: int = 30) -> int:
     """
     Hard delete managed channel records that were soft-deleted more than N days ago.

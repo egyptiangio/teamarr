@@ -807,41 +807,41 @@ class ChannelLifecycleManager:
             current_channel_number = existing.get('channel_number')
             current_dispatcharr_number = current_channel.get('channel_number')
 
-            # For AUTO mode, get the dynamically calculated channel_start
+            # For AUTO mode, get the dynamically calculated block start
             if assignment_mode == 'auto':
-                # get_next_channel_number calculates the correct start for AUTO groups
-                # We need to check if current number is in the correct range
-                expected_start = get_next_channel_number(group['id'])
-                if expected_start:
+                from database import get_auto_group_block_start
+
+                # Get the calculated block start for this AUTO group
+                block_start = get_auto_group_block_start(group['id'])
+                if block_start:
                     # Calculate the expected range for this AUTO group
                     stream_count = group.get('total_stream_count') or 0
                     blocks_needed = (stream_count + 9) // 10 if stream_count > 0 else 1
                     range_size = blocks_needed * 10
-                    # Derive the block start from expected_start (which is next available)
-                    # The block start is the xx1 boundary
-                    block_start = ((expected_start - 1) // 10) * 10 + 1
                     block_end = block_start + range_size - 1
 
                     # Check if current number is outside the expected range
                     if current_channel_number and (current_channel_number < block_start or current_channel_number > block_end):
-                        new_channel_number = expected_start
-                        update_data['channel_number'] = new_channel_number
+                        # Get next available number within the correct block
+                        new_channel_number = get_next_channel_number(group['id'])
+                        if new_channel_number:
+                            update_data['channel_number'] = new_channel_number
 
-                        # Update our managed_channels record
-                        update_managed_channel(existing['id'], {'channel_number': new_channel_number})
+                            # Update our managed_channels record
+                            update_managed_channel(existing['id'], {'channel_number': new_channel_number})
 
-                        # Track in results
-                        if 'number_updated' not in results:
-                            results['number_updated'] = []
-                        results['number_updated'].append({
-                            'channel_id': dispatcharr_channel_id,
-                            'old_number': current_channel_number,
-                            'new_number': new_channel_number
-                        })
-                        logger.info(
-                            f"AUTO channel number reassigned: {current_channel_number} -> {new_channel_number} "
-                            f"(group range {block_start}-{block_end})"
-                        )
+                            # Track in results
+                            if 'number_updated' not in results:
+                                results['number_updated'] = []
+                            results['number_updated'].append({
+                                'channel_id': dispatcharr_channel_id,
+                                'old_number': current_channel_number,
+                                'new_number': new_channel_number
+                            })
+                            logger.info(
+                                f"AUTO channel number reassigned: {current_channel_number} -> {new_channel_number} "
+                                f"(group range {block_start}-{block_end})"
+                            )
             elif channel_start and current_channel_number and current_channel_number < channel_start:
                 # MANUAL mode: Channel number is below the new range - need to reassign
                 new_channel_number = get_next_channel_number(group['id'])
