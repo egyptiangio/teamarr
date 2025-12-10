@@ -180,9 +180,17 @@ class TemplateEngine:
         variables['league_name'] = team_config.get('league_name', '')
         # League code - convert ESPN slug to friendly alias for display
         # e.g., 'womens-college-basketball' -> 'ncaaw'
-        from database import get_league_alias
+        from database import get_league_alias, get_gracenote_category
         league_code = team_config.get('league', '').lower()
         variables['league_id'] = get_league_alias(league_code)
+
+        # Gracenote-compatible category (e.g., "College Basketball", "NFL Football")
+        # Uses curated value from league_config, falls back to "{league_name} {Sport}"
+        variables['gracenote_category'] = get_gracenote_category(
+            league_code,
+            variables['league_name'],
+            sport_code
+        )
 
         # Soccer Match League (for multi-league soccer teams)
         # These track which specific competition THIS GAME is from (changes per match)
@@ -789,7 +797,7 @@ class TemplateEngine:
             'away_record', 'away_streak', 'away_win_pct', 'games_back', 'head_coach',
             'home_record', 'home_streak', 'home_win_pct', 'is_national_broadcast', 'is_playoff',
             'is_preseason', 'is_ranked', 'is_ranked_matchup', 'is_regular_season', 'last_10_record',
-            'last_5_record', 'league', 'league_id', 'league_name', 'opponent_is_ranked', 'playoff_seed',
+            'last_5_record', 'league', 'league_id', 'league_name', 'gracenote_category', 'opponent_is_ranked', 'playoff_seed',
             'pro_conference', 'pro_conference_abbrev', 'pro_division',
             'soccer_primary_league', 'soccer_primary_league_id', 'sport',
             'streak', 'team_abbrev', 'team_losses', 'team_name', 'team_name_pascal', 'team_papg', 'team_ppg',

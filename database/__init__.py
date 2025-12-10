@@ -313,6 +313,48 @@ def get_league_alias(slug: str) -> str:
     return mapping.get(slug, slug)
 
 
+def get_gracenote_category(league_code: str, league_name: str = '', sport: str = '') -> str:
+    """
+    Get the Gracenote-compatible category for a league.
+
+    First checks league_config.gracenote_category for a curated value.
+    Falls back to auto-generated "{league_name} {Sport}" format.
+
+    Args:
+        league_code: ESPN league slug (e.g., 'nfl', 'mens-college-basketball', 'eng.1')
+        league_name: Display name of the league (fallback for unknown leagues)
+        sport: Sport name (e.g., 'football', 'basketball', 'soccer')
+
+    Returns:
+        Gracenote-compatible category string (e.g., 'NFL Football', 'College Basketball')
+    """
+    if not league_code:
+        # If no league code, try to construct from league_name and sport
+        if league_name and sport:
+            sport_display = sport.capitalize()
+            return f"{league_name} {sport_display}"
+        return ''
+
+    # Check league_config for curated gracenote_category
+    result = db_fetch_one(
+        "SELECT gracenote_category, league_name FROM league_config WHERE league_code = ?",
+        (league_code,)
+    )
+
+    if result and result.get('gracenote_category'):
+        return result['gracenote_category']
+
+    # Fallback: auto-generate from league_name and sport
+    # Use league_name from DB if available, otherwise use provided league_name
+    display_name = (result.get('league_name') if result else None) or league_name
+    if display_name and sport:
+        sport_display = sport.capitalize()
+        return f"{display_name} {sport_display}"
+
+    # Last resort: just return league_name or empty
+    return display_name or ''
+
+
 # =============================================================================
 # SCHEMA VERSIONING
 # =============================================================================
@@ -336,7 +378,7 @@ def get_league_alias(slug: str) -> str:
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 26
+CURRENT_SCHEMA_VERSION = 27
 
 
 def get_schema_version(conn) -> int:
@@ -1802,6 +1844,68 @@ def run_migrations(conn):
 
         except Exception as e:
             print(f"    ⚠️ Migration 26 error: {e}")
+            conn.rollback()
+
+    # =========================================================================
+    # 27. Add gracenote_category column to league_config
+    # =========================================================================
+    if current_version < 27:
+        print("    🔄 Running migration 27: Add gracenote_category to league_config")
+        try:
+            # Add gracenote_category column
+            add_columns_if_missing("league_config", [
+                ("gracenote_category", "TEXT"),
+            ])
+
+            # Populate gracenote_category for all existing leagues
+            gracenote_mappings = {
+                # Baseball
+                'mlb': 'MLB Baseball',
+                # Basketball
+                'nba': 'NBA Basketball',
+                'nba-development': 'NBA G League Basketball',
+                'mens-college-basketball': 'College Basketball',
+                'womens-college-basketball': "Women's College Basketball",
+                'wnba': 'WNBA Basketball',
+                # Football
+                'nfl': 'NFL Football',
+                'college-football': 'College Football',
+                # Hockey
+                'nhl': 'NHL Hockey',
+                'mens-college-hockey': 'College Hockey',
+                'womens-college-hockey': "Women's College Hockey",
+                # Soccer - Top leagues
+                'eng.1': 'Premier League Soccer',
+                'eng.2': 'English Championship Soccer',
+                'eng.3': 'English League One Soccer',
+                'ger.1': 'Bundesliga Soccer',
+                'esp.1': 'La Liga Soccer',
+                'fra.1': 'Ligue 1 Soccer',
+                'ita.1': 'Serie A Soccer',
+                'ned.1': 'Eredivisie Soccer',
+                'ksa.1': 'Saudi Pro League Soccer',
+                'usa.1': 'MLS Soccer',
+                'usa.nwsl': 'NWSL Soccer',
+                'usa.ncaa.m.1': "Men's College Soccer",
+                'usa.ncaa.w.1': "Women's College Soccer",
+                'uefa.champions': 'UEFA Champions League Soccer',
+                # Volleyball
+                'mens-college-volleyball': "Men's College Volleyball",
+                'womens-college-volleyball': "Women's College Volleyball",
+            }
+
+            for league_code, category in gracenote_mappings.items():
+                cursor.execute(
+                    "UPDATE league_config SET gracenote_category = ? WHERE league_code = ?",
+                    (category, league_code)
+                )
+
+            conn.commit()
+            migrations_run += 1
+            print("    ✅ Migration 27 complete: gracenote_category added to league_config")
+
+        except Exception as e:
+            print(f"    ⚠️ Migration 27 error: {e}")
             conn.rollback()
 
     # =========================================================================

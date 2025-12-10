@@ -237,6 +237,15 @@ class EventTemplateEngine:
         # {league_name} is the full display name (e.g., "English Premier League")
         variables['league_name'] = league_display_name
 
+        # Gracenote-compatible category (e.g., "College Basketball", "NFL Football")
+        # Uses curated value from league_config, falls back to "{league_name} {Sport}"
+        from database import get_gracenote_category
+        variables['gracenote_category'] = get_gracenote_category(
+            event_league.lower() if event_league else '',
+            league_display_name,
+            sport_code
+        )
+
         # =====================================================================
         # DATE & TIME
         # =====================================================================

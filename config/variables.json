@@ -486,6 +486,38 @@
       ]
     },
     {
+      "name": "gracenote_category",
+      "description": "Gracenote-compatible category (e.g., 'College Basketball', 'NFL Football')",
+      "source": "League config or auto-generated",
+      "category": "\ud83c\udff7\ufe0f Team Identity",
+      "icon": "\ud83c\udfc6",
+      "type": "string",
+      "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball",
+        "soccer"
+      ],
+      "available_suffixes": [
+        "base"
+      ],
+      "examples_by_sport": {
+        "NBA": "NBA Basketball",
+        "NFL": "NFL Football",
+        "MLB": "MLB Baseball",
+        "NHL": "NHL Hockey",
+        "NCAAM": "College Basketball",
+        "NCAAF": "College Football",
+        "Soccer": "Premier League Soccer"
+      },
+      "context": [
+        "team",
+        "event"
+      ]
+    },
+    {
       "name": "soccer_match_league",
       "description": "Competition name for this specific match (changes per game)",
       "source": "Event source league",
