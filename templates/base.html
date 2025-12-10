@@ -6,8 +6,8 @@
     <title>{% block title %}Teamarr - Dynamic EPG Generator for Sports Channels{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}?v={{ version }}">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}?v={{ version }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v={{ version }}">
 </head>
 <body>
     <!-- Notification Container (floating) -->
