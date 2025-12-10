@@ -393,8 +393,11 @@
                                 data-enabled="{{ child.enabled }}"
                                 data-refresh="{{ child.last_refresh or '' }}">
                                 <td>
-                                    <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
-                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    <div class="drag-checkbox-cell">
+                                        <span class="drag-handle-spacer"></span>
+                                        <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                               onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="child-group-indent">
@@ -637,8 +640,11 @@
                                 data-enabled="{{ child.enabled }}"
                                 data-refresh="{{ child.last_refresh or '' }}">
                                 <td>
-                                    <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
-                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    <div class="drag-checkbox-cell">
+                                        <span class="drag-handle-spacer"></span>
+                                        <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                               onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="child-group-indent">
@@ -2550,11 +2556,18 @@ code {
     user-select: none;
     opacity: 0.5;
     transition: opacity 0.15s;
+    width: 1rem;
+    text-align: center;
 }
 
 .drag-handle:hover {
     opacity: 1;
     color: #10b981;
+}
+
+.drag-handle-spacer {
+    width: 1rem;
+    display: inline-block;
 }
 
 .draggable-group {
