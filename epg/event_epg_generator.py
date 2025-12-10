@@ -1068,6 +1068,7 @@ def merge_xmltv_files(
         # Collect all channels and programmes separately first
         # XMLTV spec requires all <channel> elements before all <programme> elements
         seen_channels = set()
+        seen_programmes = set()  # Track (channel, start, stop) to dedupe programmes
         all_channels = []
         all_programmes = []
 
@@ -1089,9 +1090,16 @@ def merge_xmltv_files(
                         all_channels.append(channel)
                         seen_channels.add(channel_id)
 
-                # Collect all programmes
+                # Collect programmes (skip duplicates by channel+start+stop)
                 for programme in root.findall('programme'):
-                    all_programmes.append(programme)
+                    prog_key = (
+                        programme.get('channel', ''),
+                        programme.get('start', ''),
+                        programme.get('stop', '')
+                    )
+                    if prog_key not in seen_programmes:
+                        all_programmes.append(programme)
+                        seen_programmes.add(prog_key)
 
             except ET.ParseError as e:
                 logger.warning(f"Error parsing {file_path}: {e}")

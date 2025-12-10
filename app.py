@@ -3506,6 +3506,10 @@ def api_epg_stats_live():
             except Exception:
                 return None
 
+        # Track seen programmes to avoid counting duplicates
+        # (same event from different groups would have same channel+start+stop)
+        seen_programmes = set()
+
         # Process each programme element
         for programme in root.findall('.//programme'):
             # Look for teamarr metadata comment
@@ -3526,8 +3530,15 @@ def api_epg_stats_live():
 
             start_str = programme.get('start')
             stop_str = programme.get('stop')
+            channel_id = programme.get('channel', '')
             title_elem = programme.find('title')
             title = title_elem.text if title_elem is not None else ''
+
+            # Skip duplicate programmes (same channel+start+stop)
+            prog_key = (channel_id, start_str, stop_str)
+            if prog_key in seen_programmes:
+                continue
+            seen_programmes.add(prog_key)
 
             start_time = parse_xmltv_time(start_str)
             stop_time = parse_xmltv_time(stop_str)
@@ -3544,7 +3555,7 @@ def api_epg_stats_live():
                     'title': title,
                     'start': format_time(start_time, time_fmt, show_tz),
                     'start_ts': start_time.timestamp(),  # For sorting
-                    'channel': programme.get('channel', '')
+                    'channel': channel_id
                 })
 
                 # Live Now: currently in progress
