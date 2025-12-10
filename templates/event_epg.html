@@ -181,16 +181,13 @@
                         <th style="width: 100px;" class="sortable" onclick="sortTable('channel_group')" data-sort="channel_group">
                             Ch Group <span class="sort-indicator"></span>
                         </th>
-                        <th style="width: 60px;" class="sortable" onclick="sortTable('streams')" data-sort="streams">
-                            Streams <span class="sort-indicator"></span>
-                        </th>
-                        <th style="width: 95px;" class="sortable" onclick="sortTable('matched')" data-sort="matched">
+                        <th style="width: 110px;" class="sortable" onclick="sortTable('matched')" data-sort="matched">
                             Matched <span class="sort-indicator"></span>
                         </th>
                         <th style="width: 60px;" class="sortable" onclick="sortTable('status')" data-sort="status">
                             Status <span class="sort-indicator"></span>
                         </th>
-                        <th style="width: 160px;">Actions</th>
+                        <th style="width: 90px;">Actions</th>
                     </tr>
                     <tr class="filter-row">
                         <th></th>
@@ -223,7 +220,6 @@
                         <th></th>
                         <th></th>
                         <th></th>
-                        <th></th>
                         <th>
                             <select id="filter-status" class="filter-dropdown" onchange="applyFilters()">
                                 <option value="">All</option>
@@ -245,7 +241,7 @@
                     {# ===== AUTO GROUPS SECTION (draggable) ===== #}
                     {% if auto_groups %}
                     <tr class="section-header-row auto-section-header">
-                        <td colspan="11">
+                        <td colspan="10">
                             <span class="section-label">AUTO Channel Assignment</span>
                             <span class="section-hint">Drag to reorder priority</span>
                         </td>
@@ -327,7 +323,6 @@
                                     <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">{{ group.stream_count or 0 }}</td>
                             <td>
                                 {% if group.stream_count and group.stream_count > 0 %}
                                 {% set past_events = group.filtered_outside_lookahead or 0 %}
@@ -362,14 +357,14 @@
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
-                                        🔍 Test
+                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                                     </button>
-                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
-                                        Edit
+                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     </a>
-                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
-                                        🗑️ Delete
+                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     </button>
                                 </div>
                             </td>
@@ -436,10 +431,6 @@
                                 <td class="text-center">
                                     <span class="badge badge-inherited" title="Inherited from parent">↳</span>
                                 </td>
-                                <td class="text-center">
-                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
-                                </td>
-                                <td class="text-center">{{ child.stream_count or 0 }}</td>
                                 <td>
                                     {% if child.stream_count and child.stream_count > 0 %}
                                     {% set child_past_events = child.filtered_outside_lookahead or 0 %}
@@ -474,14 +465,14 @@
                                 </td>
                                 <td>
                                     <div class="action-buttons">
-                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
-                                            🔍 Test
+                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                                         </button>
-                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
-                                            Edit
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                         </a>
-                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
-                                            🗑️ Delete
+                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                         </button>
                                     </div>
                                 </td>
@@ -493,7 +484,7 @@
                     {# ===== MANUAL GROUPS SECTION (fixed order) ===== #}
                     {% if manual_groups %}
                     <tr class="section-header-row manual-section-header">
-                        <td colspan="11">
+                        <td colspan="10">
                             <span class="section-label">MANUAL Channel Assignment</span>
                             <span class="section-hint">Fixed channel start numbers</span>
                         </td>
@@ -574,7 +565,6 @@
                                     <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">{{ group.stream_count or 0 }}</td>
                             <td>
                                 {% if group.stream_count and group.stream_count > 0 %}
                                 {% set past_events = group.filtered_outside_lookahead or 0 %}
@@ -609,14 +599,14 @@
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
-                                        🔍 Test
+                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                                     </button>
-                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
-                                        Edit
+                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     </a>
-                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
-                                        🗑️ Delete
+                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     </button>
                                 </div>
                             </td>
@@ -683,10 +673,6 @@
                                 <td class="text-center">
                                     <span class="badge badge-inherited" title="Inherited from parent">↳</span>
                                 </td>
-                                <td class="text-center">
-                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
-                                </td>
-                                <td class="text-center">{{ child.stream_count or 0 }}</td>
                                 <td>
                                     {% if child.stream_count and child.stream_count > 0 %}
                                     {% set child_past_events = child.filtered_outside_lookahead or 0 %}
@@ -721,14 +707,14 @@
                                 </td>
                                 <td>
                                     <div class="action-buttons">
-                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
-                                            🔍 Test
+                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                                         </button>
-                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
-                                            Edit
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                         </a>
-                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
-                                            🗑️ Delete
+                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                         </button>
                                     </div>
                                 </td>
@@ -765,7 +751,9 @@
                                     <td><span class="badge badge-primary">{{ alias.league.upper() }}</span></td>
                                     <td>{{ alias.espn_team_name }}</td>
                                     <td>
-                                        <button onclick="deleteAlias({{ alias.id }})" class="btn btn-sm btn-danger" title="Delete">✕</button>
+                                        <button onclick="deleteAlias({{ alias.id }})" class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
                                     </td>
                                 </tr>
                             {% endfor %}

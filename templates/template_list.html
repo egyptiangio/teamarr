@@ -67,21 +67,21 @@
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <a href="{{ url_for('templates_edit_form', template_id=template.id) }}" class="btn btn-sm btn-primary" title="Edit">
-                                        ✏️ Edit
+                                    <a href="{{ url_for('templates_edit_form', template_id=template.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     </a>
                                     <form method="POST" action="{{ url_for('templates_duplicate', template_id=template.id) }}" style="display: inline;">
-                                        <button type="submit" class="btn btn-sm btn-secondary" title="Duplicate">
-                                            📋 Duplicate
+                                        <button type="submit" class="btn-icon btn-icon-duplicate" title="Duplicate">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                         </button>
                                     </form>
-                                    <a href="{{ url_for('templates_export', template_id=template.id) }}" class="btn btn-sm btn-secondary" title="Export">
-                                        📥 Export
+                                    <a href="{{ url_for('templates_export', template_id=template.id) }}" class="btn-icon btn-icon-export" title="Export">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                     </a>
                                     <form method="POST" action="{{ url_for('templates_delete', template_id=template.id) }}" style="display: inline;"
                                           onsubmit="return confirmDelete('{{ template.name }}', '{{ template.template_type }}', {{ template.team_count or 0 }}, {{ template.group_count or 0 }})">
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete">
-                                            🗑️ Delete
+                                        <button type="submit" class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                         </button>
                                     </form>
                                 </div>
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
 .table th:nth-child(2) { width: 80px; }      /* Type */
 .table th:nth-child(3) { width: 140px; }     /* Usage */
 .table th:nth-child(4) { width: 120px; }     /* Created */
-.table th:nth-child(5) { width: 380px; }     /* Actions (4 buttons) */
+.table th:nth-child(5) { width: 130px; }     /* Actions (4 icon buttons) */
 
 .table td {
     padding: 1rem;
