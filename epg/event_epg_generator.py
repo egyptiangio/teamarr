@@ -473,6 +473,129 @@ class EventEPGGenerator:
 
             current_start = current_end
 
+    def _enrich_event_for_postgame(self, event: Dict, group_info: Dict, settings: Dict) -> Dict:
+        """
+        Enrich event with fresh scoreboard data for postgame filler.
+
+        When generating postgame filler, the original event data may be stale
+        (captured when the game was matched, not when EPG is generated).
+        This method fetches the latest data from the scoreboard to get
+        updated scores and status for completed games.
+
+        Args:
+            event: Original ESPN event data
+            group_info: Event EPG group config (contains sport/league info)
+            settings: Settings dict (for timezone)
+
+        Returns:
+            Enriched event dict with updated scores/status, or original if enrichment fails
+        """
+        try:
+            from api.espn_client import ESPNClient
+            from epg.league_config import get_league_config, parse_api_path
+            from database import get_connection
+
+            # Get event ID and date
+            event_id = event.get('id')
+            event_date_str = event.get('date', '')
+            if not event_id or not event_date_str:
+                return event
+
+            # Get league info - check event first (for multi-sport), then group
+            league = event.get('league') or group_info.get('assigned_league', '')
+            if not league:
+                return event
+
+            # Get API path for the league
+            config = get_league_config(league, get_connection)
+            if not config:
+                # Try soccer leagues cache as fallback
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT 1 FROM soccer_leagues_cache WHERE league_slug = ?",
+                    (league,)
+                )
+                is_soccer = cursor.fetchone() is not None
+                conn.close()
+
+                if is_soccer:
+                    api_sport = 'soccer'
+                    api_league = league
+                else:
+                    logger.debug(f"No config for league {league}, cannot enrich postgame event")
+                    return event
+            else:
+                api_sport, api_league = parse_api_path(config['api_path'])
+                if not api_sport or not api_league:
+                    return event
+
+            # Parse event date to get scoreboard date
+            epg_timezone = settings.get('default_timezone', 'America/Detroit')
+            try:
+                tz = ZoneInfo(epg_timezone)
+            except Exception:
+                tz = ZoneInfo('America/Detroit')
+
+            event_date_utc = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
+            event_date_local = event_date_utc.astimezone(tz)
+            date_str = event_date_local.strftime('%Y%m%d')
+
+            # Fetch scoreboard for the event's date
+            espn = ESPNClient()
+            scoreboard_data = espn.get_scoreboard(api_sport, api_league, date_str)
+
+            if not scoreboard_data or 'events' not in scoreboard_data:
+                logger.debug(f"No scoreboard data for {api_league} on {date_str}")
+                return event
+
+            # Find our event in the scoreboard
+            for sb_event in scoreboard_data.get('events', []):
+                if str(sb_event.get('id')) == str(event_id):
+                    # Found it - extract updated data
+                    competitions = sb_event.get('competitions', [])
+                    if not competitions:
+                        return event
+
+                    comp = competitions[0]
+
+                    # Update status
+                    status = comp.get('status', {})
+                    status_type = status.get('type', {})
+                    event['status'] = {
+                        'name': status_type.get('name'),
+                        'state': status_type.get('state'),
+                        'completed': status_type.get('completed', False),
+                        'detail': status_type.get('detail') or status_type.get('shortDetail'),
+                        'period': status.get('period', 0)
+                    }
+
+                    # Update team scores
+                    competitors = comp.get('competitors', [])
+                    for competitor in competitors:
+                        team_data = competitor.get('team', {})
+                        team_id = str(team_data.get('id', ''))
+                        score = competitor.get('score')
+
+                        # Match to home/away team
+                        if event.get('home_team', {}).get('id') == team_id:
+                            event['home_team']['score'] = score
+                        elif event.get('away_team', {}).get('id') == team_id:
+                            event['away_team']['score'] = score
+
+                    logger.debug(f"Enriched event {event_id} with scoreboard data: "
+                                f"status={event['status'].get('name')}, "
+                                f"home={event.get('home_team', {}).get('score')}, "
+                                f"away={event.get('away_team', {}).get('score')}")
+                    return event
+
+            logger.debug(f"Event {event_id} not found in scoreboard for {date_str}")
+            return event
+
+        except Exception as e:
+            logger.warning(f"Error enriching event for postgame: {e}")
+            return event
+
     def _add_postgame_programmes(
         self,
         parent,
@@ -534,8 +657,12 @@ class EventEPGGenerator:
         if event_end_local >= epg_end_datetime:
             return
 
+        # Re-enrich event with latest scoreboard data to get updated scores/status
+        # This ensures postgame filler shows final scores even if game finished after initial match
+        enriched_event = self._enrich_event_for_postgame(event, group_info, settings)
+
         # Build template context for variable resolution (once, reused for all programmes)
-        template_ctx = build_event_context(event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
+        template_ctx = build_event_context(enriched_event, stream, group_info, epg_timezone, settings, exception_keyword=exception_keyword)
 
         # Create daily filler programmes from event end to EPG end
         current_start = event_end_local
@@ -546,11 +673,11 @@ class EventEPGGenerator:
             )
             current_end = min(next_midnight, epg_end_datetime)
 
-            # Create the programme element
+            # Create the programme element (use enriched_event for updated scores/status)
             self._create_filler_programme(
                 parent=parent,
                 stream=stream,
-                event=event,
+                event=enriched_event,
                 start_dt=current_start,
                 end_dt=current_end,
                 template=template,
