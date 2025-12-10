@@ -2947,7 +2947,8 @@ def settings_update():
             'dispatcharr_password', 'dispatcharr_epg_id',
             'channel_create_timing', 'channel_delete_timing', 'include_final_events',
             'event_lookahead_days', 'default_duplicate_event_handling',
-            'soccer_cache_refresh_frequency'
+            'soccer_cache_refresh_frequency',
+            'channel_range_start', 'channel_range_end'
         ]
 
         for field in fields:
@@ -2991,6 +2992,12 @@ def settings_update():
                     # Validate epg_days_ahead range
                     if field == 'epg_days_ahead' and value and (value < 1 or value > 14):
                         flash('Days to Generate must be between 1 and 14', 'error')
+                        return redirect(url_for('settings_form'))
+                # Handle channel range fields with validation
+                elif field in ['channel_range_start', 'channel_range_end']:
+                    value = int(value) if value else (101 if field == 'channel_range_start' else 9999)
+                    if value < 1 or value > 9999:
+                        flash(f'{field.replace("_", " ").title()} must be between 1 and 9999', 'error')
                         return redirect(url_for('settings_form'))
                 elif field in ['game_duration_default', 'max_program_hours_default',
                                'game_duration_basketball', 'game_duration_football',

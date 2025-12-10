@@ -378,7 +378,7 @@ def get_gracenote_category(league_code: str, league_name: str = '', sport: str =
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 28
+CURRENT_SCHEMA_VERSION = 29
 
 
 def get_schema_version(conn) -> int:
@@ -1946,6 +1946,21 @@ def run_migrations(conn):
             print(f"    ⚠️ Migration 28 failed: {e}")
 
     # =========================================================================
+    # 29. Global channel range settings
+    # =========================================================================
+    if current_version < 29:
+        print("    🔄 Running migration 29: Add global channel range settings")
+        try:
+            add_columns_if_missing("settings", [
+                ("channel_range_start", "INTEGER DEFAULT 101"),
+                ("channel_range_end", "INTEGER DEFAULT 9999"),
+            ])
+
+            migrations_run += 1
+        except Exception as e:
+            print(f"    ⚠️ Migration 29 failed: {e}")
+
+    # =========================================================================
     # UPDATE SCHEMA VERSION
     # =========================================================================
     # All migrations complete - update version to current
@@ -3196,49 +3211,94 @@ def delete_managed_channel(channel_id: int) -> bool:
     return db_execute("DELETE FROM managed_channels WHERE id = ?", (channel_id,)) > 0
 
 
-def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_username: str = None, dispatcharr_password: str = None) -> Optional[int]:
+def get_global_channel_range() -> tuple[int, int]:
     """
-    Calculate the next available channel range start (101, 201, 301, etc.).
-
-    This is used as a fallback when a group doesn't have a channel_start set.
-    Considers:
-    1. All existing event groups' channel_start values
-    2. All managed channels' actual channel numbers
-    3. All channels in Dispatcharr (if credentials provided)
-
-    Uses 100-channel intervals to maximize available ranges (Dispatcharr max is 9999).
-    E.g., highest is 5135 -> next is 5201, highest is 777 -> next is 801.
+    Get the global channel range settings for Teamarr-managed channels.
 
     Returns:
-        The next available x01 channel number, or None if no range available (would exceed 9999)
+        Tuple of (range_start, range_end) with defaults (101, 9999)
     """
-    MAX_CHANNEL = 9999
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT channel_range_start, channel_range_end FROM settings WHERE id = 1"
+        ).fetchone()
+        if row:
+            start = row['channel_range_start'] or 101
+            end = row['channel_range_end'] or 9999
+            return (start, end)
+        return (101, 9999)
+    except Exception:
+        return (101, 9999)
+    finally:
+        conn.close()
+
+
+def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_username: str = None, dispatcharr_password: str = None) -> Optional[int]:
+    """
+    Calculate the next available channel range start that won't conflict with existing groups.
+
+    Smart allocation strategy:
+    1. Respect global channel_range_start and channel_range_end settings
+    2. Build a map of all reserved channel ranges (each group reserves channel_start + total_stream_count)
+    3. Find the highest reserved channel within the global range
+    4. Return next clean x01 starting point after all reserved ranges
+
+    This prevents conflicts when groups grow - each group reserves space for ALL its streams
+    (including placeholders and ineligible), not just currently active channels.
+
+    Uses 100-channel intervals starting at x01 (101, 201, 301, etc.).
+
+    Returns:
+        The next available x01 channel number, or None if no range available
+    """
+    # Get global range settings
+    global_start, global_end = get_global_channel_range()
 
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        highest_channel = 0
 
-        # 1. Check event_epg_groups channel_start values
-        rows = cursor.execute("""
-            SELECT channel_start FROM event_epg_groups
-            WHERE channel_start IS NOT NULL
+        # Get all groups with their channel_start and total_stream_count (potential max channels)
+        # Only consider groups within the global range
+        groups = cursor.execute("""
+            SELECT id, channel_start, total_stream_count, stream_count
+            FROM event_epg_groups
+            WHERE channel_start IS NOT NULL AND parent_group_id IS NULL
         """).fetchall()
 
-        for row in rows:
-            if row['channel_start'] and row['channel_start'] > highest_channel:
-                highest_channel = row['channel_start']
+        # Calculate highest reserved channel considering each group's full potential
+        # Start from global_start - 1 so first allocation gets global_start's x01
+        highest_reserved = global_start - 1
 
-        # 2. Check managed_channels for actual channel numbers
+        for group in groups:
+            channel_start = group['channel_start']
+            # Skip groups outside our global range
+            if channel_start < global_start or channel_start > global_end:
+                continue
+
+            # Use total_stream_count (all streams) as reserved space, fall back to stream_count
+            # Add buffer of 10 for safety margin
+            reserved_count = max(
+                group['total_stream_count'] or 0,
+                group['stream_count'] or 0,
+                10  # Minimum reservation even for empty groups
+            )
+            group_max_channel = channel_start + reserved_count - 1
+
+            if group_max_channel > highest_reserved:
+                highest_reserved = group_max_channel
+
+        # Also check actual managed channels within global range
         row = cursor.execute("""
             SELECT MAX(channel_number) as max_num FROM managed_channels
-            WHERE deleted_at IS NULL
-        """).fetchone()
+            WHERE deleted_at IS NULL AND channel_number >= ? AND channel_number <= ?
+        """, (global_start, global_end)).fetchone()
 
-        if row and row['max_num'] and row['max_num'] > highest_channel:
-            highest_channel = row['max_num']
+        if row and row['max_num'] and row['max_num'] > highest_reserved:
+            highest_reserved = row['max_num']
 
-        # 3. If Dispatcharr credentials available, check all channels there
+        # Check Dispatcharr for channels within our global range
         if dispatcharr_url:
             try:
                 from api.dispatcharr_client import ChannelManager
@@ -3246,23 +3306,26 @@ def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_us
                 channels = channel_mgr.get_channels()
                 for ch in channels:
                     ch_num = ch.get('channel_number')
-                    if ch_num and ch_num > highest_channel:
-                        highest_channel = ch_num
+                    if ch_num and global_start <= ch_num <= global_end and ch_num > highest_reserved:
+                        highest_reserved = ch_num
             except Exception as e:
                 logger.debug(f"Could not query Dispatcharr channels: {e}")
 
-        # Calculate next x01 after highest channel (100-channel intervals)
-        # E.g., highest is 5135 -> 5201, highest is 777 -> 801
-        if highest_channel == 0:
-            return 101
+        # Calculate next x01 after highest reserved channel
+        if highest_reserved < global_start:
+            # No channels yet in range, start at the first x01 at or after global_start
+            next_range = ((global_start - 1) // 100 + 1) * 100 + 1
+            if next_range < global_start:
+                next_range += 100
+        else:
+            next_range = ((int(highest_reserved) // 100) + 1) * 100 + 1
 
-        next_range = ((int(highest_channel) // 100) + 1) * 100 + 1
-
-        # Check we don't exceed Dispatcharr's max channel limit
-        if next_range > MAX_CHANNEL:
-            logger.warning(f"Cannot auto-assign channel range: next would be {next_range}, max is {MAX_CHANNEL}")
+        # Check we don't exceed global range end
+        if next_range > global_end:
+            logger.warning(f"Cannot auto-assign channel range: next would be {next_range}, max allowed is {global_end}")
             return None
 
+        logger.debug(f"Channel range calculation: global=({global_start}-{global_end}), highest_reserved={highest_reserved}, next_range={next_range}")
         return int(next_range)
 
     finally:

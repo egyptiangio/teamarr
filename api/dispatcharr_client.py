@@ -21,6 +21,35 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def fix_double_encoded_utf8(text: str) -> str:
+    """
+    Fix double-encoded UTF-8 strings.
+
+    Some M3U sources have UTF-8 text that was decoded as Latin-1 then re-encoded,
+    resulting in characters like 'Ã±' instead of 'ñ'.
+
+    Args:
+        text: Potentially double-encoded string
+
+    Returns:
+        Properly decoded UTF-8 string, or original if not double-encoded
+    """
+    if not text or not isinstance(text, str):
+        return text
+
+    # Quick check: if no high bytes that look like double-encoding, skip
+    # Common double-encoded patterns: Ã (0xC3) followed by another char
+    if 'Ã' not in text:
+        return text
+
+    try:
+        # Try to fix: encode as Latin-1 (to get original bytes), decode as UTF-8
+        return text.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        # Not double-encoded or different encoding issue
+        return text
+
+
 # =============================================================================
 # Retry Configuration
 # =============================================================================
@@ -728,6 +757,11 @@ class M3UManager:
 
         data = response.json()
         streams = data.get('results', []) if isinstance(data, dict) else data
+
+        # Fix double-encoded UTF-8 in stream names
+        for stream in streams:
+            if 'name' in stream:
+                stream['name'] = fix_double_encoded_utf8(stream['name'])
 
         if limit:
             streams = streams[:limit]

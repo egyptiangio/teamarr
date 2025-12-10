@@ -173,6 +173,24 @@
                 </div>
             </div>
 
+            <div class="form-row" style="margin-top: 0.75rem;">
+                <div class="form-group">
+                    <label for="channel_range_start">Channel Range Start</label>
+                    <input type="number" id="channel_range_start" name="channel_range_start" class="form-control"
+                           value="{{ settings.channel_range_start if settings.channel_range_start else 101 }}"
+                           min="1" max="9999" placeholder="101">
+                    <small class="form-help">First channel number Teamarr can auto-assign</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="channel_range_end">Channel Range End</label>
+                    <input type="number" id="channel_range_end" name="channel_range_end" class="form-control"
+                           value="{{ settings.channel_range_end if settings.channel_range_end else 9999 }}"
+                           min="1" max="9999" placeholder="9999">
+                    <small class="form-help">Last channel number Teamarr can auto-assign (Dispatcharr max: 9999)</small>
+                </div>
+            </div>
+
             <!-- Exception Keywords Section (only visible when consolidate selected) -->
             <div id="exception-keywords-section" class="form-row" style="margin-top: 0.75rem; display: none;">
                 <div class="form-group" style="width: 100%;">
