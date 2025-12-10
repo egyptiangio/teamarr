@@ -195,10 +195,14 @@ class EventTemplateEngine:
             'soccer': 'Soccer'
         }
         variables['sport'] = sport_display_names.get(sport_code, sport_code.capitalize())
+        variables['sport_lower'] = variables['sport'].lower()
 
         # Get league from event first (for multi-sport), then group (for single-sport)
         # event['league'] contains the ESPN slug (e.g., 'aus.1', 'eng.1', 'nfl')
         event_league = event.get('league', '') or group_info.get('assigned_league', '')
+
+        # {league_slug} - Always the raw ESPN slug (e.g., 'womens-college-basketball', 'eng.1')
+        variables['league_slug'] = event_league.lower() if event_league else ''
 
         # {league_id} - Check aliases table for friendly name, fallback to ESPN slug
         # This ensures consistent output whether from single-sport or multi-sport groups

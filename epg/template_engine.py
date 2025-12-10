@@ -175,6 +175,7 @@ class TemplateEngine:
         }
         sport_code = team_config.get('sport', '')
         variables['sport'] = sport_display_names.get(sport_code, sport_code.capitalize())
+        variables['sport_lower'] = variables['sport'].lower()
         # Use league_name (e.g., "NBA") instead of league code (e.g., "nba")
         variables['league'] = team_config.get('league_name', '') or team_config.get('league', '').upper()
         variables['league_name'] = team_config.get('league_name', '')
@@ -182,6 +183,7 @@ class TemplateEngine:
         # e.g., 'womens-college-basketball' -> 'ncaaw'
         from database import get_league_alias, get_gracenote_category
         league_code = team_config.get('league', '').lower()
+        variables['league_slug'] = league_code  # Always raw ESPN slug
         variables['league_id'] = get_league_alias(league_code)
 
         # Gracenote-compatible category (e.g., "College Basketball", "NFL Football")

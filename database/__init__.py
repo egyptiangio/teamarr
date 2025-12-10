@@ -378,7 +378,7 @@ def get_gracenote_category(league_code: str, league_name: str = '', sport: str =
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 29
+CURRENT_SCHEMA_VERSION = 30
 
 
 def get_schema_version(conn) -> int:
@@ -1961,6 +1961,48 @@ def run_migrations(conn):
             print(f"    ⚠️ Migration 29 failed: {e}")
 
     # =========================================================================
+    # 30. Channel assignment mode and sort order for event groups
+    # =========================================================================
+    if current_version < 30:
+        print("    🔄 Running migration 30: Add channel assignment mode and sort order")
+        try:
+            # channel_assignment_mode: 'auto' or 'manual'
+            # sort_order: integer for drag-and-drop ordering (lower = higher priority for auto assignment)
+            add_columns_if_missing("event_epg_groups", [
+                ("channel_assignment_mode", "TEXT DEFAULT 'manual'"),
+                ("sort_order", "INTEGER DEFAULT 0"),
+            ])
+
+            # Migrate existing groups: all groups with channel_start become 'manual'
+            # This preserves backwards compatibility - existing setups keep working
+            cursor.execute("""
+                UPDATE event_epg_groups
+                SET channel_assignment_mode = 'manual'
+                WHERE channel_start IS NOT NULL
+            """)
+
+            # Groups without channel_start get 'auto' mode
+            cursor.execute("""
+                UPDATE event_epg_groups
+                SET channel_assignment_mode = 'auto'
+                WHERE channel_start IS NULL
+            """)
+
+            # Set initial sort_order based on current ID order
+            cursor.execute("""
+                UPDATE event_epg_groups
+                SET sort_order = id
+                WHERE parent_group_id IS NULL
+            """)
+
+            conn.commit()
+            print("    ℹ️  Existing groups with channel_start migrated to 'manual' mode")
+
+            migrations_run += 1
+        except Exception as e:
+            print(f"    ⚠️ Migration 30 failed: {e}")
+
+    # =========================================================================
     # UPDATE SCHEMA VERSION
     # =========================================================================
     # All migrations complete - update version to current
@@ -2697,7 +2739,8 @@ def create_event_epg_group(
     is_multi_sport: bool = False,
     enabled_leagues: str = None,
     channel_sort_order: str = 'time',
-    overlap_handling: str = 'add_stream'
+    overlap_handling: str = 'add_stream',
+    channel_assignment_mode: str = 'auto'
 ) -> int:
     """
     Create a new event EPG group.
@@ -2728,11 +2771,14 @@ def create_event_epg_group(
     Raises:
         sqlite3.IntegrityError if dispatcharr_group_id already exists
     """
-    # Auto-assign channel_start if not provided
-    if not channel_start:
-        channel_start = get_next_available_channel_range()
+    # For MANUAL mode: auto-assign channel_start if not explicitly provided
+    # For AUTO mode: channel_start should remain NULL (assigned dynamically during EPG generation)
+    if channel_assignment_mode == 'manual' and not channel_start:
+        channel_start, error_msg = get_next_available_channel_range()
         if channel_start:
-            logger.info(f"Auto-assigned channel_start {channel_start} for new group '{group_name}'")
+            logger.info(f"Auto-assigned channel_start {channel_start} for new MANUAL group '{group_name}'")
+        elif error_msg:
+            logger.warning(f"Could not auto-assign channel_start for '{group_name}': {error_msg}")
 
     conn = get_connection()
     try:
@@ -2762,8 +2808,9 @@ def create_event_epg_group(
              stream_include_regex, stream_include_regex_enabled,
              stream_exclude_regex, stream_exclude_regex_enabled,
              skip_builtin_filter, parent_group_id,
-             is_multi_sport, enabled_leagues, channel_sort_order, overlap_handling)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             is_multi_sport, enabled_leagues, channel_sort_order, overlap_handling,
+             channel_assignment_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 dispatcharr_group_id, dispatcharr_account_id, group_name,
@@ -2777,7 +2824,8 @@ def create_event_epg_group(
                 stream_include_regex, 1 if stream_include_regex_enabled else 0,
                 stream_exclude_regex, 1 if stream_exclude_regex_enabled else 0,
                 1 if skip_builtin_filter else 0, parent_group_id,
-                1 if is_multi_sport else 0, enabled_leagues_normalized, channel_sort_order, overlap_handling
+                1 if is_multi_sport else 0, enabled_leagues_normalized, channel_sort_order, overlap_handling,
+                channel_assignment_mode
             )
         )
         conn.commit()
@@ -3211,12 +3259,14 @@ def delete_managed_channel(channel_id: int) -> bool:
     return db_execute("DELETE FROM managed_channels WHERE id = ?", (channel_id,)) > 0
 
 
-def get_global_channel_range() -> tuple[int, int]:
+def get_global_channel_range() -> tuple[int, Optional[int]]:
     """
     Get the global channel range settings for Teamarr-managed channels.
 
     Returns:
-        Tuple of (range_start, range_end) with defaults (101, 9999)
+        Tuple of (range_start, range_end) where:
+        - range_start defaults to 101
+        - range_end is None if not set (means use Dispatcharr max of 9999)
     """
     conn = get_connection()
     try:
@@ -3225,16 +3275,16 @@ def get_global_channel_range() -> tuple[int, int]:
         ).fetchone()
         if row:
             start = row['channel_range_start'] or 101
-            end = row['channel_range_end'] or 9999
+            end = row['channel_range_end']  # None if not set = no limit
             return (start, end)
-        return (101, 9999)
+        return (101, None)
     except Exception:
-        return (101, 9999)
+        return (101, None)
     finally:
         conn.close()
 
 
-def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_username: str = None, dispatcharr_password: str = None) -> Optional[int]:
+def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_username: str = None, dispatcharr_password: str = None) -> tuple[Optional[int], Optional[str]]:
     """
     Calculate the next available channel range start that won't conflict with existing groups.
 
@@ -3250,19 +3300,25 @@ def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_us
     Uses 100-channel intervals starting at x01 (101, 201, 301, etc.).
 
     Returns:
-        The next available x01 channel number, or None if no range available
+        Tuple of (next_channel_number, error_message):
+        - (int, None) on success
+        - (None, str) on failure with explanation
     """
+    DISPATCHARR_MAX = 9999
+
     # Get global range settings
     global_start, global_end = get_global_channel_range()
+
+    # If no end set, use Dispatcharr max
+    effective_end = global_end if global_end else DISPATCHARR_MAX
 
     conn = get_connection()
     try:
         cursor = conn.cursor()
 
         # Get all groups with their channel_start and total_stream_count (potential max channels)
-        # Only consider groups within the global range
         groups = cursor.execute("""
-            SELECT id, channel_start, total_stream_count, stream_count
+            SELECT id, group_name, channel_start, total_stream_count, stream_count
             FROM event_epg_groups
             WHERE channel_start IS NOT NULL AND parent_group_id IS NULL
         """).fetchall()
@@ -3270,33 +3326,36 @@ def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_us
         # Calculate highest reserved channel considering each group's full potential
         # Start from global_start - 1 so first allocation gets global_start's x01
         highest_reserved = global_start - 1
+        highest_group_name = None
 
         for group in groups:
             channel_start = group['channel_start']
             # Skip groups outside our global range
-            if channel_start < global_start or channel_start > global_end:
+            if channel_start < global_start or channel_start > effective_end:
                 continue
 
             # Use total_stream_count (all streams) as reserved space, fall back to stream_count
-            # Add buffer of 10 for safety margin
+            # Minimum reservation of 10 for safety margin
             reserved_count = max(
                 group['total_stream_count'] or 0,
                 group['stream_count'] or 0,
-                10  # Minimum reservation even for empty groups
+                10
             )
             group_max_channel = channel_start + reserved_count - 1
 
             if group_max_channel > highest_reserved:
                 highest_reserved = group_max_channel
+                highest_group_name = group['group_name']
 
         # Also check actual managed channels within global range
         row = cursor.execute("""
             SELECT MAX(channel_number) as max_num FROM managed_channels
             WHERE deleted_at IS NULL AND channel_number >= ? AND channel_number <= ?
-        """, (global_start, global_end)).fetchone()
+        """, (global_start, effective_end)).fetchone()
 
         if row and row['max_num'] and row['max_num'] > highest_reserved:
             highest_reserved = row['max_num']
+            highest_group_name = None  # It's from managed channels, not a group
 
         # Check Dispatcharr for channels within our global range
         if dispatcharr_url:
@@ -3306,8 +3365,9 @@ def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_us
                 channels = channel_mgr.get_channels()
                 for ch in channels:
                     ch_num = ch.get('channel_number')
-                    if ch_num and global_start <= ch_num <= global_end and ch_num > highest_reserved:
+                    if ch_num and global_start <= ch_num <= effective_end and ch_num > highest_reserved:
                         highest_reserved = ch_num
+                        highest_group_name = None
             except Exception as e:
                 logger.debug(f"Could not query Dispatcharr channels: {e}")
 
@@ -3320,13 +3380,26 @@ def get_next_available_channel_range(dispatcharr_url: str = None, dispatcharr_us
         else:
             next_range = ((int(highest_reserved) // 100) + 1) * 100 + 1
 
-        # Check we don't exceed global range end
-        if next_range > global_end:
-            logger.warning(f"Cannot auto-assign channel range: next would be {next_range}, max allowed is {global_end}")
-            return None
+        # Check we don't exceed the effective end
+        if next_range > effective_end:
+            if global_end:
+                error_msg = (
+                    f"Channel range exhausted. Next available would be {next_range}, "
+                    f"but your configured range ends at {global_end}. "
+                    f"Increase 'Channel Range End' in Settings, or manually set a channel start for this group."
+                )
+            else:
+                error_msg = (
+                    f"Channel range exhausted. Next available would be {next_range}, "
+                    f"but Dispatcharr's maximum is {DISPATCHARR_MAX}. "
+                    f"You'll need to manually reassign existing groups to lower channel numbers."
+                )
+            logger.warning(f"Cannot auto-assign channel range: {error_msg}")
+            return (None, error_msg)
 
-        logger.debug(f"Channel range calculation: global=({global_start}-{global_end}), highest_reserved={highest_reserved}, next_range={next_range}")
-        return int(next_range)
+        range_desc = f"{global_start}-{global_end}" if global_end else f"{global_start}+"
+        logger.debug(f"Channel range calculation: global=({range_desc}), highest_reserved={highest_reserved}, next_range={next_range}")
+        return (int(next_range), None)
 
     finally:
         conn.close()
@@ -3336,13 +3409,13 @@ def get_next_channel_number(group_id: int, auto_assign: bool = True) -> Optional
     """
     Get the next available channel number for a group.
 
-    Uses the group's channel_start and finds the next unused number.
-    If the group has no channel_start and auto_assign is True, assigns
-    the next available 100-channel range (x01) and saves it to the group.
+    For MANUAL groups: Uses the group's channel_start and finds the next unused number.
+    For AUTO groups: Calculates effective channel_start based on sort_order and
+    total_stream_count of preceding AUTO groups, using the global channel range.
 
     Args:
         group_id: The event group ID
-        auto_assign: If True, auto-assign a channel_start when missing
+        auto_assign: If True, auto-assign a channel_start when missing (MANUAL mode only)
 
     Returns:
         The next available channel number, or None if disabled or would exceed 9999
@@ -3353,9 +3426,10 @@ def get_next_channel_number(group_id: int, auto_assign: bool = True) -> Optional
     try:
         cursor = conn.cursor()
 
-        # Get the group's channel_start
+        # Get the group's channel_start and assignment mode
         group = cursor.execute(
-            "SELECT channel_start FROM event_epg_groups WHERE id = ?",
+            """SELECT channel_start, channel_assignment_mode, sort_order, total_stream_count
+               FROM event_epg_groups WHERE id = ?""",
             (group_id,)
         ).fetchone()
 
@@ -3363,17 +3437,28 @@ def get_next_channel_number(group_id: int, auto_assign: bool = True) -> Optional
             return None
 
         channel_start = group['channel_start']
+        assignment_mode = group['channel_assignment_mode'] or 'manual'
 
-        # If no channel_start, auto-assign the next available range
-        if not channel_start and auto_assign:
-            channel_start = get_next_available_channel_range()
-            # Save to the group
-            cursor.execute(
-                "UPDATE event_epg_groups SET channel_start = ? WHERE id = ?",
-                (channel_start, group_id)
-            )
-            conn.commit()
-            logger.info(f"Auto-assigned channel_start {channel_start} to group {group_id}")
+        # For AUTO mode, calculate effective channel_start dynamically
+        if assignment_mode == 'auto':
+            channel_start = _calculate_auto_channel_start(cursor, group_id, group['sort_order'])
+            if not channel_start:
+                logger.warning(f"Could not calculate auto channel_start for group {group_id}")
+                return None
+
+        # For MANUAL mode with no channel_start, auto-assign if enabled
+        elif not channel_start and auto_assign:
+            channel_start, error_msg = get_next_available_channel_range()
+            if channel_start:
+                # Save to the group
+                cursor.execute(
+                    "UPDATE event_epg_groups SET channel_start = ? WHERE id = ?",
+                    (channel_start, group_id)
+                )
+                conn.commit()
+                logger.info(f"Auto-assigned channel_start {channel_start} to MANUAL group {group_id}")
+            elif error_msg:
+                logger.warning(f"Could not auto-assign channel_start for group {group_id}: {error_msg}")
 
         if not channel_start:
             return None
@@ -3407,6 +3492,68 @@ def get_next_channel_number(group_id: int, auto_assign: bool = True) -> Optional
         return next_num
     finally:
         conn.close()
+
+
+def _calculate_auto_channel_start(cursor, group_id: int, sort_order: int) -> Optional[int]:
+    """
+    Calculate effective channel_start for an AUTO group based on sort_order.
+
+    AUTO groups are allocated channels sequentially within the global range,
+    with each group's starting position determined by the cumulative
+    total_stream_count of preceding AUTO groups.
+
+    Args:
+        cursor: Database cursor
+        group_id: The target group's ID
+        sort_order: The target group's sort_order
+
+    Returns:
+        The calculated channel_start, or None if range exhausted
+    """
+    # Get global channel range settings
+    settings = cursor.execute(
+        "SELECT channel_range_start, channel_range_end FROM settings WHERE id = 1"
+    ).fetchone()
+
+    if not settings:
+        return None
+
+    range_start = settings['channel_range_start'] or 101
+    range_end = settings['channel_range_end']  # Can be None (no limit)
+
+    # Get all AUTO groups sorted by sort_order, excluding child groups
+    auto_groups = cursor.execute(
+        """
+        SELECT id, sort_order, total_stream_count
+        FROM event_epg_groups
+        WHERE channel_assignment_mode = 'auto'
+          AND parent_group_id IS NULL
+          AND enabled = 1
+        ORDER BY sort_order ASC
+        """
+    ).fetchall()
+
+    # Calculate cumulative offset for this group
+    cumulative_offset = 0
+    for g in auto_groups:
+        if g['id'] == group_id:
+            break
+        # Reserve space for this preceding group's streams
+        stream_count = g['total_stream_count'] or 0
+        if stream_count > 0:
+            cumulative_offset += stream_count
+
+    effective_start = range_start + cumulative_offset
+
+    # Check if we exceed the range
+    if range_end and effective_start > range_end:
+        logger.warning(
+            f"AUTO group {group_id} cannot fit in global range: "
+            f"calculated start {effective_start} exceeds range_end {range_end}"
+        )
+        return None
+
+    return effective_start
 
 
 def cleanup_old_deleted_channels(days_old: int = 30) -> int:

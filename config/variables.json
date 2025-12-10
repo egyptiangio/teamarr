@@ -486,6 +486,70 @@
       ]
     },
     {
+      "name": "league_id",
+      "description": "League code (uses alias if defined, else ESPN slug)",
+      "source": "league_id_aliases table or ESPN slug",
+      "category": "🏷️ Team Identity",
+      "icon": "🏀",
+      "type": "string",
+      "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball",
+        "soccer"
+      ],
+      "available_suffixes": [
+        "base"
+      ],
+      "examples_by_sport": {
+        "NBA": "nba",
+        "NFL": "nfl",
+        "MLB": "mlb",
+        "NHL": "nhl",
+        "NCAAM": "ncaam",
+        "NCAAF": "ncaaf",
+        "Soccer": "epl"
+      },
+      "context": [
+        "team",
+        "event"
+      ]
+    },
+    {
+      "name": "league_slug",
+      "description": "Raw ESPN league slug (ignores alias mapping)",
+      "source": "ESPN API slug",
+      "category": "🏷️ Team Identity",
+      "icon": "🏀",
+      "type": "string",
+      "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball",
+        "soccer"
+      ],
+      "available_suffixes": [
+        "base"
+      ],
+      "examples_by_sport": {
+        "NBA": "nba",
+        "NFL": "nfl",
+        "MLB": "mlb",
+        "NHL": "nhl",
+        "NCAAM": "mens-college-basketball",
+        "NCAAF": "college-football",
+        "Soccer": "eng.1"
+      },
+      "context": [
+        "team",
+        "event"
+      ]
+    },
+    {
       "name": "gracenote_category",
       "description": "Gracenote-compatible category (e.g., 'College Basketball', 'NFL Football')",
       "source": "League config or auto-generated",
@@ -653,6 +717,37 @@
         "NCAAM": "Basketball",
         "NCAAF": "Football",
         "Soccer": "Soccer"
+      },
+      "context": [
+        "team",
+        "event"
+      ]
+    },
+    {
+      "name": "sport_lower",
+      "description": "Sport name (lowercase)",
+      "source": "Derived from sport",
+      "category": "🏷️ Team Identity",
+      "icon": "🏀",
+      "type": "string",
+      "availability": "always",
+      "sports": [
+        "basketball",
+        "football",
+        "hockey",
+        "baseball"
+      ],
+      "available_suffixes": [
+        "base"
+      ],
+      "examples_by_sport": {
+        "NBA": "basketball",
+        "NFL": "football",
+        "MLB": "baseball",
+        "NHL": "hockey",
+        "NCAAM": "basketball",
+        "NCAAF": "football",
+        "Soccer": "soccer"
       },
       "context": [
         "team",

@@ -264,7 +264,7 @@ CREATE TABLE IF NOT EXISTS settings (
     team_cache_refresh_frequency TEXT DEFAULT 'weekly',    -- daily, every_3_days, weekly, manual
 
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 22,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 30,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -730,6 +730,10 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     enabled_leagues TEXT,                          -- JSON array of league codes (NULL = all)
     channel_sort_order TEXT DEFAULT 'time',        -- time, sport_time, league_time
     overlap_handling TEXT DEFAULT 'add_stream',    -- add_stream, add_only, create_all, skip
+
+    -- Channel Assignment Mode (v30)
+    channel_assignment_mode TEXT DEFAULT 'auto',   -- 'auto' or 'manual'
+    sort_order INTEGER DEFAULT 0,                  -- For AUTO groups: drag-and-drop priority
 
     -- Stats (updated after each generation)
     last_refresh TIMESTAMP,                        -- Last time EPG was generated

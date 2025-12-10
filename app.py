@@ -2994,11 +2994,20 @@ def settings_update():
                         flash('Days to Generate must be between 1 and 14', 'error')
                         return redirect(url_for('settings_form'))
                 # Handle channel range fields with validation
-                elif field in ['channel_range_start', 'channel_range_end']:
-                    value = int(value) if value else (101 if field == 'channel_range_start' else 9999)
+                elif field == 'channel_range_start':
+                    value = int(value) if value else 101
                     if value < 1 or value > 9999:
-                        flash(f'{field.replace("_", " ").title()} must be between 1 and 9999', 'error')
+                        flash('Channel Range Start must be between 1 and 9999', 'error')
                         return redirect(url_for('settings_form'))
+                elif field == 'channel_range_end':
+                    # Optional - empty means no limit (NULL in DB)
+                    if value and value.strip():
+                        value = int(value)
+                        if value < 1 or value > 9999:
+                            flash('Channel Range End must be between 1 and 9999', 'error')
+                            return redirect(url_for('settings_form'))
+                    else:
+                        value = None  # No limit
                 elif field in ['game_duration_default', 'max_program_hours_default',
                                'game_duration_basketball', 'game_duration_football',
                                'game_duration_hockey', 'game_duration_baseball', 'game_duration_soccer']:
@@ -5627,7 +5636,8 @@ def api_event_epg_groups_create():
             is_multi_sport=bool(data.get('is_multi_sport')),
             enabled_leagues=data.get('enabled_leagues'),
             channel_sort_order=data.get('channel_sort_order', 'time'),
-            overlap_handling=data.get('overlap_handling', 'add_stream')
+            overlap_handling=data.get('overlap_handling', 'add_stream'),
+            channel_assignment_mode=data.get('channel_assignment_mode', 'auto')
         )
 
         app.logger.info(f"Created event EPG group: {data['group_name']} (ID: {group_id})")
@@ -5861,6 +5871,48 @@ def api_event_epg_groups_delete(group_id):
 
     except Exception as e:
         app.logger.error(f"Error deleting event EPG group {group_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/event-epg/groups/reorder', methods=['POST'])
+def api_event_epg_groups_reorder():
+    """
+    Update sort_order for multiple event EPG groups.
+
+    Body:
+        groups: list of {group_id: int, sort_order: int}
+    """
+    try:
+        data = request.get_json()
+        groups = data.get('groups', [])
+
+        if not groups:
+            return jsonify({'error': 'No groups provided'}), 400
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        for item in groups:
+            group_id = item.get('group_id')
+            sort_order = item.get('sort_order', 0)
+
+            if group_id is None:
+                continue
+
+            cursor.execute("""
+                UPDATE event_epg_groups
+                SET sort_order = ?
+                WHERE id = ?
+            """, (sort_order, group_id))
+
+        conn.commit()
+        conn.close()
+
+        app.logger.info(f"Reordered {len(groups)} event groups")
+        return jsonify({'success': True, 'updated': len(groups)})
+
+    except Exception as e:
+        app.logger.error(f"Error reordering event EPG groups: {e}")
         return jsonify({'error': str(e)}), 500
 
 

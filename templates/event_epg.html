@@ -178,6 +178,9 @@
                         <th style="width: 100px;" class="sortable" onclick="sortTable('channel_start')" data-sort="channel_start">
                             Ch Start <span class="sort-indicator"></span>
                         </th>
+                        <th style="width: 100px;" class="sortable" onclick="sortTable('channel_group')" data-sort="channel_group">
+                            Ch Group <span class="sort-indicator"></span>
+                        </th>
                         <th style="width: 60px;" class="sortable" onclick="sortTable('streams')" data-sort="streams">
                             Streams <span class="sort-indicator"></span>
                         </th>
@@ -220,6 +223,7 @@
                         <th></th>
                         <th></th>
                         <th></th>
+                        <th></th>
                         <th>
                             <select id="filter-status" class="filter-dropdown" onchange="applyFilters()">
                                 <option value="">All</option>
@@ -230,15 +234,26 @@
                         <th></th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="groups-tbody">
                     {# Reorganize groups: parent groups with their children nested below #}
+                    {# Separate AUTO groups (at top, draggable) from MANUAL groups (at bottom, fixed) #}
                     {% set parent_groups = groups | selectattr('parent_group_id', 'none') | list %}
                     {% set child_groups = groups | rejectattr('parent_group_id', 'none') | list %}
+                    {% set auto_groups = parent_groups | selectattr('channel_assignment_mode', 'equalto', 'auto') | sort(attribute='sort_order') | list %}
+                    {% set manual_groups = parent_groups | rejectattr('channel_assignment_mode', 'equalto', 'auto') | list %}
 
-                    {% for group in parent_groups %}
+                    {# ===== AUTO GROUPS SECTION (draggable) ===== #}
+                    {% if auto_groups %}
+                    <tr class="section-header-row auto-section-header">
+                        <td colspan="11">
+                            <span class="section-label">AUTO Channel Assignment</span>
+                            <span class="section-hint">Drag to reorder priority</span>
+                        </td>
+                    </tr>
+                    {% for group in auto_groups %}
                         {% set match_rate = ((group.matched_count / group.stream_count * 100) | round | int) if group.stream_count > 0 else 0 %}
                         <tr data-group-id="{{ group.id }}"
-                            class="parent-group-row"
+                            class="parent-group-row auto-group-row draggable-group"
                             data-dispatcharr-group-id="{{ group.dispatcharr_group_id }}"
                             data-name="{{ group.group_name }}"
                             data-league="{{ group.assigned_league }}"
@@ -247,17 +262,25 @@
                             data-template-id="{{ group.event_template_id or '' }}"
                             data-channel-start="{{ group.channel_start or 0 }}"
                             data-channel-group-id="{{ group.channel_group_id or '' }}"
+                            data-channel-group-name="{{ group.channel_group_name or '' }}"
+                            data-channel-assignment-mode="{{ group.channel_assignment_mode or 'manual' }}"
+                            data-sort-order="{{ group.sort_order or 0 }}"
                             data-streams="{{ group.stream_count or 0 }}"
                             data-matched="{{ group.matched_count or 0 }}"
                             data-enabled="{{ group.enabled }}"
-                            data-refresh="{{ group.last_refresh or '' }}">
+                            data-refresh="{{ group.last_refresh or '' }}"
+                            draggable="true">
                             <td>
-                                <input type="checkbox" class="group-checkbox" value="{{ group.id }}"
-                                       onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                <div class="drag-checkbox-cell">
+                                    <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+                                    <input type="checkbox" class="group-checkbox" value="{{ group.id }}"
+                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                </div>
                             </td>
                             <td>
                                 <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                     <strong style="font-size: 0.9375rem;">{{ group.group_name }}</strong>
+                                    <span class="badge badge-auto" title="Auto channel assignment">AUTO</span>
                                     {% if group.account_name %}
                                         <span class="badge badge-secondary">{{ group.account_name }}</span>
                                     {% endif %}
@@ -295,8 +318,11 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if group.channel_start %}
-                                    <code>{{ group.channel_start }}</code>
+                                <span class="badge badge-auto-channel" title="Auto-assigned from global range">AUTO</span>
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_group_name %}
+                                    <span class="badge badge-secondary" title="{{ group.channel_group_name }}">{{ group.channel_group_name|truncate(12, True) }}</span>
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}
@@ -407,6 +433,9 @@
                                 <td class="text-center">
                                     <span class="badge badge-inherited" title="Inherited from parent">↳</span>
                                 </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
                                 <td class="text-center">{{ child.stream_count or 0 }}</td>
                                 <td>
                                     {% if child.stream_count and child.stream_count > 0 %}
@@ -456,6 +485,251 @@
                             </tr>
                         {% endfor %}
                     {% endfor %}
+                    {% endif %}
+
+                    {# ===== MANUAL GROUPS SECTION (fixed order) ===== #}
+                    {% if manual_groups %}
+                    <tr class="section-header-row manual-section-header">
+                        <td colspan="11">
+                            <span class="section-label">MANUAL Channel Assignment</span>
+                            <span class="section-hint">Fixed channel start numbers</span>
+                        </td>
+                    </tr>
+                    {% for group in manual_groups %}
+                        {% set match_rate = ((group.matched_count / group.stream_count * 100) | round | int) if group.stream_count > 0 else 0 %}
+                        <tr data-group-id="{{ group.id }}"
+                            class="parent-group-row manual-group-row"
+                            data-dispatcharr-group-id="{{ group.dispatcharr_group_id }}"
+                            data-name="{{ group.group_name }}"
+                            data-league="{{ group.assigned_league }}"
+                            data-sport="{{ group.assigned_sport }}"
+                            data-template="{{ group.event_template_name or '' }}"
+                            data-template-id="{{ group.event_template_id or '' }}"
+                            data-channel-start="{{ group.channel_start or 0 }}"
+                            data-channel-group-id="{{ group.channel_group_id or '' }}"
+                            data-channel-group-name="{{ group.channel_group_name or '' }}"
+                            data-channel-assignment-mode="{{ group.channel_assignment_mode or 'manual' }}"
+                            data-sort-order="{{ group.sort_order or 0 }}"
+                            data-streams="{{ group.stream_count or 0 }}"
+                            data-matched="{{ group.matched_count or 0 }}"
+                            data-enabled="{{ group.enabled }}"
+                            data-refresh="{{ group.last_refresh or '' }}">
+                            <td>
+                                <input type="checkbox" class="group-checkbox" value="{{ group.id }}"
+                                       onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                    <strong style="font-size: 0.9375rem;">{{ group.group_name }}</strong>
+                                    {% if group.account_name %}
+                                        <span class="badge badge-secondary">{{ group.account_name }}</span>
+                                    {% endif %}
+                                    {% if group.custom_regex_teams_enabled or group.custom_regex_date_enabled or group.custom_regex_time_enabled or group.stream_include_regex_enabled or group.stream_exclude_regex_enabled %}
+                                        <span class="badge badge-info" title="Custom regex patterns configured">Regex</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge" title="Multi-Sport / Multi-League">MUL</span>
+                                {% else %}
+                                <img src="{{ league_logos.get(group.assigned_league, '') }}"
+                                     alt="{{ group.assigned_league.upper() }}"
+                                     class="league-logo"
+                                     title="{{ group.assigned_league.upper() }}">
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;" title="{{ group.assigned_sport|title if not group.is_multi_sport else 'Multi-Sport' }}">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge">MUL</span>
+                                {% elif group.assigned_sport == 'basketball' %}<span style="font-size: 1.5rem;">🏀</span>
+                                {% elif group.assigned_sport == 'football' %}<span style="font-size: 1.5rem;">🏈</span>
+                                {% elif group.assigned_sport == 'baseball' %}<span style="font-size: 1.5rem;">⚾</span>
+                                {% elif group.assigned_sport == 'hockey' %}<span style="font-size: 1.5rem;">🏒</span>
+                                {% elif group.assigned_sport == 'soccer' %}<span style="font-size: 1.5rem;">⚽</span>
+                                {% else %}<span style="font-size: 1.5rem;">🏆</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if group.event_template_name %}
+                                    <span class="badge badge-success">{{ group.event_template_name }}</span>
+                                {% else %}
+                                    <span class="badge badge-warning" title="EPG will not be generated without a template" style="cursor: help;">Unassigned</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_start %}
+                                    <code>{{ group.channel_start }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_group_name %}
+                                    <span class="badge badge-secondary" title="{{ group.channel_group_name }}">{{ group.channel_group_name|truncate(12, True) }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ group.stream_count or 0 }}</td>
+                            <td>
+                                {% if group.stream_count and group.stream_count > 0 %}
+                                {% set past_events = group.filtered_outside_lookahead or 0 %}
+                                {% set final_events = group.filtered_final or 0 %}
+                                {% set league_disabled = group.filtered_league_not_enabled or 0 %}
+                                {% set unsupported_sport = group.filtered_unsupported_sport or 0 %}
+                                {% set total_excluded = past_events + final_events + league_disabled + unsupported_sport %}
+                                {% set exclusion_parts = [] %}
+                                {% if past_events > 0 %}{% set _ = exclusion_parts.append(past_events ~ ' past') %}{% endif %}
+                                {% if final_events > 0 %}{% set _ = exclusion_parts.append(final_events ~ ' final') %}{% endif %}
+                                {% if league_disabled > 0 %}{% set _ = exclusion_parts.append(league_disabled ~ ' league disabled') %}{% endif %}
+                                {% if unsupported_sport > 0 %}{% set _ = exclusion_parts.append(unsupported_sport ~ ' unsupported') %}{% endif %}
+                                <div class="match-rate-container" {% if total_excluded > 0 %}title="{{ total_excluded }} stream(s) excluded: {{ exclusion_parts | join(', ') }}"{% endif %}>
+                                    <div class="match-rate-bar">
+                                        <div class="match-rate-fill {% if match_rate >= 80 %}rate-good{% elif match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                             style="width: {{ match_rate }}%;"></div>
+                                    </div>
+                                    <span class="match-rate-text">
+                                        {{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)
+                                    </span>
+                                </div>
+                                {% else %}
+                                <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" {% if group.enabled %}checked{% endif %}
+                                           onchange="toggleGroupStatus({{ group.id }}, this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
+                                        🔍 Test
+                                    </button>
+                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
+                                        Edit
+                                    </a>
+                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
+                                        🗑️ Delete
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {# Render child groups nested under this MANUAL parent #}
+                        {% for child in child_groups if child.parent_group_id == group.id %}
+                            {% set child_match_rate = ((child.matched_count / child.stream_count * 100) | round | int) if child.stream_count > 0 else 0 %}
+                            <tr data-group-id="{{ child.id }}"
+                                class="child-group-row"
+                                data-parent-id="{{ group.id }}"
+                                data-dispatcharr-group-id="{{ child.dispatcharr_group_id }}"
+                                data-name="{{ child.group_name }}"
+                                data-league="{{ child.assigned_league }}"
+                                data-sport="{{ child.assigned_sport }}"
+                                data-template="{{ child.event_template_name or '' }}"
+                                data-template-id="{{ child.event_template_id or '' }}"
+                                data-channel-start="{{ child.channel_start or 0 }}"
+                                data-channel-group-id="{{ child.channel_group_id or '' }}"
+                                data-streams="{{ child.stream_count or 0 }}"
+                                data-matched="{{ child.matched_count or 0 }}"
+                                data-enabled="{{ child.enabled }}"
+                                data-refresh="{{ child.last_refresh or '' }}">
+                                <td>
+                                    <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                </td>
+                                <td>
+                                    <div class="child-group-indent">
+                                        <span class="child-connector">└</span>
+                                        <strong style="font-size: 0.875rem;">{{ child.group_name }}</strong>
+                                        <span class="badge badge-child" title="Child group: adds streams to parent's channels">
+                                            ↳ {{ group.group_name|truncate(15) }}
+                                        </span>
+                                        {% if child.account_name %}
+                                            <span class="badge badge-secondary" style="font-size: 0.65rem;">{{ child.account_name }}</span>
+                                        {% endif %}
+                                        {% if child.custom_regex_teams_enabled or child.custom_regex_date_enabled or child.custom_regex_time_enabled or child.stream_include_regex_enabled or child.stream_exclude_regex_enabled %}
+                                            <span class="badge badge-info" style="font-size: 0.65rem;" title="Custom regex patterns configured">Regex</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td style="text-align: center; vertical-align: middle;">
+                                    <img src="{{ league_logos.get(child.assigned_league, '') }}"
+                                         alt="{{ child.assigned_league.upper() }}"
+                                         class="league-logo"
+                                         style="opacity: 0.6;"
+                                         title="{{ child.assigned_league.upper() }}">
+                                </td>
+                                <td style="font-size: 1.25rem; text-align: center; vertical-align: middle; opacity: 0.6;" title="{{ child.assigned_sport|title }}">
+                                    {% if child.assigned_sport == 'basketball' %}🏀
+                                    {% elif child.assigned_sport == 'football' %}🏈
+                                    {% elif child.assigned_sport == 'baseball' %}⚾
+                                    {% elif child.assigned_sport == 'hockey' %}🏒
+                                    {% elif child.assigned_sport == 'soccer' %}⚽
+                                    {% else %}🏆
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">{{ child.stream_count or 0 }}</td>
+                                <td>
+                                    {% if child.stream_count and child.stream_count > 0 %}
+                                    {% set child_past_events = child.filtered_outside_lookahead or 0 %}
+                                    {% set child_final_events = child.filtered_final or 0 %}
+                                    {% set child_league_disabled = child.filtered_league_not_enabled or 0 %}
+                                    {% set child_unsupported_sport = child.filtered_unsupported_sport or 0 %}
+                                    {% set child_total_excluded = child_past_events + child_final_events + child_league_disabled + child_unsupported_sport %}
+                                    {% set child_exclusion_parts = [] %}
+                                    {% if child_past_events > 0 %}{% set _ = child_exclusion_parts.append(child_past_events ~ ' past') %}{% endif %}
+                                    {% if child_final_events > 0 %}{% set _ = child_exclusion_parts.append(child_final_events ~ ' final') %}{% endif %}
+                                    {% if child_league_disabled > 0 %}{% set _ = child_exclusion_parts.append(child_league_disabled ~ ' league disabled') %}{% endif %}
+                                    {% if child_unsupported_sport > 0 %}{% set _ = child_exclusion_parts.append(child_unsupported_sport ~ ' unsupported') %}{% endif %}
+                                    <div class="match-rate-container" {% if child_total_excluded > 0 %}title="{{ child_total_excluded }} stream(s) excluded: {{ child_exclusion_parts | join(', ') }}"{% endif %}>
+                                        <div class="match-rate-bar">
+                                            <div class="match-rate-fill {% if child_match_rate >= 80 %}rate-good{% elif child_match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                                 style="width: {{ child_match_rate }}%;"></div>
+                                        </div>
+                                        <span class="match-rate-text">
+                                            {{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)
+                                        </span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" {% if child.enabled %}checked{% endif %}
+                                               onchange="toggleGroupStatus({{ child.id }}, this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-primary" title="Test stream matching">
+                                            🔍 Test
+                                        </button>
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn btn-sm btn-secondary" title="Edit Settings">
+                                            Edit
+                                        </a>
+                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn btn-sm btn-danger" title="Delete Group">
+                                            🗑️ Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    {% endif %}
                 </tbody>
             </table>
         </div>
@@ -727,6 +1001,10 @@ function sortTable(column) {
             case 'channel_start':
                 aVal = parseInt(a.dataset.channelStart) || 0;
                 bVal = parseInt(b.dataset.channelStart) || 0;
+                break;
+            case 'channel_group':
+                aVal = (a.dataset.channelGroupName || '').toLowerCase();
+                bVal = (b.dataset.channelGroupName || '').toLowerCase();
                 break;
             case 'streams':
                 aVal = parseInt(a.dataset.streams) || 0;
@@ -1301,6 +1579,157 @@ function showNotification(message, type = 'info') {
         return;
     }
     alert(message);
+}
+
+// ============================================================================
+// Drag & Drop for AUTO Groups
+// ============================================================================
+
+let draggedRow = null;
+let draggedGroupId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initDragAndDrop();
+});
+
+function initDragAndDrop() {
+    const tbody = document.getElementById('groups-tbody');
+    if (!tbody) return;
+
+    // Add drag event listeners to draggable rows
+    const draggableRows = tbody.querySelectorAll('.draggable-group');
+    draggableRows.forEach(row => {
+        row.addEventListener('dragstart', handleDragStart);
+        row.addEventListener('dragend', handleDragEnd);
+        row.addEventListener('dragover', handleDragOver);
+        row.addEventListener('drop', handleDrop);
+        row.addEventListener('dragleave', handleDragLeave);
+    });
+}
+
+function handleDragStart(e) {
+    draggedRow = this;
+    draggedGroupId = this.dataset.groupId;
+    this.classList.add('dragging');
+
+    // Set drag data
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedGroupId);
+
+    // Highlight valid drop targets
+    const autoRows = document.querySelectorAll('.auto-group-row');
+    autoRows.forEach(row => {
+        if (row !== this) {
+            row.classList.add('drop-target-hint');
+        }
+    });
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+
+    // Remove all drop hints
+    document.querySelectorAll('.drop-target-hint, .drop-target-above, .drop-target-below').forEach(el => {
+        el.classList.remove('drop-target-hint', 'drop-target-above', 'drop-target-below');
+    });
+
+    draggedRow = null;
+    draggedGroupId = null;
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedRow || this === draggedRow) return;
+
+    // Only allow drops on AUTO group rows
+    if (!this.classList.contains('auto-group-row')) return;
+
+    // Determine if we're in the top or bottom half of the row
+    const rect = this.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    this.classList.remove('drop-target-above', 'drop-target-below');
+    if (e.clientY < midpoint) {
+        this.classList.add('drop-target-above');
+    } else {
+        this.classList.add('drop-target-below');
+    }
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drop-target-above', 'drop-target-below');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+
+    if (!draggedRow || this === draggedRow) return;
+    if (!this.classList.contains('auto-group-row')) return;
+
+    const tbody = document.getElementById('groups-tbody');
+    const rect = this.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    // Collect the dragged group and its children
+    const rowsToMove = [draggedRow];
+    const childRows = tbody.querySelectorAll(`.child-group-row[data-parent-id="${draggedGroupId}"]`);
+    childRows.forEach(child => rowsToMove.push(child));
+
+    // Find target position
+    if (e.clientY < midpoint) {
+        // Insert before this row
+        rowsToMove.forEach(row => tbody.insertBefore(row, this));
+    } else {
+        // Insert after this row (and its children)
+        let targetGroupId = this.dataset.groupId;
+        let lastTargetRow = this;
+        let targetChildren = tbody.querySelectorAll(`.child-group-row[data-parent-id="${targetGroupId}"]`);
+        if (targetChildren.length > 0) {
+            lastTargetRow = targetChildren[targetChildren.length - 1];
+        }
+        rowsToMove.forEach(row => {
+            lastTargetRow.after(row);
+            lastTargetRow = row;
+        });
+    }
+
+    // Clean up visual hints
+    this.classList.remove('drop-target-above', 'drop-target-below');
+
+    // Save new order to server
+    saveGroupOrder();
+}
+
+async function saveGroupOrder() {
+    // Collect new order of AUTO groups
+    const autoRows = document.querySelectorAll('.auto-group-row');
+    const newOrder = [];
+
+    autoRows.forEach((row, index) => {
+        newOrder.push({
+            group_id: parseInt(row.dataset.groupId),
+            sort_order: index
+        });
+    });
+
+    try {
+        const response = await fetch('/api/event-epg/groups/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: newOrder })
+        });
+
+        if (response.ok) {
+            showNotification('Group order saved', 'success');
+        } else {
+            const data = await response.json();
+            showNotification(`Failed to save order: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error saving order: ${error.message}`, 'error');
+    }
 }
 </script>
 
@@ -2066,6 +2495,135 @@ code {
 .tooltip-row.tooltip-total .tooltip-name,
 .tooltip-row.tooltip-total .tooltip-value {
     font-weight: 700;
+}
+
+/* ============================================================================
+   Section Headers for AUTO/MANUAL groups
+   ============================================================================ */
+
+.section-header-row {
+    background: var(--bg-tertiary) !important;
+}
+
+.section-header-row td {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border);
+}
+
+.auto-section-header td {
+    color: #10b981;
+    border-bottom-color: rgba(16, 185, 129, 0.4);
+}
+
+.manual-section-header td {
+    color: var(--text-muted);
+    border-bottom-color: var(--border);
+}
+
+.section-label {
+    margin-right: 1rem;
+}
+
+.section-hint {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+/* ============================================================================
+   Drag and Drop Styles
+   ============================================================================ */
+
+.drag-checkbox-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 1rem;
+    user-select: none;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+.drag-handle:hover {
+    opacity: 1;
+    color: #10b981;
+}
+
+.draggable-group {
+    cursor: default;
+}
+
+.draggable-group:hover .drag-handle {
+    opacity: 0.8;
+}
+
+.dragging {
+    opacity: 0.5;
+    background: var(--bg-tertiary) !important;
+}
+
+.drop-target-hint {
+    background: rgba(16, 185, 129, 0.05) !important;
+}
+
+.drop-target-above {
+    box-shadow: inset 0 3px 0 #10b981;
+}
+
+.drop-target-below {
+    box-shadow: inset 0 -3px 0 #10b981;
+}
+
+/* ============================================================================
+   AUTO/MANUAL Badges
+   ============================================================================ */
+
+.badge-auto {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+}
+
+.badge-auto-channel {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+}
+
+.light-theme .badge-auto,
+.light-theme .badge-auto-channel {
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* Row styling for different modes */
+.auto-group-row {
+    border-left: 3px solid transparent;
+}
+
+.auto-group-row:hover {
+    border-left-color: #10b981;
+}
+
+.manual-group-row {
+    border-left: 3px solid transparent;
 }
 </style>
 {% endblock %}
