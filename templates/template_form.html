@@ -1404,22 +1404,8 @@ function togglePostgameConditional() {
 function toggleIdleSubtitleOffseason() {
     const checkbox = document.getElementById('idle_subtitle_offseason_enabled');
     const fields = document.getElementById('idle-subtitle-offseason-fields');
-    const mainSubtitleGroup = document.getElementById('idle-subtitle-group');
-    const mainSubtitleInput = document.getElementById('idle_subtitle');
 
     fields.style.display = checkbox.checked ? 'block' : 'none';
-
-    // Grey out main subtitle when offseason is enabled
-    if (checkbox.checked) {
-        mainSubtitleGroup.style.opacity = '0.5';
-        mainSubtitleInput.disabled = true;
-        mainSubtitleInput.style.backgroundColor = 'var(--bg-tertiary)';
-    } else {
-        mainSubtitleGroup.style.opacity = '1';
-        mainSubtitleInput.disabled = false;
-        mainSubtitleInput.style.backgroundColor = '';
-    }
-
     updatePreviews();
 }
 
@@ -1428,31 +1414,21 @@ function toggleIdleDescriptionOffseason() {
     const fields = document.getElementById('idle-description-offseason-fields');
 
     fields.style.display = checkbox.checked ? 'block' : 'none';
-
-    // Update main description state based on both toggles
-    updateIdleDescriptionState();
     updatePreviews();
 }
 
 function toggleIdleConditional() {
     const checkbox = document.getElementById('idle_conditional_enabled');
     const fields = document.getElementById('idle-conditional-fields');
-
-    fields.style.display = checkbox.checked ? 'block' : 'none';
-
-    // Update main description state based on both toggles
-    updateIdleDescriptionState();
-    updatePreviews();
-}
-
-function updateIdleDescriptionState() {
-    const offseasonEnabled = document.getElementById('idle_offseason_enabled')?.checked;
-    const conditionalEnabled = document.getElementById('idle_conditional_enabled')?.checked;
     const mainDescGroup = document.getElementById('idle-description-group');
     const mainDescInput = document.getElementById('idle_description');
 
-    // Grey out and disable main description when either conditional is enabled
-    if (offseasonEnabled || conditionalEnabled) {
+    fields.style.display = checkbox.checked ? 'block' : 'none';
+
+    // Grey out base description ONLY when last game status is enabled
+    // (because final/not-final is binary - one must be true, so base is never used)
+    // Offseason toggle still needs base as fallback when games exist in lookahead
+    if (checkbox.checked) {
         mainDescGroup.style.opacity = '0.5';
         mainDescInput.disabled = true;
         mainDescInput.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1461,6 +1437,8 @@ function updateIdleDescriptionState() {
         mainDescInput.disabled = false;
         mainDescInput.style.backgroundColor = '';
     }
+
+    updatePreviews();
 }
 
 // ============================================================================
