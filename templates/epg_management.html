@@ -67,7 +67,7 @@
 
     <!-- Last Generation Summary Bar -->
     {% if latest_epg %}
-    {% set failed_count = (latest_epg.event_eligible_streams or 0) - (latest_epg.event_matched_streams or 0) %}
+    {% set failed_count = actual_failed_count if actual_failed_count is defined else ((latest_epg.event_eligible_streams or 0) - (latest_epg.event_matched_streams or 0)) %}
     {% set total_filler = (latest_epg.num_pregame or 0) + (latest_epg.num_postgame or 0) + (latest_epg.num_idle or 0) %}
     <div class="last-generation-bar" id="last-generation-bar">
         <div class="generation-info">

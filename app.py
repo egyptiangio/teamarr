@@ -2648,7 +2648,7 @@ def teams_toggle_status(team_id):
 def epg_management():
     """EPG management page"""
     import os
-    from database import get_epg_stats_summary
+    from database import get_epg_stats_summary, get_failed_matches_summary
 
     # Get latest EPG generation info
     conn = get_connection()
@@ -2664,6 +2664,10 @@ def epg_management():
 
     # Get EPG stats from single source of truth
     epg_stats = get_epg_stats_summary()
+
+    # Get actual failed count from database (more accurate than calculating)
+    failed_summary = get_failed_matches_summary()
+    actual_failed_count = failed_summary.get('total_count', 0)
 
     # Check if EPG file exists
     epg_path = settings.get('epg_output_path', '/app/data/teamarr.xml')
@@ -2721,7 +2725,8 @@ def epg_management():
                          epg_total_lines=epg_total_lines,
                          epg_analysis=epg_analysis,
                          epg_stats=epg_stats,
-                         epg_url=epg_url)
+                         epg_url=epg_url,
+                         actual_failed_count=actual_failed_count)
 
 # =============================================================================
 # CHANNELS UI
