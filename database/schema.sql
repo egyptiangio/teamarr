@@ -267,8 +267,15 @@ CREATE TABLE IF NOT EXISTS settings (
     soccer_cache_refresh_frequency TEXT DEFAULT 'weekly',  -- daily, every_3_days, weekly, manual
     team_cache_refresh_frequency TEXT DEFAULT 'weekly',    -- daily, every_3_days, weekly, manual
 
+    -- Global Channel Range Settings (v29)
+    channel_range_start INTEGER DEFAULT 101,    -- Starting channel number for auto assignment
+    channel_range_end INTEGER DEFAULT 9999,     -- Ending channel number for auto assignment
+
+    -- EPG Generation Counter (v23)
+    epg_generation_counter INTEGER DEFAULT 0,   -- Incremented each EPG generation
+
     -- Schema versioning for migrations
-    schema_version INTEGER DEFAULT 30,  -- Current schema version (increment with each migration)
+    schema_version INTEGER DEFAULT 32,  -- Current schema version (increment with each migration)
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -483,6 +490,9 @@ CREATE TABLE IF NOT EXISTS league_config (
 
     -- League Logo
     logo_url TEXT,                          -- URL to league logo image
+
+    -- Gracenote Category (v27)
+    gracenote_category TEXT,                -- Gracenote/Schedules Direct category name
 
     -- Active Status
     active BOOLEAN DEFAULT 1
@@ -976,6 +986,7 @@ CREATE TABLE IF NOT EXISTS soccer_team_leagues (
 
     -- Team Metadata (stable, rarely changes)
     team_name TEXT,                          -- "Liverpool"
+    team_abbrev TEXT,                        -- "LIV" (v28)
     team_type TEXT,                          -- "club" or "national"
     -- Note: default_league is NOT stored - fetched on-demand via get_team_default_league()
 
@@ -1054,6 +1065,90 @@ CREATE TABLE IF NOT EXISTS team_league_cache_meta (
 );
 
 INSERT OR IGNORE INTO team_league_cache_meta (id) VALUES (1);
+
+-- =============================================================================
+-- STREAM MATCH CACHE (v23)
+-- Caches stream-to-event matches to avoid expensive tier matching on every
+-- EPG generation. Only caches successful matches (with event_id).
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS stream_match_cache (
+    -- Hash fingerprint for fast lookup (SHA256 truncated to 16 chars)
+    fingerprint TEXT PRIMARY KEY,
+
+    -- Original fields kept for debugging
+    group_id INTEGER NOT NULL,
+    stream_id INTEGER NOT NULL,
+    stream_name TEXT NOT NULL,
+
+    -- Match result
+    event_id TEXT NOT NULL,
+    league TEXT NOT NULL,
+
+    -- Cached static event data (JSON blob)
+    -- Contains full normalized event + team_result for template vars
+    cached_event_data TEXT NOT NULL,
+
+    -- Housekeeping
+    last_seen_generation INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smc_generation ON stream_match_cache(last_seen_generation);
+CREATE INDEX IF NOT EXISTS idx_smc_event_id ON stream_match_cache(event_id);
+
+-- =============================================================================
+-- EPG FAILED MATCHES (v24)
+-- Stores failed stream matches from each EPG generation for debugging.
+-- Cleared at start of each generation, populated during processing.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS epg_failed_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generation_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    group_name TEXT NOT NULL,
+    stream_id INTEGER,
+    stream_name TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    parsed_team1 TEXT,
+    parsed_team2 TEXT,
+    detection_tier TEXT,
+    leagues_checked TEXT,
+    detail TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_efm_generation ON epg_failed_matches(generation_id);
+CREATE INDEX IF NOT EXISTS idx_efm_group ON epg_failed_matches(group_id);
+
+-- =============================================================================
+-- EPG MATCHED STREAMS (v24)
+-- Stores successful stream matches from each EPG generation for debugging.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS epg_matched_streams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generation_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    group_name TEXT NOT NULL,
+    stream_id INTEGER,
+    stream_name TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_name TEXT,
+    detected_league TEXT,
+    detection_tier TEXT,
+    parsed_team1 TEXT,
+    parsed_team2 TEXT,
+    home_team TEXT,
+    away_team TEXT,
+    event_date TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ems_generation ON epg_matched_streams(generation_id);
+CREATE INDEX IF NOT EXISTS idx_ems_group ON epg_matched_streams(group_id);
 
 -- =============================================================================
 -- END OF SCHEMA
