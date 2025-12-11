@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS templates (
     idle_conditional_enabled BOOLEAN DEFAULT 0,
     idle_description_final TEXT DEFAULT 'The {team_name} {result_text.last} the {opponent.last} {final_score.last}. Next: {opponent.next} on {game_date.next}',
     idle_description_not_final TEXT DEFAULT 'The {team_name} last played {opponent.last} on {game_date.last}. Next: {opponent.next} on {game_date.next}',
+    idle_subtitle_offseason_enabled BOOLEAN DEFAULT 0,
+    idle_subtitle_offseason TEXT,
     idle_offseason_enabled BOOLEAN DEFAULT 0,
     idle_description_offseason TEXT DEFAULT 'No upcoming {team_name} games scheduled.',
 

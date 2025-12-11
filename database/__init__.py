@@ -378,7 +378,7 @@ def get_gracenote_category(league_code: str, league_name: str = '', sport: str =
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 31
+CURRENT_SCHEMA_VERSION = 32
 
 
 def get_schema_version(conn) -> int:
@@ -2029,6 +2029,22 @@ def run_migrations(conn):
             migrations_run += 1
         except Exception as e:
             print(f"    ⚠️ Migration 31 failed: {e}")
+
+    # =========================================================================
+    # 32. IDLE OFFSEASON SUBTITLE
+    # =========================================================================
+    if current_version < 32:
+        print("    🔄 Running migration 32: Add idle offseason subtitle for templates")
+        try:
+            add_columns_if_missing("templates", [
+                ("idle_subtitle_offseason_enabled", "BOOLEAN DEFAULT 0"),
+                ("idle_subtitle_offseason", "TEXT"),
+            ])
+
+            conn.commit()
+            migrations_run += 1
+        except Exception as e:
+            print(f"    ⚠️ Migration 32 failed: {e}")
 
     # =========================================================================
     # UPDATE SCHEMA VERSION

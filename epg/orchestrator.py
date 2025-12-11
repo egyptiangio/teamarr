@@ -1710,11 +1710,15 @@ class EPGOrchestrator:
         subtitle_template = team.get(f'{filler_type}_subtitle', '')
         art_url_template = team.get(f'{filler_type}_art_url', '')
 
-        # Description template - check for conditional mode (postgame/idle only)
+        # Description and subtitle templates - check for conditional mode (postgame/idle only)
         desc_template = team.get(f'{filler_type}_description', '')
 
         if filler_type == 'idle':
-            # Priority 1: Offseason check (no next game in 30-day lookahead)
+            # Offseason subtitle check (independent toggle)
+            if team.get('idle_subtitle_offseason_enabled') and game_event is None:
+                subtitle_template = team.get('idle_subtitle_offseason', subtitle_template)
+
+            # Priority 1: Offseason description check (no next game in 30-day lookahead)
             # game_event is the "next game" for idle filler - if None, no upcoming games
             if team.get('idle_offseason_enabled') and game_event is None:
                 desc_template = team.get('idle_description_offseason', desc_template)

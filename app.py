@@ -7688,6 +7688,8 @@ def _extract_template_form_data(form):
         'idle_subtitle': form.get('idle_subtitle'),
         'idle_description': form.get('idle_description'),
         'idle_art_url': form.get('idle_art_url'),
+        'idle_subtitle_offseason_enabled': 1 if form.get('idle_subtitle_offseason_enabled') == 'on' else 0,
+        'idle_subtitle_offseason': form.get('idle_subtitle_offseason'),
         'idle_offseason_enabled': 1 if form.get('idle_offseason_enabled') == 'on' else 0,
         'idle_description_offseason': form.get('idle_description_offseason'),
         'idle_conditional_enabled': 1 if form.get('idle_conditional_enabled') == 'on' else 0,
