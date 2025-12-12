@@ -7685,6 +7685,8 @@ def _extract_template_form_data(form):
 
         'idle_enabled': 1 if form.get('idle_enabled') == 'on' else 0,
         'idle_title': form.get('idle_title'),
+        'idle_title_offseason_enabled': 1 if form.get('idle_title_offseason_enabled') == 'on' else 0,
+        'idle_title_offseason': form.get('idle_title_offseason'),
         'idle_subtitle': form.get('idle_subtitle'),
         'idle_description': form.get('idle_description'),
         'idle_art_url': form.get('idle_art_url'),
