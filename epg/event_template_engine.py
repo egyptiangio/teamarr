@@ -146,7 +146,9 @@ class EventTemplateEngine:
         variables['home_team_pro_division'] = home_team.get('pro_division', '')
 
         # Home team rank/seed/streak (from enrich_with_team_stats)
-        variables['home_team_rank'] = home_team.get('rank', '')
+        # Rank: show #X if ranked top 25, else empty (99 = unranked in ESPN data)
+        home_rank = home_team.get('rank', 99)
+        variables['home_team_rank'] = f"#{home_rank}" if isinstance(home_rank, int) and home_rank <= 25 else ''
         variables['home_team_seed'] = home_team.get('seed', '')
         variables['home_team_streak'] = home_team.get('streak', '')
 
@@ -175,7 +177,9 @@ class EventTemplateEngine:
         variables['away_team_pro_division'] = away_team.get('pro_division', '')
 
         # Away team rank/seed/streak (from enrich_with_team_stats)
-        variables['away_team_rank'] = away_team.get('rank', '')
+        # Rank: show #X if ranked top 25, else empty (99 = unranked in ESPN data)
+        away_rank = away_team.get('rank', 99)
+        variables['away_team_rank'] = f"#{away_rank}" if isinstance(away_rank, int) and away_rank <= 25 else ''
         variables['away_team_seed'] = away_team.get('seed', '')
         variables['away_team_streak'] = away_team.get('streak', '')
 
