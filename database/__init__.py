@@ -378,7 +378,7 @@ def get_gracenote_category(league_code: str, league_name: str = '', sport: str =
 #   23: Stream fingerprint cache for EPG generation optimization
 # =============================================================================
 
-CURRENT_SCHEMA_VERSION = 32
+CURRENT_SCHEMA_VERSION = 33
 
 
 def get_schema_version(conn) -> int:
@@ -2047,6 +2047,22 @@ def run_migrations(conn):
             print(f"    ⚠️ Migration 32 failed: {e}")
 
     # =========================================================================
+    # 33. IDLE OFFSEASON TITLE
+    # =========================================================================
+    if current_version < 33:
+        print("    🔄 Running migration 33: Add idle offseason title for templates")
+        try:
+            add_columns_if_missing("templates", [
+                ("idle_title_offseason_enabled", "BOOLEAN DEFAULT 0"),
+                ("idle_title_offseason", "TEXT"),
+            ])
+
+            conn.commit()
+            migrations_run += 1
+        except Exception as e:
+            print(f"    ⚠️ Migration 33 failed: {e}")
+
+    # =========================================================================
     # UPDATE SCHEMA VERSION
     # =========================================================================
     # All migrations complete - update version to current
@@ -2254,6 +2270,12 @@ def create_template(data: Dict[str, Any]) -> int:
             data['idle_conditional_enabled'] = False
             data['idle_description_final'] = ''
             data['idle_description_not_final'] = ''
+            data['idle_offseason_enabled'] = False
+            data['idle_description_offseason'] = ''
+            data['idle_subtitle_offseason_enabled'] = False
+            data['idle_subtitle_offseason'] = ''
+            data['idle_title_offseason_enabled'] = False
+            data['idle_title_offseason'] = ''
 
         # Extract fields (all are optional except name)
         fields = [
@@ -2267,6 +2289,9 @@ def create_template(data: Dict[str, Any]) -> int:
             'postgame_conditional_enabled', 'postgame_description_final', 'postgame_description_not_final',
             'idle_enabled', 'idle_title', 'idle_subtitle', 'idle_description', 'idle_art_url',
             'idle_conditional_enabled', 'idle_description_final', 'idle_description_not_final',
+            'idle_offseason_enabled', 'idle_description_offseason',
+            'idle_subtitle_offseason_enabled', 'idle_subtitle_offseason',
+            'idle_title_offseason_enabled', 'idle_title_offseason',
             'description_options',
             'channel_name', 'channel_logo_url'
         ]
@@ -2305,6 +2330,12 @@ def update_template(template_id: int, data: Dict[str, Any]) -> bool:
             data['idle_conditional_enabled'] = False
             data['idle_description_final'] = ''
             data['idle_description_not_final'] = ''
+            data['idle_offseason_enabled'] = False
+            data['idle_description_offseason'] = ''
+            data['idle_subtitle_offseason_enabled'] = False
+            data['idle_subtitle_offseason'] = ''
+            data['idle_title_offseason_enabled'] = False
+            data['idle_title_offseason'] = ''
 
         # Build UPDATE statement from provided fields
         fields = [k for k in data.keys() if k != 'id']

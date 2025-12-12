@@ -1039,12 +1039,33 @@
                                 Enable Idle Day EPG Entries
                             </label>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="idle-title-group">
                             <label for="idle_title">Title</label>
                             <input type="text" name="idle_title" id="idle_title" value="{{ template.idle_title if template else 'No {team_name} Game Today' }}" class="template-field">
                             <div class="inline-preview">
                                 <small>Preview:</small>
                                 <span id="preview-idle-title">Pistons Programming</span>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid var(--border);">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <input type="checkbox" name="idle_title_offseason_enabled" id="idle_title_offseason_enabled"
+                                       {% if template and template.idle_title_offseason_enabled %}checked{% endif %}
+                                       onchange="toggleIdleTitleOffseason()">
+                                <span>Use conditional title when no games in 30-day lookahead</span>
+                            </label>
+                            <div id="idle-title-offseason-fields" style="{% if not template or not template.idle_title_offseason_enabled %}display: none;{% endif %}">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="idle_title_offseason" style="font-size: 0.85rem; color: var(--muted);">📅 No upcoming games:</label>
+                                    <input type="text" name="idle_title_offseason" id="idle_title_offseason"
+                                           value="{{ template.idle_title_offseason if template and template.idle_title_offseason else '' }}"
+                                           class="template-field" placeholder="Optional title when no upcoming games"
+                                           style="border: 1px solid var(--border); background: var(--bg-secondary);">
+                                    <div class="inline-preview">
+                                        <small>Preview:</small>
+                                        <span id="preview-idle-title-offseason"></span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="form-group" id="idle-subtitle-group">
@@ -1401,6 +1422,14 @@ function togglePostgameConditional() {
     updatePreviews();
 }
 
+function toggleIdleTitleOffseason() {
+    const checkbox = document.getElementById('idle_title_offseason_enabled');
+    const fields = document.getElementById('idle-title-offseason-fields');
+
+    fields.style.display = checkbox.checked ? 'block' : 'none';
+    updatePreviews();
+}
+
 function toggleIdleSubtitleOffseason() {
     const checkbox = document.getElementById('idle_subtitle_offseason_enabled');
     const fields = document.getElementById('idle-subtitle-offseason-fields');
@@ -1511,7 +1540,10 @@ function updatePreviews() {
     const previewPostgameDescNotFinal = document.getElementById('preview-postgame-description-not-final');
     if (previewPostgameDescNotFinal) previewPostgameDescNotFinal.textContent = replaceVariables(postgameDescNotFinal);
 
-    // Update inline previews for idle offseason subtitle and description
+    // Update inline previews for idle offseason title, subtitle and description
+    const idleTitleOffseason = document.getElementById('idle_title_offseason')?.value || '';
+    const previewIdleTitleOffseason = document.getElementById('preview-idle-title-offseason');
+    if (previewIdleTitleOffseason) previewIdleTitleOffseason.textContent = replaceVariables(idleTitleOffseason);
     const idleSubtitleOffseason = document.getElementById('idle_subtitle_offseason')?.value || '';
     const previewIdleSubtitleOffseason = document.getElementById('preview-idle-subtitle-offseason');
     if (previewIdleSubtitleOffseason) previewIdleSubtitleOffseason.textContent = replaceVariables(idleSubtitleOffseason);
@@ -1709,6 +1741,7 @@ const TEAM_TEMPLATE_DEFAULTS = {
     'postgame_description_final': 'The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}',
     'postgame_description_not_final': 'The game between the {team_name} and the {opponent.last} on {game_date.last} has not yet ended as of the last update.',
     'idle_title': 'No {team_name} Game Today',
+    'idle_title_offseason': '',
     'idle_subtitle': 'Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}',
     'idle_description': 'Next game: {game_date.next} at {game_time.next} vs {opponent.next}',
     'idle_description_offseason': 'No upcoming {team_name} games scheduled.',
