@@ -44,8 +44,10 @@ DB_PATH = get_db_path()
 
 def get_connection():
     """Get database connection with row factory for dict-like access"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    # Enable WAL mode for better concurrency (reads don't block writes)
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
