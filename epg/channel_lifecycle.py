@@ -111,7 +111,8 @@ def generate_channel_name(
     exception_keyword: str = None,
     group_info: Dict = None,
     detected_league: str = None,
-    detected_sport: str = None
+    detected_sport: str = None,
+    time_format_settings: Dict = None
 ) -> str:
     """
     Generate channel name for an event.
@@ -128,6 +129,7 @@ def generate_channel_name(
         group_info: Event EPG group configuration
         detected_league: Per-stream detected league (for multi-sport groups)
         detected_sport: Per-stream detected sport (for multi-sport groups)
+        time_format_settings: User's time format preferences (time_format, show_timezone)
 
     Returns:
         Channel name string
@@ -143,7 +145,7 @@ def generate_channel_name(
         if detected_sport:
             effective_group_info['assigned_sport'] = detected_sport
 
-        ctx = build_event_context(event, {}, effective_group_info, timezone, exception_keyword=exception_keyword)
+        ctx = build_event_context(event, {}, effective_group_info, timezone, time_format_settings=time_format_settings, exception_keyword=exception_keyword)
         return template_engine.resolve(template['channel_name'], ctx)
 
     # Default format: "Away @ Home" (with keyword suffix if present)
@@ -777,7 +779,8 @@ class ChannelLifecycleManager:
                     exception_keyword=channel_exception_keyword,
                     group_info=group,
                     detected_league=stored_league,
-                    detected_sport=stored_sport
+                    detected_sport=stored_sport,
+                    time_format_settings=self.settings
                 )
                 current_dispatcharr_name = current_channel.get('name', '')
 
@@ -1425,7 +1428,8 @@ class ChannelLifecycleManager:
                 exception_keyword=matched_keyword,
                 group_info=group,
                 detected_league=stream_detected_league,
-                detected_sport=stream_detected_sport
+                detected_sport=stream_detected_sport,
+                time_format_settings=self.settings
             )
 
             # Calculate scheduled delete time (uses template duration if custom)
