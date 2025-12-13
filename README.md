@@ -322,6 +322,31 @@ docker-compose up -d
 
 ---
 
+## Homepage Integration
+
+Add Teamarr stats to your [Homepage](https://gethomepage.dev/) dashboard using the custom API widget:
+
+```yaml
+- Teamarr:
+    icon: /icons/teamarr.svg  # or use a URL to the logo
+    href: http://your-teamarr-ip:9195
+    description: EPG Stats
+    widget:
+      type: customapi
+      url: http://your-teamarr-ip:9195/api/epg-stats
+      mappings:
+        - label: EVENT
+          field: stats.channels.event_based
+        - label: TEAM
+          field: stats.channels.team_based
+        - label: PROGRAMS
+          field: stats.total_programmes
+```
+
+This displays your event-based channel count, team-based channel count, and total EPG programmes.
+
+---
+
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/egyptiangio/teamarr/issues)
