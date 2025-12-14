@@ -1,0 +1,11 @@
+services:
+  teamarr:
+    image: ghcr.io/egyptiangio/teamarr:dev
+    container_name: teamarr
+    restart: unless-stopped
+    ports:
+      - 9195:9195
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=America/Detroit

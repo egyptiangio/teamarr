@@ -1,0 +1,11 @@
+{# Reusable macros for templates #}
+
+{# Channel ID format variables help text #}
+{% macro channel_id_vars() %}
+<code>{team_name_pascal}</code>, <code>{team_abbrev}</code>, <code>{team_name}</code>, <code>{team_slug}</code>, <code>{espn_team_id}</code>, <code>{league_id}</code>, <code>{league}</code>, <code>{sport}</code>
+{% endmacro %}
+
+{# Channel ID available vars with label #}
+{% macro channel_id_vars_help() %}
+<small class="form-help">Available variables: {{ channel_id_vars() }}</small>
+{% endmacro %}

@@ -1,0 +1,51 @@
+{# Reusable UI macros for Teamarr #}
+
+{#
+  tile_tooltip - Renders a hoverable tile with a dropdown tooltip
+
+  Parameters:
+    value: The main value to display in the tile
+    label: The label below the value
+    title: Title shown at top of tooltip dropdown
+    items: List of items to display in the tooltip. Each item should be a dict with:
+           - name: Display name (left side)
+           - value: Value to show (right side)
+           - logo_url: (optional) Logo image URL
+           - truncate: (optional) If true, truncate long names
+    wide: (optional) If true, use wider tooltip (for long names)
+    label_suffix: (optional) Additional text to show after the label (e.g., percentage)
+#}
+{% macro tile_tooltip(value, label, title, items, wide=false, label_suffix='') %}
+<div class="tile tile-hoverable">
+    <div class="tile-value">{{ value }}</div>
+    <div class="tile-label">{{ label }}{% if label_suffix %} <span class="tile-label-pct">{{ label_suffix }}</span>{% endif %}</div>
+    {% if items %}
+    <div class="tile-tooltip{% if wide %} tile-tooltip-wide{% endif %}">
+        <div class="tooltip-title">{{ title }}</div>
+        {% for item in items %}
+        <div class="tooltip-row{% if item.logo_url %} tooltip-row-with-logo{% endif %}">
+            {% if item.logo_url %}
+            <img src="{{ item.logo_url }}" alt="{{ item.name }}" class="tooltip-league-logo">
+            {% endif %}
+            <span class="tooltip-name{% if item.truncate or wide %} tooltip-name-truncate{% endif %}">{{ item.name }}</span>
+            <span class="tooltip-value">{{ item.value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{#
+  tile_simple - Renders a simple tile without tooltip
+
+  Parameters:
+    value: The main value to display
+    label: The label below the value
+#}
+{% macro tile_simple(value, label) %}
+<div class="tile">
+    <div class="tile-value">{{ value }}</div>
+    <div class="tile-label">{{ label }}</div>
+</div>
+{% endmacro %}

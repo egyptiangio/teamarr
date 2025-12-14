@@ -1,0 +1,1985 @@
+{% extends "base.html" %}
+
+{% block title %}EPG Management - Teamarr{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <h1>EPG Management</h1>
+            <p class="page-subtitle">Generate, download, and preview your EPG</p>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="epg-actions">
+        <div class="action-card">
+            <h3>📡 Generate EPG</h3>
+            <p>Create a fresh EPG file with current team schedules</p>
+            <button onclick="generateEPGWithProgress('generate-epg-now-btn')" id="generate-epg-now-btn" class="btn btn-primary btn-large">
+                🚀 Generate EPG Now
+            </button>
+            <div class="action-info">
+                {% if latest_epg %}
+                Last generated: <span class="format-datetime" data-utc="{{ latest_epg.generated_at }}">{{ latest_epg.generated_at[:16].replace('T', ' ') }}</span>
+                {% else %}
+                No EPG generated yet
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="action-card">
+            <h3>📥 Download EPG</h3>
+            <p>Download the generated XMLTV file to your computer</p>
+            <a href="{{ url_for('download_epg') }}" class="btn btn-success btn-large">
+                💾 Download EPG File
+            </a>
+            {% if epg_file_exists %}
+            <div class="action-info">
+                File: {{ epg_filename }}<br>
+                Size: {{ epg_file_size }}
+            </div>
+            {% else %}
+            <div class="action-info text-warning">
+                No EPG file found. Generate one first.
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="action-card">
+            <h3>🔗 EPG URL</h3>
+            <p>Direct URL for your IPTV applications</p>
+            <div class="url-box">
+                <input type="text"
+                       id="epg-url"
+                       value="{{ epg_url }}"
+                       readonly
+                       onclick="this.select()">
+                <button onclick="copyEPGUrl()" class="btn btn-secondary">
+                    📋 Copy
+                </button>
+            </div>
+            <div class="action-info">
+                Use this URL in your IPTV app.
+            </div>
+        </div>
+    </div>
+
+    <!-- Last Generation Summary Bar -->
+    {% if latest_epg %}
+    {% set failed_count = actual_failed_count if actual_failed_count is defined else ((latest_epg.event_eligible_streams or 0) - (latest_epg.event_matched_streams or 0)) %}
+    {% set total_filler = (latest_epg.num_pregame or 0) + (latest_epg.num_postgame or 0) + (latest_epg.num_idle or 0) %}
+    <div class="last-generation-bar" id="last-generation-bar">
+        <div class="generation-info">
+            <div class="generation-main">
+                <span class="generation-label">Last Generation</span>
+                <span class="generation-datetime format-datetime" data-utc="{{ latest_epg.generated_at }}">{{ latest_epg.generated_at[:16].replace('T', ' ') }}</span>
+                {% if latest_epg.generation_time_seconds %}
+                <span class="generation-duration">({{ "%.1f"|format(latest_epg.generation_time_seconds) }}s)</span>
+                {% endif %}
+                {% if latest_epg.triggered_by == 'scheduler' %}
+                <span class="trigger-badge trigger-scheduler" title="Triggered by scheduler">⏰ Scheduled</span>
+                {% elif latest_epg.triggered_by == 'api' %}
+                <span class="trigger-badge trigger-api" title="Triggered by API">🔌 API</span>
+                {% else %}
+                <span class="trigger-badge trigger-manual" title="Triggered manually">👆 Manual</span>
+                {% endif %}
+            </div>
+            <div class="generation-stats">
+                <span class="stat-item" title="Team-based channels">
+                    <span class="stat-icon">👥</span>
+                    <span class="stat-value">{{ latest_epg.team_based_channels or 0 }}</span>
+                    <span class="stat-label">Teams</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item" title="Event-based channels">
+                    <span class="stat-icon">📺</span>
+                    <span class="stat-value">{{ latest_epg.event_based_channels or 0 }}</span>
+                    <span class="stat-label">Events</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-filler" title="Pregame: {{ latest_epg.num_pregame or 0 }} | Postgame: {{ latest_epg.num_postgame or 0 }} | Idle: {{ latest_epg.num_idle or 0 }}">
+                    <span class="stat-icon">📝</span>
+                    <span class="stat-value">{{ total_filler }}</span>
+                    <span class="stat-label">Filler</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-clickable stat-success"
+                      onclick="openMatchedStreamsModal()"
+                      title="Click to view matched streams">
+                    <span class="stat-icon">✅</span>
+                    <span class="stat-value">{{ latest_epg.event_matched_streams or 0 }}</span>
+                    <span class="stat-label">Matched</span>
+                </span>
+                <span class="stat-divider">|</span>
+                <span class="stat-item stat-clickable stat-error"
+                      onclick="openFailedMatchesModal()"
+                      title="Click to view failed matches">
+                    <span class="stat-icon">❌</span>
+                    <span class="stat-value" id="failed-count">{{ failed_count }}</span>
+                    <span class="stat-label">Failed</span>
+                </span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Failed Matches Modal -->
+    <div id="failed-matches-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeFailedMatchesModal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Failed Matches from Last EPG Run</h2>
+                <button class="modal-close" onclick="closeFailedMatchesModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="failed-matches-loading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading failed matches...</p>
+                </div>
+                <div id="failed-matches-empty" class="empty-state-sm" style="display: none;">
+                    <p>No failed matches recorded from last generation.</p>
+                </div>
+                <div id="failed-matches-content" style="display: none;">
+                    <div class="failed-matches-header">
+                        <span id="failed-matches-summary"></span>
+                    </div>
+                    <div id="failed-matches-list" class="failed-matches-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyFailedMatches()" class="btn btn-secondary">
+                    📋 Copy to Clipboard
+                </button>
+                <button onclick="closeFailedMatchesModal()" class="btn btn-primary">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matched Streams Modal -->
+    <div id="matched-streams-modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeMatchedStreamsModal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Matched Streams from Last EPG Run</h2>
+                <button class="modal-close" onclick="closeMatchedStreamsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="matched-streams-loading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading matched streams...</p>
+                </div>
+                <div id="matched-streams-empty" class="empty-state-sm" style="display: none;">
+                    <p>No matched streams recorded from last generation.</p>
+                </div>
+                <div id="matched-streams-content" style="display: none;">
+                    <div class="matched-streams-header">
+                        <span id="matched-streams-summary"></span>
+                    </div>
+                    <div id="matched-streams-list" class="matched-streams-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyMatchedStreams()" class="btn btn-secondary">
+                    📋 Copy to Clipboard
+                </button>
+                <button onclick="closeMatchedStreamsModal()" class="btn btn-primary">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EPG Analysis -->
+    {% if epg_analysis %}
+    <div class="analysis-section">
+        <h2>📊 EPG Analysis</h2>
+        <div class="analysis-grid">
+            <div class="analysis-card-sm">
+                <div class="analysis-value-sm">{{ epg_stats.channels.team_based }}</div>
+                <div class="analysis-label-sm">Team Channels</div>
+            </div>
+            <div class="analysis-card-sm">
+                <div class="analysis-value-sm">{{ epg_stats.channels.event_based }}</div>
+                <div class="analysis-label-sm">Event Channels</div>
+            </div>
+            <div class="analysis-card-sm analysis-hoverable">
+                <div class="analysis-value-sm">{{ epg_stats.events.total }}</div>
+                <div class="analysis-label-sm">Events</div>
+                <div class="analysis-tooltip">
+                    <div class="tooltip-title">Breakdown</div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Team-based</span>
+                        <span class="tooltip-value">{{ epg_stats.events.team_based }}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Event-based</span>
+                        <span class="tooltip-value">{{ epg_stats.events.event_based }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="analysis-card-sm analysis-hoverable">
+                <div class="analysis-value-sm">{{ epg_stats.filler.total }}</div>
+                <div class="analysis-label-sm">Filler</div>
+                <div class="analysis-tooltip">
+                    <div class="tooltip-title">Breakdown</div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Pregame</span>
+                        <span class="tooltip-value">{{ epg_stats.filler.pregame.total }}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Postgame</span>
+                        <span class="tooltip-value">{{ epg_stats.filler.postgame.total }}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Idle</span>
+                        <span class="tooltip-value">{{ epg_stats.filler.idle.total }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="analysis-card-sm">
+                <div class="analysis-value-sm" style="font-size: 0.9rem;">
+                    {% if epg_analysis.date_range %}
+                    {{ epg_analysis.date_range.start[4:6] }}/{{ epg_analysis.date_range.start[6:8] }} - {{ epg_analysis.date_range.end[4:6] }}/{{ epg_analysis.date_range.end[6:8] }}
+                    {% else %}
+                    N/A
+                    {% endif %}
+                </div>
+                <div class="analysis-label-sm">Date Range</div>
+            </div>
+        </div>
+
+        <div class="analysis-details">
+            <div class="detail-section">
+                <h3>Filler Programs Breakdown</h3>
+                <div class="filler-breakdown">
+                    <div class="filler-item">
+                        <span class="filler-type">Pregame:</span>
+                        <span class="filler-count">{{ epg_analysis.filler_programs.pregame }}</span>
+                    </div>
+                    <div class="filler-item">
+                        <span class="filler-type">Postgame:</span>
+                        <span class="filler-count">{{ epg_analysis.filler_programs.postgame }}</span>
+                    </div>
+                    <div class="filler-item">
+                        <span class="filler-type">Idle:</span>
+                        <span class="filler-count">{{ epg_analysis.filler_programs.idle }}</span>
+                    </div>
+                </div>
+            </div>
+
+            {% if epg_analysis.unreplaced_variables or epg_analysis.coverage_gaps %}
+            <div class="detail-section warning-section">
+                <h3>⚠️ Detected Issues</h3>
+
+                {% if epg_analysis.unreplaced_variables %}
+                <div class="issue-subsection">
+                    <h4>Unreplaced Variables ({{ epg_analysis.unreplaced_variables|length }})</h4>
+                    <div class="variables-list">
+                        {% for var in epg_analysis.unreplaced_variables %}
+                        <code class="clickable-issue" onclick="highlightUnresolvedVariable('{{ var }}')">{{ var }}</code>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if epg_analysis.coverage_gaps %}
+                <div class="issue-subsection">
+                    <h4>Coverage Gaps ({{ epg_analysis.coverage_gaps|length }})</h4>
+                    <div class="gaps-list">
+                        {% for gap in epg_analysis.coverage_gaps[:10] %}
+                        <div class="gap-item clickable-issue" onclick="highlightGap('{{ gap.after_stop }}', '{{ gap.before_start }}', '{{ gap.after_program | escape }}', '{{ gap.before_program | escape }}')">
+                            <strong>{{ gap.channel }}</strong>: {{ gap.gap_minutes }} minutes gap
+                            ({{ gap.after_stop[8:10] }}:{{ gap.after_stop[10:12] }} to {{ gap.before_start[8:10] }}:{{ gap.before_start[10:12] }})
+                            between "{{ gap.after_program }}" and "{{ gap.before_program }}"
+                        </div>
+                        {% endfor %}
+                        {% if epg_analysis.coverage_gaps|length > 10 %}
+                        <div class="gap-item text-muted">
+                            ... and {{ epg_analysis.coverage_gaps|length - 10 }} more gaps (click any above to highlight)
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="detail-section success-section">
+                <h3>✓ No Issues Detected</h3>
+                <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">
+                    All template variables resolved successfully and no coverage gaps found.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- EPG Preview -->
+    {% if epg_content %}
+    <div class="epg-preview-section">
+        <div class="section-header">
+            <h2>📄 EPG Preview</h2>
+            <div class="preview-controls">
+                <input type="text"
+                       id="search-input"
+                       placeholder="Search XML..."
+                       onkeyup="searchXML()">
+                <button onclick="clearSearch()" class="btn btn-sm btn-secondary">
+                    Clear
+                </button>
+                <div class="search-results-container">
+                    <span id="search-results"></span>
+                    <span id="search-nav" class="search-nav" style="display: none;">
+                        <button onclick="previousMatch()" class="btn btn-sm btn-secondary">◀ Prev</button>
+                        <span id="match-position"></span>
+                        <button onclick="nextMatch()" class="btn btn-sm btn-secondary">Next ▶</button>
+                    </span>
+                </div>
+                <div style="flex-grow: 1;"></div>
+                <button onclick="toggleLineNumbers()" class="btn btn-sm btn-secondary">
+                    Toggle Line Numbers
+                </button>
+                <button onclick="toggleWrap()" class="btn btn-sm btn-secondary">
+                    Toggle Word Wrap
+                </button>
+            </div>
+        </div>
+        <div class="epg-preview-container">
+            <pre id="epg-preview" class="show-line-numbers">{{ epg_content | e }}</pre>
+        </div>
+        <div class="preview-footer">
+            Showing {{ epg_total_lines }} lines
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h3>No EPG Generated Yet</h3>
+        <p>Click "Generate EPG Now" to create your first EPG file.</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.page-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    gap: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.epg-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Analysis Section */
+.analysis-section {
+    margin-bottom: 1.5rem;
+}
+
+.analysis-section h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.analysis-card-sm {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 0.5rem;
+    text-align: center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 52px;
+}
+
+.analysis-hoverable {
+    cursor: help;
+}
+
+.analysis-hoverable:hover {
+    background: var(--bg-secondary);
+}
+
+.analysis-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.5rem;
+    min-width: 140px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    margin-bottom: 4px;
+}
+
+.analysis-hoverable:hover .analysis-tooltip {
+    display: block;
+}
+
+.analysis-tooltip .tooltip-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+}
+
+.analysis-tooltip .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    padding: 0.15rem 0;
+}
+
+.analysis-tooltip .tooltip-name {
+    color: var(--text-secondary);
+}
+
+.analysis-tooltip .tooltip-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.analysis-label-sm {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    margin-top: 0.25rem;
+}
+
+.analysis-value-sm {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+}
+
+.analysis-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.detail-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.875rem;
+}
+
+.detail-section h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.warning-section {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.05);
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.success-section {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.05);
+}
+
+.issue-subsection {
+    margin-top: 0.75rem;
+}
+
+.issue-subsection:first-of-type {
+    margin-top: 0;
+}
+
+.issue-subsection h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.filler-breakdown {
+    display: grid;
+    gap: 0.375rem;
+}
+
+.filler-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.filler-type {
+    color: var(--text-secondary);
+}
+
+.filler-count {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.variables-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.variables-list code {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    padding: 0.1875rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.8125rem;
+}
+
+.clickable-issue {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clickable-issue:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+}
+
+.variables-list code.clickable-issue:hover {
+    background: rgba(239, 68, 68, 0.25);
+}
+
+.gap-item.clickable-issue:hover {
+    background: rgba(251, 191, 36, 0.15);
+    border-left: 3px solid #fbbf24;
+}
+
+.gaps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.gap-item {
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.gap-item strong {
+    color: var(--text-primary);
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.action-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.action-card h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.action-card p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.action-card > p {
+    flex-grow: 0;
+}
+
+.action-card form {
+    margin: 0;
+}
+
+.btn-large {
+    width: 100%;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.action-info {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    line-height: 1.5;
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+}
+
+.text-warning {
+    color: #fbbf24;
+}
+
+.url-box {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.url-box input {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    border: none;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9375rem;
+    margin: 0;
+    line-height: 1.5;
+    box-sizing: border-box;
+    height: auto;
+}
+
+.url-box button {
+    margin: 0;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    box-sizing: border-box;
+    border: none;
+}
+
+.url-box input:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+.epg-preview-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.section-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-tertiary);
+}
+
+.section-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.preview-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.search-results-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 300px;
+    margin-left: -0.75rem;
+}
+
+#search-input {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    min-width: 250px;
+}
+
+#search-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.epg-preview-container {
+    max-height: 600px;
+    overflow: auto;
+    background: var(--bg-primary);
+}
+
+#epg-preview {
+    margin: 0;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+#epg-preview > div {
+    white-space: pre;
+}
+
+#epg-preview.wrap > div {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+#epg-preview.show-line-numbers {
+    counter-reset: line;
+}
+
+#epg-preview.show-line-numbers > div::before {
+    counter-increment: line;
+    content: counter(line);
+    display: inline-block;
+    width: 3rem;
+    margin-right: 1rem;
+    padding-right: 0.5rem;
+    color: var(--text-muted);
+    text-align: right;
+    border-right: 1px solid var(--border);
+    user-select: none;
+}
+
+.search-nav {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.search-nav button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    min-width: auto;
+}
+
+mark.current-match {
+    background: #f97316 !important;
+    color: #000 !important;
+    font-weight: bold;
+}
+
+.preview-footer {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.preview-footer a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.preview-footer a:hover {
+    text-decoration: underline;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.empty-state p {
+    margin: 0;
+    color: var(--text-muted);
+}
+
+/* Last Generation Bar */
+.last-generation-bar {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.generation-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.generation-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.generation-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.generation-datetime {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.generation-duration {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.trigger-badge {
+    padding: 0.125rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
+.trigger-scheduler {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+
+.trigger-manual {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+}
+
+.trigger-api {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+}
+
+.generation-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+}
+
+.stat-icon {
+    font-size: 0.75rem;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.stat-divider {
+    color: var(--border);
+    font-size: 0.75rem;
+}
+
+.stat-success .stat-value {
+    color: #22c55e;
+}
+
+.stat-success .stat-icon {
+    color: #22c55e;
+}
+
+.stat-warning .stat-value {
+    color: #f59e0b;
+}
+
+.stat-warning .stat-icon {
+    color: #f59e0b;
+}
+
+.stat-error .stat-value {
+    color: #ef4444;
+}
+
+.stat-error .stat-icon {
+    color: #ef4444;
+}
+
+.stat-clickable {
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.15s;
+}
+
+.stat-clickable:hover {
+    background: var(--bg-tertiary);
+}
+
+/* Failed Matches Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-large {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    border-radius: 8px 8px 0 0;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    border-radius: 0 0 8px 8px;
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.empty-state-sm {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.failed-matches-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.failed-matches-list {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.failed-group {
+    margin-bottom: 1.5rem;
+}
+
+.failed-group-header {
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-left: 3px solid var(--primary);
+}
+
+.failed-stream {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    border-left: 2px solid var(--border);
+}
+
+.failed-stream-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.failed-stream-detail {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+}
+
+.failed-stream-detail .reason-tag {
+    display: inline-block;
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.failed-stream-detail .tier-tag {
+    display: inline-block;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    margin-right: 0.5rem;
+}
+
+.stat-filler .stat-value {
+    color: var(--text-secondary);
+}
+
+.stat-filler .stat-icon {
+    color: var(--text-muted);
+}
+
+/* Matched Streams Modal */
+.matched-streams-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.matched-streams-list {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+.matched-group {
+    margin-bottom: 1.5rem;
+}
+
+.matched-group-header {
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-left: 3px solid #22c55e;
+}
+
+.matched-stream {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    border-left: 2px solid var(--border);
+}
+
+.matched-stream-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.matched-stream-event {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.matched-stream-detail {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+}
+
+.matched-stream-detail .league-tag {
+    display: inline-block;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.matched-stream-detail .tier-tag {
+    display: inline-block;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    margin-right: 0.5rem;
+}
+</style>
+
+<script>
+// EPG generation now handled by generateEPGWithProgress() in app.js
+
+// Clipboard helper with fallback for non-HTTPS contexts
+function copyTextToClipboard(text, successMsg, errorMsg) {
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification(successMsg, 'success');
+        }).catch(() => {
+            fallbackCopyText(text, successMsg, errorMsg);
+        });
+    } else {
+        fallbackCopyText(text, successMsg, errorMsg);
+    }
+}
+
+function fallbackCopyText(text, successMsg, errorMsg) {
+    // Create temporary textarea for copy operation
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showNotification(successMsg, 'success');
+        } else {
+            showNotification(errorMsg, 'error');
+        }
+    } catch (err) {
+        showNotification(errorMsg, 'error');
+    }
+
+    document.body.removeChild(textarea);
+}
+
+// Failed Matches Modal data store
+let failedMatchesData = null;
+
+function openFailedMatchesModal() {
+    const modal = document.getElementById('failed-matches-modal');
+    const loading = document.getElementById('failed-matches-loading');
+    const empty = document.getElementById('failed-matches-empty');
+    const content = document.getElementById('failed-matches-content');
+
+    // Show modal with loading state
+    modal.style.display = 'flex';
+    loading.style.display = 'flex';
+    empty.style.display = 'none';
+    content.style.display = 'none';
+
+    // Fetch failed matches
+    fetch('/api/epg/failed-matches')
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+
+            if (!data.success) {
+                empty.innerHTML = '<p>Error loading failed matches: ' + (data.error || 'Unknown error') + '</p>';
+                empty.style.display = 'block';
+                return;
+            }
+
+            if (!data.has_failures || data.total_count === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            // Store data for copy function
+            failedMatchesData = data;
+
+            // Update summary
+            document.getElementById('failed-matches-summary').textContent =
+                `Total: ${data.total_count} failed across ${data.group_count} group${data.group_count !== 1 ? 's' : ''}`;
+
+            // Build HTML for failed matches
+            const listEl = document.getElementById('failed-matches-list');
+            listEl.innerHTML = '';
+
+            data.groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'failed-group';
+
+                // Group header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'failed-group-header';
+                headerDiv.textContent = `${group.group_name} (${group.failures.length} failed)`;
+                groupDiv.appendChild(headerDiv);
+
+                // Failed streams
+                group.failures.forEach(failure => {
+                    const streamDiv = document.createElement('div');
+                    streamDiv.className = 'failed-stream';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'failed-stream-name';
+                    nameDiv.textContent = failure.stream_name;
+                    streamDiv.appendChild(nameDiv);
+
+                    const detailDiv = document.createElement('div');
+                    detailDiv.className = 'failed-stream-detail';
+
+                    // Reason tag
+                    const reasonTag = document.createElement('span');
+                    reasonTag.className = 'reason-tag';
+                    reasonTag.textContent = failure.reason;
+                    detailDiv.appendChild(reasonTag);
+
+                    // Tier tag if present
+                    if (failure.detection_tier) {
+                        const tierTag = document.createElement('span');
+                        tierTag.className = 'tier-tag';
+                        tierTag.textContent = 'Tier ' + failure.detection_tier;
+                        detailDiv.appendChild(tierTag);
+                    }
+
+                    // Parsed teams
+                    if (failure.parsed_team1 || failure.parsed_team2) {
+                        const teamsSpan = document.createElement('span');
+                        teamsSpan.textContent = `Parsed: "${failure.parsed_team1 || '?'}" vs "${failure.parsed_team2 || '?'}"`;
+                        detailDiv.appendChild(teamsSpan);
+                    }
+
+                    // Leagues checked
+                    if (failure.leagues_checked) {
+                        const leaguesDiv = document.createElement('div');
+                        leaguesDiv.style.marginTop = '0.25rem';
+                        leaguesDiv.textContent = `Leagues: ${failure.leagues_checked}`;
+                        detailDiv.appendChild(leaguesDiv);
+                    }
+
+                    // Additional detail
+                    if (failure.detail) {
+                        const detailExtra = document.createElement('div');
+                        detailExtra.style.marginTop = '0.25rem';
+                        detailExtra.style.fontStyle = 'italic';
+                        detailExtra.textContent = failure.detail;
+                        detailDiv.appendChild(detailExtra);
+                    }
+
+                    streamDiv.appendChild(detailDiv);
+                    groupDiv.appendChild(streamDiv);
+                });
+
+                listEl.appendChild(groupDiv);
+            });
+
+            content.style.display = 'block';
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            empty.innerHTML = '<p>Error loading failed matches: ' + error.message + '</p>';
+            empty.style.display = 'block';
+        });
+}
+
+function closeFailedMatchesModal() {
+    document.getElementById('failed-matches-modal').style.display = 'none';
+}
+
+function copyFailedMatches() {
+    if (!failedMatchesData || !failedMatchesData.has_failures) {
+        showNotification('No failed matches to copy', 'warning');
+        return;
+    }
+
+    // Build plain text output
+    let text = 'Failed Matches from EPG Generation\n';
+    text += `Total: ${failedMatchesData.total_count} failures across ${failedMatchesData.group_count} groups\n\n`;
+
+    failedMatchesData.groups.forEach(group => {
+        text += '═'.repeat(60) + '\n';
+        text += `${group.group_name} (${group.failures.length} failed)\n`;
+        text += '═'.repeat(60) + '\n\n';
+
+        group.failures.forEach(failure => {
+            text += `${failure.stream_name}\n`;
+            text += `  Reason: ${failure.reason}\n`;
+            if (failure.parsed_team1 || failure.parsed_team2) {
+                text += `  Parsed: team1="${failure.parsed_team1 || '?'}" team2="${failure.parsed_team2 || '?'}"\n`;
+            }
+            if (failure.detection_tier) {
+                text += `  Tier: ${failure.detection_tier}\n`;
+            }
+            if (failure.leagues_checked) {
+                text += `  Leagues: ${failure.leagues_checked}\n`;
+            }
+            if (failure.detail) {
+                text += `  Detail: ${failure.detail}\n`;
+            }
+            text += '\n';
+        });
+    });
+
+    copyTextToClipboard(text, 'Failed matches copied to clipboard!', 'Failed to copy to clipboard');
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const failedModal = document.getElementById('failed-matches-modal');
+        if (failedModal && failedModal.style.display !== 'none') {
+            closeFailedMatchesModal();
+            return;
+        }
+        const matchedModal = document.getElementById('matched-streams-modal');
+        if (matchedModal && matchedModal.style.display !== 'none') {
+            closeMatchedStreamsModal();
+        }
+    }
+});
+
+// Matched Streams Modal data store
+let matchedStreamsData = null;
+
+function openMatchedStreamsModal() {
+    const modal = document.getElementById('matched-streams-modal');
+    const loading = document.getElementById('matched-streams-loading');
+    const empty = document.getElementById('matched-streams-empty');
+    const content = document.getElementById('matched-streams-content');
+
+    // Show modal with loading state
+    modal.style.display = 'flex';
+    loading.style.display = 'flex';
+    empty.style.display = 'none';
+    content.style.display = 'none';
+
+    // Fetch matched streams
+    fetch('/api/epg/matched-streams')
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+
+            if (!data.success) {
+                empty.innerHTML = '<p>Error loading matched streams: ' + (data.error || 'Unknown error') + '</p>';
+                empty.style.display = 'block';
+                return;
+            }
+
+            if (!data.has_matches || data.total_count === 0) {
+                empty.style.display = 'block';
+                return;
+            }
+
+            // Store data for copy function
+            matchedStreamsData = data;
+
+            // Update summary
+            document.getElementById('matched-streams-summary').textContent =
+                `Total: ${data.total_count} matched across ${data.group_count} group${data.group_count !== 1 ? 's' : ''}`;
+
+            // Build HTML for matched streams
+            const listEl = document.getElementById('matched-streams-list');
+            listEl.innerHTML = '';
+
+            data.groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'matched-group';
+
+                // Group header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'matched-group-header';
+                headerDiv.textContent = `${group.group_name} (${group.matches.length} matched)`;
+                groupDiv.appendChild(headerDiv);
+
+                // Matched streams
+                group.matches.forEach(match => {
+                    const streamDiv = document.createElement('div');
+                    streamDiv.className = 'matched-stream';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'matched-stream-name';
+                    nameDiv.textContent = match.stream_name;
+                    streamDiv.appendChild(nameDiv);
+
+                    // Event info
+                    const eventDiv = document.createElement('div');
+                    eventDiv.className = 'matched-stream-event';
+                    eventDiv.textContent = `→ ${match.home_team || '?'} vs ${match.away_team || '?'}`;
+                    if (match.event_date) {
+                        const dateStr = match.event_date.substring(0, 10);
+                        eventDiv.textContent += ` (${dateStr})`;
+                    }
+                    streamDiv.appendChild(eventDiv);
+
+                    const detailDiv = document.createElement('div');
+                    detailDiv.className = 'matched-stream-detail';
+
+                    // League tag
+                    if (match.detected_league) {
+                        const leagueTag = document.createElement('span');
+                        leagueTag.className = 'league-tag';
+                        leagueTag.textContent = match.detected_league.toUpperCase();
+                        detailDiv.appendChild(leagueTag);
+                    }
+
+                    // Tier tag if present
+                    if (match.detection_tier) {
+                        const tierTag = document.createElement('span');
+                        tierTag.className = 'tier-tag';
+                        tierTag.textContent = 'Tier ' + match.detection_tier;
+                        detailDiv.appendChild(tierTag);
+                    }
+
+                    // Parsed teams
+                    if (match.parsed_team1 || match.parsed_team2) {
+                        const teamsSpan = document.createElement('span');
+                        teamsSpan.textContent = `Parsed: "${match.parsed_team1 || '?'}" vs "${match.parsed_team2 || '?'}"`;
+                        detailDiv.appendChild(teamsSpan);
+                    }
+
+                    streamDiv.appendChild(detailDiv);
+                    groupDiv.appendChild(streamDiv);
+                });
+
+                listEl.appendChild(groupDiv);
+            });
+
+            content.style.display = 'block';
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            empty.innerHTML = '<p>Error loading matched streams: ' + error.message + '</p>';
+            empty.style.display = 'block';
+        });
+}
+
+function closeMatchedStreamsModal() {
+    document.getElementById('matched-streams-modal').style.display = 'none';
+}
+
+function copyMatchedStreams() {
+    if (!matchedStreamsData || !matchedStreamsData.has_matches) {
+        showNotification('No matched streams to copy', 'warning');
+        return;
+    }
+
+    // Build plain text output
+    let text = 'Matched Streams from EPG Generation\n';
+    text += `Total: ${matchedStreamsData.total_count} matches across ${matchedStreamsData.group_count} groups\n\n`;
+
+    matchedStreamsData.groups.forEach(group => {
+        text += '═'.repeat(60) + '\n';
+        text += `${group.group_name} (${group.matches.length} matched)\n`;
+        text += '═'.repeat(60) + '\n\n';
+
+        group.matches.forEach(match => {
+            text += `${match.stream_name}\n`;
+            text += `  → ${match.home_team || '?'} vs ${match.away_team || '?'}`;
+            if (match.event_date) {
+                text += ` (${match.event_date.substring(0, 10)})`;
+            }
+            text += '\n';
+            if (match.detected_league) {
+                text += `  League: ${match.detected_league}\n`;
+            }
+            if (match.detection_tier) {
+                text += `  Tier: ${match.detection_tier}\n`;
+            }
+            if (match.parsed_team1 || match.parsed_team2) {
+                text += `  Parsed: "${match.parsed_team1 || '?'}" vs "${match.parsed_team2 || '?'}"\n`;
+            }
+            text += '\n';
+        });
+    });
+
+    copyTextToClipboard(text, 'Matched streams copied to clipboard!', 'Failed to copy to clipboard');
+}
+
+function copyEPGUrl() {
+    const input = document.getElementById('epg-url');
+    input.select();
+    document.execCommand('copy');
+    showNotification('EPG URL copied to clipboard!', 'success');
+}
+
+function toggleLineNumbers() {
+    const preview = document.getElementById('epg-preview');
+    preview.classList.toggle('show-line-numbers');
+}
+
+function toggleWrap() {
+    const preview = document.getElementById('epg-preview');
+    preview.classList.toggle('wrap');
+}
+
+let originalContent = '';
+let currentMatches = [];
+let currentMatchIndex = 0;
+
+// Search XML content
+function searchXML() {
+    const searchInput = document.getElementById('search-input');
+    const preview = document.getElementById('epg-preview');
+    const resultsSpan = document.getElementById('search-results');
+    const searchNav = document.getElementById('search-nav');
+    const query = searchInput.value.trim();
+
+    if (!query) {
+        clearSearch();
+        return;
+    }
+
+    // Store original content if not already stored
+    if (!originalContent) {
+        originalContent = preview.textContent;
+    }
+
+    // Find all matches
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = [...originalContent.matchAll(regex)];
+    currentMatches = matches;
+    currentMatchIndex = 0;
+
+    if (matches.length > 0) {
+        // Split content into lines first
+        const lines = originalContent.split('\n');
+        let globalMatchIndex = 0;
+        let charPosition = 0;
+
+        // Process each line
+        const processedLines = lines.map((line, lineIdx) => {
+            const lineStart = charPosition;
+            const lineEnd = charPosition + line.length;
+
+            // Find matches in this line
+            const lineMatches = matches.filter(m => m.index >= lineStart && m.index < lineEnd);
+
+            if (lineMatches.length === 0) {
+                // No matches in this line, just escape it
+                charPosition = lineEnd + 1; // +1 for newline
+                return escapeHtml(line);
+            }
+
+            // Build line with highlights
+            let result = '';
+            let lastIdx = 0;
+
+            lineMatches.forEach(match => {
+                const matchStart = match.index - lineStart;
+                const matchEnd = matchStart + match[0].length;
+
+                // Add text before match
+                result += escapeHtml(line.substring(lastIdx, matchStart));
+
+                // Add highlighted match
+                const markClass = globalMatchIndex === 0 ? ' class="current-match"' : '';
+                result += `<mark${markClass} data-match-idx="${globalMatchIndex}" style="background: #fbbf24; color: #000;">`;
+                result += escapeHtml(line.substring(matchStart, matchEnd));
+                result += '</mark>';
+
+                lastIdx = matchEnd;
+                globalMatchIndex++;
+            });
+
+            // Add remaining text after last match
+            result += escapeHtml(line.substring(lastIdx));
+
+            charPosition = lineEnd + 1; // +1 for newline
+            return result;
+        });
+
+        // Update preview with highlighted content - create actual div elements
+        preview.innerHTML = '';
+        processedLines.forEach(lineHtml => {
+            const lineDiv = document.createElement('div');
+            lineDiv.innerHTML = lineHtml;
+            preview.appendChild(lineDiv);
+        });
+
+        resultsSpan.textContent = `Found ${matches.length} match${matches.length > 1 ? 'es' : ''}`;
+        resultsSpan.style.color = 'var(--success)';
+
+        // Show navigation if multiple matches
+        if (matches.length > 1) {
+            searchNav.style.display = 'inline-flex';
+            updateMatchPosition();
+        } else {
+            searchNav.style.display = 'none';
+        }
+
+        // Always scroll to first match
+        scrollToCurrentMatch();
+    } else {
+        resultsSpan.textContent = 'No matches found';
+        resultsSpan.style.color = 'var(--text-muted)';
+        searchNav.style.display = 'none';
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function nextMatch() {
+    if (currentMatches.length === 0) return;
+    currentMatchIndex = (currentMatchIndex + 1) % currentMatches.length;
+    highlightCurrentMatch();
+}
+
+function previousMatch() {
+    if (currentMatches.length === 0) return;
+    currentMatchIndex = (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    highlightCurrentMatch();
+}
+
+function highlightCurrentMatch() {
+    const preview = document.getElementById('epg-preview');
+    const marks = preview.querySelectorAll('mark');
+
+    marks.forEach((mark, idx) => {
+        if (idx === currentMatchIndex) {
+            mark.classList.add('current-match');
+        } else {
+            mark.classList.remove('current-match');
+        }
+    });
+
+    updateMatchPosition();
+    scrollToCurrentMatch();
+}
+
+function updateMatchPosition() {
+    const positionSpan = document.getElementById('match-position');
+    positionSpan.textContent = `${currentMatchIndex + 1} / ${currentMatches.length}`;
+}
+
+function scrollToCurrentMatch() {
+    const preview = document.getElementById('epg-preview');
+    const container = preview.closest('.epg-preview-container');
+    const marks = preview.querySelectorAll('mark');
+    if (marks[currentMatchIndex]) {
+        const mark = marks[currentMatchIndex];
+        const markRect = mark.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const relativeTop = markRect.top - containerRect.top + container.scrollTop;
+        const containerHeight = container.clientHeight;
+        const scrollPosition = relativeTop - (containerHeight / 2) + (markRect.height / 2);
+
+        container.scrollTo({
+            top: scrollPosition,
+            behavior: 'smooth'
+        });
+    }
+}
+
+function clearSearch() {
+    const searchInput = document.getElementById('search-input');
+    const preview = document.getElementById('epg-preview');
+    const resultsSpan = document.getElementById('search-results');
+    const searchNav = document.getElementById('search-nav');
+
+    searchInput.value = '';
+    resultsSpan.textContent = '';
+    searchNav.style.display = 'none';
+    currentMatches = [];
+    currentMatchIndex = 0;
+
+    if (originalContent) {
+        // Restore original content with div structure for line numbers
+        const lines = originalContent.split('\n');
+        preview.innerHTML = '';
+        lines.forEach(line => {
+            const lineDiv = document.createElement('div');
+            lineDiv.textContent = line;
+            preview.appendChild(lineDiv);
+        });
+
+        // Force scroll reset
+        const container = preview.closest('.epg-preview-container');
+        if (container) {
+            container.scrollTop = 0;
+            container.scrollLeft = 0;
+        }
+    }
+}
+
+// Initialize preview with div structure on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const preview = document.getElementById('epg-preview');
+    if (preview && preview.textContent.trim()) {
+        const content = preview.textContent;
+        const lines = content.split('\n');
+        preview.innerHTML = '';
+        lines.forEach(line => {
+            const lineDiv = document.createElement('div');
+            lineDiv.textContent = line;
+            preview.appendChild(lineDiv);
+        });
+
+        // Store original content for search
+        originalContent = content;
+    }
+
+    // Format all datetime elements using global helper
+    document.querySelectorAll('.format-datetime').forEach(el => {
+        const utc = el.dataset.utc;
+        if (utc && typeof formatDateTime === 'function') {
+            el.textContent = formatDateTime(utc, { dateFormat: 'short' });
+        }
+    });
+});
+
+// Handle clicking on unresolved variables
+function highlightUnresolvedVariable(variable) {
+    const searchInput = document.getElementById('search-input');
+    searchInput.value = variable;
+    searchXML();
+}
+
+// Handle clicking on coverage gaps
+function highlightGap(afterStop, beforeStart, afterProgram, beforeProgram) {
+    const preview = document.getElementById('epg-preview');
+
+    // Store original content if not already stored
+    if (!originalContent) {
+        originalContent = preview.textContent;
+    }
+
+    // Clear search input
+    const searchInput = document.getElementById('search-input');
+    searchInput.value = '';
+
+    // Split content into lines
+    const lines = originalContent.split('\n');
+    let processedLines = [];
+    let inGapProgramme = false;
+    let gapProgrammeLines = [];
+    let currentProgrammeType = null; // 'before' or 'after'
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Check if this line starts a programme block we care about
+        if (line.includes('<programme')) {
+            if (line.includes(`stop="${afterStop}"`)) {
+                inGapProgramme = true;
+                currentProgrammeType = 'before';
+                gapProgrammeLines = [i];
+            } else if (line.includes(`start="${beforeStart}"`)) {
+                inGapProgramme = true;
+                currentProgrammeType = 'after';
+                gapProgrammeLines = [i];
+            }
+        }
+
+        // Track all lines in the gap programme blocks
+        if (inGapProgramme) {
+            gapProgrammeLines.push(i);
+        }
+
+        // Check if we're closing a gap programme block
+        if (inGapProgramme && line.includes('</programme>')) {
+            inGapProgramme = false;
+
+            // Choose color based on whether this is before or after the gap
+            const bgColor = currentProgrammeType === 'before'
+                ? 'rgba(252, 165, 165, 0.3)'   // Light red for programme ending before gap
+                : 'rgba(147, 197, 253, 0.3)';  // Light blue for programme starting after gap
+
+            // Highlight this entire block
+            const blockLines = gapProgrammeLines.map(lineIdx => {
+                const text = lines[lineIdx];
+                return `<mark style="background: ${bgColor};">${escapeHtml(text)}</mark>`;
+            });
+
+            // Add the highlighted block
+            processedLines.push(...blockLines);
+            gapProgrammeLines = [];
+            currentProgrammeType = null;
+            continue;
+        }
+
+        // If not in a gap programme, just add the escaped line
+        if (!inGapProgramme) {
+            processedLines.push(escapeHtml(line));
+        }
+    }
+
+    // Update preview with highlighted content
+    preview.innerHTML = '';
+    processedLines.forEach(lineHtml => {
+        const lineDiv = document.createElement('div');
+        lineDiv.innerHTML = lineHtml;
+        preview.appendChild(lineDiv);
+    });
+
+    // Find and scroll to first highlighted mark
+    const firstMark = preview.querySelector('mark');
+    if (firstMark) {
+        const container = preview.closest('.epg-preview-container');
+        const markRect = firstMark.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const relativeTop = markRect.top - containerRect.top + container.scrollTop;
+        const containerHeight = container.clientHeight;
+        const scrollPosition = relativeTop - (containerHeight / 3);
+
+        container.scrollTo({
+            top: scrollPosition,
+            behavior: 'smooth'
+        });
+    }
+
+    // Update search results display
+    const resultsSpan = document.getElementById('search-results');
+    resultsSpan.textContent = `Gap highlighted: ${afterProgram} → ${beforeProgram}`;
+    resultsSpan.style.color = 'var(--warning)';
+
+    document.getElementById('search-nav').style.display = 'none';
+}
+</script>
+{% endblock %}

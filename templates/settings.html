@@ -1,0 +1,1437 @@
+{% extends "base.html" %}
+{% from "_macros.html" import channel_id_vars_help %}
+
+{% block title %}Settings - Teamarr{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <h1>Settings</h1>
+            <p class="page-subtitle">Configure global settings and preferences</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('settings_update') }}">
+
+        <!-- System Settings -->
+        <div class="form-section">
+            <h2>System Settings</h2>
+
+            <div class="form-row" style="grid-template-columns: 1fr;">
+                <div class="form-group">
+                    <label for="default_timezone">Timezone</label>
+                    <input type="text" id="default_timezone" name="default_timezone" class="form-control"
+                           value="{{ settings.default_timezone }}" placeholder="America/Detroit">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Time Format</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="time_format" value="12h"
+                                   {% if settings.time_format == '12h' or not settings.time_format %}checked{% endif %}>
+                            <span>12-hour</span>
+                            <small class="radio-example">7:30 PM</small>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="time_format" value="24h"
+                                   {% if settings.time_format == '24h' %}checked{% endif %}>
+                            <span>24-hour</span>
+                            <small class="radio-example">19:30</small>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Show Timezone</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="show_timezone" value="1"
+                                   {% if settings.show_timezone == 1 or settings.show_timezone == True or settings.show_timezone == '1' or settings.show_timezone is none %}checked{% endif %}>
+                            <span>Yes</span>
+                            <small class="radio-example">7:30 PM EST</small>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="show_timezone" value="0"
+                                   {% if settings.show_timezone == 0 or settings.show_timezone == False or settings.show_timezone == '0' %}checked{% endif %}>
+                            <span>No</span>
+                            <small class="radio-example">7:30 PM</small>
+                        </label>
+                    </div>
+                    <small class="form-help">Include timezone abbreviation (EST, PST, etc.) in times</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Team Based Streams -->
+        <div class="form-section">
+            <h2>Team Based Streams</h2>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="epg_days_ahead">Days to Generate</label>
+                    <input type="number" id="epg_days_ahead" name="epg_days_ahead" class="form-control"
+                           value="{{ settings.epg_days_ahead }}" min="1" max="14" required>
+                    <small class="form-help">Valid range 1-14 (1 = today only, 2 = today and tomorrow, etc.)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="midnight_crossover_mode">Midnight Crossover Filler Type</label>
+                    <select id="midnight_crossover_mode" name="midnight_crossover_mode" class="form-control">
+                        <option value="idle" {% if settings.midnight_crossover_mode == 'idle' or not settings.midnight_crossover_mode %}selected{% endif %}>Idle</option>
+                        <option value="postgame" {% if settings.midnight_crossover_mode == 'postgame' %}selected{% endif %}>Postgame</option>
+                    </select>
+                    <small class="form-help">Filler type to use when a game ends after midnight with no game the next day</small>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 0.75rem;">
+                <label for="default_channel_id_format">Default Channel ID Format</label>
+                <input type="text" id="default_channel_id_format" name="default_channel_id_format" class="form-control"
+                       value="{{ settings.default_channel_id_format if settings.default_channel_id_format else '{team_name_pascal}.{league_id}' }}"
+                       placeholder="{team_name_pascal}.{league_id}">
+                <small class="form-help">Default: {team_name_pascal}.{league_id} (e.g. DetroitPistons.nba)</small>
+                {{ channel_id_vars_help() }}
+            </div>
+        </div>
+
+        <!-- Event Based Streams -->
+        <div class="form-section">
+            <h2>Event Based Streams</h2>
+            <p style="color: var(--text-muted); font-size: 0.8125rem; margin: 0 0 1rem 0;">
+                When to create and delete event channels in Dispatcharr. Day boundaries use midnight in your timezone.
+            </p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="channel_create_timing">Earliest Creation</label>
+                    <select id="channel_create_timing" name="channel_create_timing" class="form-control">
+                        <option value="stream_available" {% if settings.channel_create_timing == 'stream_available' %}selected{% endif %}>Immediately</option>
+                        <option value="1_week_before" {% if settings.channel_create_timing == '1_week_before' %}selected{% endif %}>1 week before</option>
+                        <option value="3_days_before" {% if settings.channel_create_timing == '3_days_before' %}selected{% endif %}>3 days before</option>
+                        <option value="2_days_before" {% if settings.channel_create_timing == '2_days_before' %}selected{% endif %}>2 days before</option>
+                        <option value="day_before" {% if settings.channel_create_timing == 'day_before' %}selected{% endif %}>1 day before</option>
+                        <option value="same_day" {% if settings.channel_create_timing == 'same_day' or settings.channel_create_timing == 'day_of' or not settings.channel_create_timing %}selected{% endif %}>Day of event</option>
+                        <option value="manual" {% if settings.channel_create_timing == 'manual' %}selected{% endif %}>Never (manual)</option>
+                    </select>
+                    <small class="form-help">Won't create channel before this, even if stream exists</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="channel_delete_timing">Latest Deletion</label>
+                    <select id="channel_delete_timing" name="channel_delete_timing" class="form-control">
+                        <option value="stream_removed" {% if settings.channel_delete_timing == 'stream_removed' %}selected{% endif %}>When stream removed</option>
+                        <option value="same_day" {% if settings.channel_delete_timing == 'same_day' or settings.channel_delete_timing == 'end_of_day' or not settings.channel_delete_timing %}selected{% endif %}>End of event day</option>
+                        <option value="day_after" {% if settings.channel_delete_timing == 'day_after' or settings.channel_delete_timing == 'end_of_next_day' %}selected{% endif %}>1 day after</option>
+                        <option value="2_days_after" {% if settings.channel_delete_timing == '2_days_after' %}selected{% endif %}>2 days after</option>
+                        <option value="3_days_after" {% if settings.channel_delete_timing == '3_days_after' %}selected{% endif %}>3 days after</option>
+                        <option value="1_week_after" {% if settings.channel_delete_timing == '1_week_after' %}selected{% endif %}>1 week after</option>
+                        <option value="manual" {% if settings.channel_delete_timing == 'manual' %}selected{% endif %}>Never (manual)</option>
+                    </select>
+                    <small class="form-help">Will delete by this time, even if stream still exists</small>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="include_final_events">Completed Events (Today)</label>
+                    <select id="include_final_events" name="include_final_events" class="form-control">
+                        <option value="0" {% if not settings.include_final_events %}selected{% endif %}>Exclude</option>
+                        <option value="1" {% if settings.include_final_events %}selected{% endif %}>Include</option>
+                    </select>
+                    <small class="form-help">Whether to create channels/EPG for events from today that are already final</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="event_lookahead_days">Event Lookahead</label>
+                    <select id="event_lookahead_days" name="event_lookahead_days" class="form-control">
+                        <option value="1" {% if settings.event_lookahead_days == 1 %}selected{% endif %}>1 day</option>
+                        <option value="3" {% if settings.event_lookahead_days == 3 %}selected{% endif %}>3 days</option>
+                        <option value="7" {% if settings.event_lookahead_days == 7 or not settings.event_lookahead_days %}selected{% endif %}>7 days</option>
+                        <option value="14" {% if settings.event_lookahead_days == 14 %}selected{% endif %}>14 days</option>
+                        <option value="30" {% if settings.event_lookahead_days == 30 %}selected{% endif %}>30 days</option>
+                    </select>
+                    <small class="form-help">Only match events within this many days from now</small>
+                </div>
+            </div>
+
+            <div class="form-row" style="margin-top: 0.75rem;">
+                <div class="form-group">
+                    <label for="default_duplicate_event_handling">Duplicate Stream Handling</label>
+                    <select id="default_duplicate_event_handling" name="default_duplicate_event_handling" class="form-control" onchange="handleDuplicateHandlingChange()">
+                        <option value="consolidate" {% if settings.default_duplicate_event_handling == 'consolidate' or not settings.default_duplicate_event_handling %}selected{% endif %}>Consolidate</option>
+                        <option value="ignore" {% if settings.default_duplicate_event_handling == 'ignore' %}selected{% endif %}>Ignore</option>
+                        <option value="separate" {% if settings.default_duplicate_event_handling == 'separate' %}selected{% endif %}>Separate</option>
+                    </select>
+                    <small class="form-help">When multiple streams match the same event:<br>
+                        <strong>Consolidate</strong> = add all streams to one channel<br>
+                        <strong>Ignore</strong> = keep first stream only<br>
+                        <strong>Separate</strong> = create separate channel per stream</small>
+                </div>
+            </div>
+
+            <div class="form-row" style="margin-top: 0.75rem;">
+                <div class="form-group">
+                    <label for="channel_range_start">Channel Range Start</label>
+                    <input type="number" id="channel_range_start" name="channel_range_start" class="form-control"
+                           value="{{ settings.channel_range_start if settings.channel_range_start else 101 }}"
+                           min="1" max="9999" placeholder="101">
+                    <small class="form-help">First channel number Teamarr can auto-assign (default: 101)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="channel_range_end">Channel Range End <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                    <input type="number" id="channel_range_end" name="channel_range_end" class="form-control"
+                           value="{{ settings.channel_range_end if settings.channel_range_end else '' }}"
+                           min="1" max="9999" placeholder="No limit">
+                    <small class="form-help">Leave empty for no limit (Dispatcharr max: 9999)</small>
+                </div>
+            </div>
+
+            <!-- Exception Keywords Section (only visible when consolidate selected) -->
+            <div id="exception-keywords-section" class="form-row" style="margin-top: 0.75rem; display: none;">
+                <div class="form-group" style="width: 100%;">
+                    <label>
+                        <strong>Exception Keywords</strong>
+                        <small class="text-muted" style="margin-left: 0.5rem;">Streams matching these keywords get special handling</small>
+                    </label>
+
+                    <!-- Keywords table -->
+                    <div class="exception-keywords-table-wrapper">
+                        <table class="exception-keywords-table" id="exception-keywords-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50%">Keywords (comma-separated variants)</th>
+                                    <th style="width: 35%">Behavior</th>
+                                    <th style="width: 15%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="exception-keywords-body">
+                                <!-- Rows populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add new keyword row -->
+                    <div class="exception-keyword-add-row" id="exception-keyword-add-row">
+                        <input type="text" id="new-keyword-input" class="form-control"
+                               placeholder="e.g., Prime Vision, Primevision">
+                        <select id="new-keyword-behavior" class="form-control" style="max-width: 150px;">
+                            <option value="consolidate">Sub-Consolidate</option>
+                            <option value="separate">Separate</option>
+                            <option value="ignore">Ignore</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addExceptionKeyword()">
+                            + Add
+                        </button>
+                    </div>
+
+                    <small class="form-help" style="margin-top: 0.5rem;">
+                        <strong>Sub-Consolidate:</strong> Group streams with same keyword on one channel (separate from main consolidation)<br>
+                        <strong>Separate:</strong> Create new channel for each matching stream<br>
+                        <strong>Ignore:</strong> Skip streams with this keyword entirely
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- EPG Generation Settings -->
+        <div class="form-section">
+            <h2>EPG Generation</h2>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="epg_output_path">Output Path</label>
+                    <input type="text" id="epg_output_path" name="epg_output_path" class="form-control"
+                           value="{{ settings.epg_output_path }}">
+                </div>
+            </div>
+
+            <h3 style="font-size: 0.875rem; color: var(--text-secondary); margin: 1rem 0 0.75rem 0; font-weight: 500;">Event Duration Defaults (hours)</h3>
+
+            <div class="form-row" style="grid-template-columns: 1fr;">
+                <div class="form-group">
+                    <label for="game_duration_default">Global Default</label>
+                    <input type="number" id="game_duration_default" name="game_duration_default" class="form-control"
+                           value="{{ settings.game_duration_default }}" min="1" max="12" step="0.25">
+                </div>
+            </div>
+
+            <div class="form-row" style="margin-top: 0.5rem;">
+                <div class="form-group">
+                    <label for="game_duration_baseball">Baseball</label>
+                    <input type="number" id="game_duration_baseball" name="game_duration_baseball" class="form-control"
+                           value="{{ settings.game_duration_baseball }}" min="1" max="12" step="0.25">
+                </div>
+
+                <div class="form-group">
+                    <label for="game_duration_basketball">Basketball</label>
+                    <input type="number" id="game_duration_basketball" name="game_duration_basketball" class="form-control"
+                           value="{{ settings.game_duration_basketball }}" min="1" max="12" step="0.25">
+                </div>
+
+                <div class="form-group">
+                    <label for="game_duration_football">Football</label>
+                    <input type="number" id="game_duration_football" name="game_duration_football" class="form-control"
+                           value="{{ settings.game_duration_football }}" min="1" max="12" step="0.25">
+                </div>
+
+                <div class="form-group">
+                    <label for="game_duration_hockey">Hockey</label>
+                    <input type="number" id="game_duration_hockey" name="game_duration_hockey" class="form-control"
+                           value="{{ settings.game_duration_hockey }}" min="1" max="12" step="0.25">
+                </div>
+
+                <div class="form-group">
+                    <label for="game_duration_soccer">Soccer</label>
+                    <input type="number" id="game_duration_soccer" name="game_duration_soccer" class="form-control"
+                           value="{{ settings.game_duration_soccer }}" min="1" max="12" step="0.25">
+                </div>
+            </div>
+
+            <h3 style="font-size: 0.875rem; color: var(--text-secondary); margin: 1rem 0 0.75rem 0; font-weight: 500;">Schedule</h3>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="auto_generate_enabled" {% if settings.auto_generate_enabled %}checked{% endif %}>
+                    <span>Enable Scheduled Generation</span>
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label style="margin-bottom: 0.5rem;">Quick Presets</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 * * * *')">Every Hour</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 */2 * * *')">Every 2 Hours</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 */6 * * *')">Every 6 Hours</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 3 * * *')">Daily 3 AM</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 6 * * *')">Daily 6 AM</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="setCronPreset('0 6,18 * * *')">Twice Daily</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="cron_expression">Cron Expression</label>
+                <input type="text" id="cron_expression" name="cron_expression" class="form-control"
+                       value="{{ settings.cron_expression or '0 * * * *' }}"
+                       placeholder="0 * * * *"
+                       style="max-width: 200px; font-family: monospace;"
+                       oninput="validateAndDescribeCron()">
+                <small id="cron_description" class="form-text" style="color: var(--text-secondary);">Every hour at minute 0</small>
+            </div>
+
+            <div id="cron_helper" style="background: var(--bg-tertiary); border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                    <div style="text-align: center; min-width: 60px;">
+                        <select id="cron_minute" class="form-control" style="font-size: 0.75rem; padding: 0.25rem;" onchange="updateCronFromHelper()">
+                            <option value="0">0</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="45">45</option>
+                        </select>
+                        <small style="color: var(--text-muted); font-size: 0.625rem;">Minute</small>
+                    </div>
+                    <div style="text-align: center; min-width: 60px;">
+                        <select id="cron_hour" class="form-control" style="font-size: 0.75rem; padding: 0.25rem;" onchange="updateCronFromHelper()">
+                            <option value="*">Every</option>
+                            <option value="*/2">Every 2h</option>
+                            <option value="*/4">Every 4h</option>
+                            <option value="*/6">Every 6h</option>
+                            <option value="*/12">Every 12h</option>
+                            <option value="0">12 AM</option>
+                            <option value="3">3 AM</option>
+                            <option value="6">6 AM</option>
+                            <option value="9">9 AM</option>
+                            <option value="12">12 PM</option>
+                            <option value="15">3 PM</option>
+                            <option value="18">6 PM</option>
+                            <option value="21">9 PM</option>
+                        </select>
+                        <small style="color: var(--text-muted); font-size: 0.625rem;">Hour</small>
+                    </div>
+                </div>
+                <small style="color: var(--text-muted); font-size: 0.6875rem;">
+                    Format: minute hour day month weekday (uses your timezone) &bull;
+                    <a href="https://crontab.guru/" target="_blank" style="color: var(--primary);">crontab.guru</a>
+                </small>
+            </div>
+        </div>
+
+        <!-- Dispatcharr Integration -->
+        <div class="form-section">
+            <h2>Dispatcharr Integration</h2>
+            <p style="color: var(--text-muted); font-size: 0.8125rem; margin: 0 0 1rem 0;">
+                Connect to Dispatcharr for event-based EPG generation from M3U stream groups, and automatically sync EPG updates when new data is generated.
+            </p>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="dispatcharr_enabled" id="dispatcharr_enabled"
+                           {% if settings.dispatcharr_enabled %}checked{% endif %}
+                           onchange="toggleDispatcharrFields()">
+                    <span>Enable Dispatcharr Integration</span>
+                </label>
+            </div>
+
+            <div id="dispatcharr-fields" style="{% if not settings.dispatcharr_enabled %}opacity: 0.5; pointer-events: none;{% endif %}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="dispatcharr_url">Dispatcharr URL</label>
+                        <input type="text" id="dispatcharr_url" name="dispatcharr_url" class="form-control"
+                               value="{{ settings.dispatcharr_url or 'http://localhost:9191' }}"
+                               placeholder="http://localhost:9191">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dispatcharr_username">Username</label>
+                        <input type="text" id="dispatcharr_username" name="dispatcharr_username" class="form-control"
+                               value="{{ settings.dispatcharr_username or '' }}"
+                               placeholder="admin">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dispatcharr_password">Password</label>
+                        <div style="position: relative;">
+                            <input type="password" id="dispatcharr_password" name="dispatcharr_password" class="form-control"
+                                   value="{{ settings.dispatcharr_password or '' }}"
+                                   placeholder="••••••••" style="padding-right: 2.5rem;">
+                            <button type="button" onclick="togglePasswordVisibility()"
+                                    style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+                                           background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.875rem;">
+                                <span id="password-toggle-icon">👁</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row" style="margin-top: 1rem; align-items: flex-end;">
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="loginDispatcharr()"
+                                id="dispatcharr-login-btn" style="width: 100%;">
+                            Login & List EPGs
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="refreshProviderNames()"
+                                id="refresh-providers-btn" style="width: 100%;"
+                                title="Refresh cached M3U provider names from Dispatcharr">
+                            Refresh Providers
+                        </button>
+                    </div>
+                    <div class="form-group" style="flex: 2;">
+                        <label for="dispatcharr_epg_select">Select EPG Source</label>
+                        <select id="dispatcharr_epg_select" class="form-control" onchange="selectDispatcharrEpg()"
+                                style="{% if not settings.dispatcharr_epg_id %}opacity: 0.5;{% endif %}">
+                            {% if settings.dispatcharr_epg_id %}
+                                <option value="{{ settings.dispatcharr_epg_id }}" selected>EPG #{{ settings.dispatcharr_epg_id }} (saved)</option>
+                            {% else %}
+                                <option value="">-- Login to load EPG sources --</option>
+                            {% endif %}
+                        </select>
+                        <input type="hidden" id="dispatcharr_epg_id" name="dispatcharr_epg_id"
+                               value="{{ settings.dispatcharr_epg_id or '' }}">
+                    </div>
+                </div>
+
+                <div id="dispatcharr-status" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px; display: none;"></div>
+
+                {% if settings.dispatcharr_last_sync %}
+                <div style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-muted);">
+                    Last sync: {{ settings.dispatcharr_last_sync }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Local Caching Section -->
+        <div class="form-section">
+            <h2>Local Caching</h2>
+            <p class="section-description">
+                Team-to-league lookup caches enable multi-sport event groups to detect which league a stream belongs to.
+                These caches map team names to their leagues for fast lookups during stream matching.
+            </p>
+
+            <!-- Soccer Multi-League Cache -->
+            <div class="cache-section">
+                <h3>Soccer Multi-League Cache</h3>
+                <p class="cache-description">
+                    Maps soccer teams to all their competitions (domestic league, cups, European competitions).
+                    Required for soccer team matching and multi-league EPG coverage.
+                </p>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="soccer_cache_refresh_frequency">Refresh Frequency</label>
+                        <select id="soccer_cache_refresh_frequency" name="soccer_cache_refresh_frequency" class="form-control">
+                            <option value="daily" {% if settings.soccer_cache_refresh_frequency == 'daily' %}selected{% endif %}>Daily</option>
+                            <option value="every_3_days" {% if settings.soccer_cache_refresh_frequency == 'every_3_days' %}selected{% endif %}>Every 3 Days</option>
+                            <option value="weekly" {% if settings.soccer_cache_refresh_frequency == 'weekly' or not settings.soccer_cache_refresh_frequency %}selected{% endif %}>Weekly (Recommended)</option>
+                            <option value="manual" {% if settings.soccer_cache_refresh_frequency == 'manual' %}selected{% endif %}>Manual Only</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Status</label>
+                        <div id="soccer-cache-status" class="cache-status-box">
+                            <span class="loading-spinner"></span> Loading...
+                        </div>
+                    </div>
+
+                    <div class="form-group cache-action">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="refreshSoccerCache()" id="soccer-refresh-btn">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Team-League Cache (Non-Soccer) -->
+            <div class="cache-section">
+                <h3>Team-League Cache (Non-Soccer)</h3>
+                <p class="cache-description">
+                    Maps teams to their leagues for NHL, NBA, NFL, MLB, and college sports.
+                    Required for multi-sport event groups to detect leagues from team names.
+                </p>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="team_cache_refresh_frequency">Refresh Frequency</label>
+                        <select id="team_cache_refresh_frequency" name="team_cache_refresh_frequency" class="form-control">
+                            <option value="daily" {% if settings.team_cache_refresh_frequency == 'daily' %}selected{% endif %}>Daily</option>
+                            <option value="every_3_days" {% if settings.team_cache_refresh_frequency == 'every_3_days' %}selected{% endif %}>Every 3 Days</option>
+                            <option value="weekly" {% if settings.team_cache_refresh_frequency == 'weekly' or not settings.team_cache_refresh_frequency %}selected{% endif %}>Weekly (Recommended)</option>
+                            <option value="manual" {% if settings.team_cache_refresh_frequency == 'manual' %}selected{% endif %}>Manual Only</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Status</label>
+                        <div id="team-cache-status" class="cache-status-box">
+                            <span class="loading-spinner"></span> Loading...
+                        </div>
+                    </div>
+
+                    <div class="form-group cache-action">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="refreshTeamCache()" id="team-refresh-btn">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Refresh All Button -->
+            <div class="form-row" style="grid-template-columns: 1fr; margin-top: 1rem;">
+                <div class="form-group">
+                    <button type="button" class="btn btn-secondary" onclick="refreshAllCaches()" id="refresh-all-btn">
+                        🔄 Refresh All Caches
+                    </button>
+                    <small class="form-help" style="display: block; margin-top: 0.5rem;">
+                        Refresh both caches (~10-15 seconds total)
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Settings -->
+        <div class="form-section">
+            <h2>Advanced Settings</h2>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="xmltv_generator_name">XMLTV Generator Name</label>
+                    <input type="text" id="xmltv_generator_name" name="xmltv_generator_name" class="form-control"
+                           value="{{ settings.xmltv_generator_name }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="xmltv_generator_url">XMLTV Generator URL</label>
+                    <input type="text" id="xmltv_generator_url" name="xmltv_generator_url" class="form-control"
+                           value="{{ settings.xmltv_generator_url }}">
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">💾 Save Settings</button>
+        </div>
+    </form>
+</div>
+
+<style>
+.page-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    gap: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.form-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.form-section h2 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.form-row:not(:last-child) {
+    margin-bottom: 0.75rem;
+}
+
+.form-group {
+    margin-bottom: 0;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+select.form-control {
+    height: auto;
+    min-height: calc(0.8125rem * 1.5 + 0.375rem * 2 + 2px);
+    padding: 0.375rem 2rem 0.375rem 0.5rem;
+    line-height: 1.5;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 12px;
+}
+
+.light-theme select.form-control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    padding-top: 0.25rem;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-start;
+    margin-top: 1.5rem;
+}
+
+/* Radio group styling */
+.radio-group {
+    display: flex;
+    gap: 1rem;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    transition: all 0.15s;
+}
+
+.radio-label:hover {
+    border-color: var(--primary);
+}
+
+.radio-label:has(input:checked) {
+    border-color: var(--primary);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.radio-label input[type="radio"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.radio-label span {
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+}
+
+.radio-example {
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: normal;
+    margin-left: 0.25rem;
+}
+
+/* Cache Section Styles */
+.cache-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+/* Form controls inside cache section need darker background for contrast */
+.cache-section .form-control {
+    background: var(--bg-secondary);
+}
+
+.cache-section h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.cache-section .cache-description {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.cache-section .form-row {
+    display: grid;
+    grid-template-columns: 200px 1fr auto;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.cache-section .form-group {
+    margin-bottom: 0;
+}
+
+.cache-section .cache-action {
+    padding-top: 1.5rem;
+    white-space: nowrap;
+}
+
+.cache-section .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+}
+
+/* Cache Status Box */
+.cache-status-box {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+}
+
+.cache-status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.125rem 0;
+}
+
+.cache-status-item.success {
+    color: var(--success);
+}
+
+.cache-status-item.warning {
+    color: var(--warning);
+}
+
+.cache-status-item.error {
+    color: var(--danger);
+}
+
+.cache-status-item .status-label {
+    color: var(--text-muted);
+    min-width: 90px;
+}
+
+.cache-status-item .status-icon {
+    font-size: 1rem;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Exception Keywords Section */
+.exception-keywords-table-wrapper {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.exception-keywords-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.exception-keywords-table thead {
+    background: var(--bg-tertiary);
+}
+
+.exception-keywords-table th {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+}
+
+.exception-keywords-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.exception-keywords-table tr:last-child td {
+    border-bottom: none;
+}
+
+.exception-keywords-table .form-control-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.exception-keyword-add-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.exception-keyword-add-row .form-control {
+    flex: 1;
+}
+</style>
+
+<!-- Cron expression to human-readable descriptions -->
+<script src="https://cdn.jsdelivr.net/npm/cronstrue@2.50.0/dist/cronstrue.min.js"></script>
+
+<script>
+
+function setCronPreset(cron) {
+    document.getElementById('cron_expression').value = cron;
+    validateAndDescribeCron();
+    syncHelperFromCron();
+}
+
+function validateAndDescribeCron() {
+    const input = document.getElementById('cron_expression');
+    const description = document.getElementById('cron_description');
+    const value = input.value.trim();
+
+    // Validate cron format (5 fields)
+    const parts = value.split(/\s+/);
+    if (parts.length !== 5) {
+        description.textContent = 'Invalid: must have 5 fields (min hour day month weekday)';
+        description.style.color = 'var(--danger)';
+        input.style.borderColor = 'var(--danger)';
+        return false;
+    }
+
+    // Use cronstrue library for description (also validates)
+    try {
+        description.textContent = cronstrue.toString(value, { use24HourTimeFormat: false });
+        description.style.color = 'var(--text-secondary)';
+        input.style.borderColor = '';
+        return true;
+    } catch (e) {
+        description.textContent = 'Invalid cron expression';
+        description.style.color = 'var(--danger)';
+        input.style.borderColor = 'var(--danger)';
+        return false;
+    }
+}
+
+function updateCronFromHelper() {
+    const minute = document.getElementById('cron_minute').value;
+    const hour = document.getElementById('cron_hour').value;
+    const cron = `${minute} ${hour} * * *`;
+    document.getElementById('cron_expression').value = cron;
+    validateAndDescribeCron();
+}
+
+function syncHelperFromCron() {
+    const cron = document.getElementById('cron_expression').value.trim();
+    const parts = cron.split(/\s+/);
+    if (parts.length !== 5) return;
+
+    const [minute, hour] = parts;
+
+    // Sync minute selector
+    const minuteSelect = document.getElementById('cron_minute');
+    const minuteOptions = Array.from(minuteSelect.options).map(o => o.value);
+    if (minuteOptions.includes(minute)) {
+        minuteSelect.value = minute;
+    }
+
+    // Sync hour selector
+    const hourSelect = document.getElementById('cron_hour');
+    const hourOptions = Array.from(hourSelect.options).map(o => o.value);
+    if (hourOptions.includes(hour)) {
+        hourSelect.value = hour;
+    }
+}
+
+// Initialize cron UI on page load
+document.addEventListener('DOMContentLoaded', function() {
+    validateAndDescribeCron();
+    syncHelperFromCron();
+});
+
+function toggleDispatcharrFields() {
+    const enabled = document.getElementById('dispatcharr_enabled').checked;
+    const fields = document.getElementById('dispatcharr-fields');
+    if (enabled) {
+        fields.style.opacity = '1';
+        fields.style.pointerEvents = 'auto';
+    } else {
+        fields.style.opacity = '0.5';
+        fields.style.pointerEvents = 'none';
+    }
+}
+
+function togglePasswordVisibility() {
+    const passwordInput = document.getElementById('dispatcharr_password');
+    const toggleIcon = document.getElementById('password-toggle-icon');
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleIcon.textContent = '🙈';
+    } else {
+        passwordInput.type = 'password';
+        toggleIcon.textContent = '👁';
+    }
+}
+
+function showDispatcharrStatus(message, isSuccess) {
+    const statusDiv = document.getElementById('dispatcharr-status');
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = isSuccess ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+    statusDiv.style.border = isSuccess ? '1px solid var(--success)' : '1px solid var(--danger)';
+    statusDiv.style.color = isSuccess ? 'var(--success)' : 'var(--danger)';
+    statusDiv.innerHTML = message;
+}
+
+async function loginDispatcharr() {
+    const btn = document.getElementById('dispatcharr-login-btn');
+    const select = document.getElementById('dispatcharr_epg_select');
+    const url = document.getElementById('dispatcharr_url').value.trim();
+    const username = document.getElementById('dispatcharr_username').value.trim();
+    const password = document.getElementById('dispatcharr_password').value;
+
+    if (!url || !username || !password) {
+        showDispatcharrStatus('Please fill in URL, username, and password', false);
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Logging in...';
+
+    try {
+        const response = await fetch('/api/dispatcharr/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, username, password })
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.sources) {
+            // Filter out dummy sources
+            const epgSources = result.sources.filter(s => s.source_type !== 'dummy');
+
+            // Populate the dropdown
+            select.innerHTML = '<option value="">-- Select an EPG source --</option>';
+            epgSources.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.id;
+                option.textContent = s.name;
+                select.appendChild(option);
+            });
+            select.style.opacity = '1';
+
+            // Pre-select if there's a saved value
+            const savedId = document.getElementById('dispatcharr_epg_id').value;
+            if (savedId) {
+                select.value = savedId;
+            }
+
+            showDispatcharrStatus(`✓ ${result.message} Select an EPG source from the dropdown.`, true);
+        } else {
+            showDispatcharrStatus(result.message || 'Login failed', false);
+        }
+    } catch (error) {
+        showDispatcharrStatus(`Error: ${error.message}`, false);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Login & List EPGs';
+    }
+}
+
+function selectDispatcharrEpg() {
+    const select = document.getElementById('dispatcharr_epg_select');
+    const hiddenInput = document.getElementById('dispatcharr_epg_id');
+    hiddenInput.value = select.value;
+
+    if (select.value) {
+        showDispatcharrStatus(`✓ Selected EPG #${select.value}. Don't forget to save settings!`, true);
+    }
+}
+
+async function refreshProviderNames() {
+    const btn = document.getElementById('refresh-providers-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+
+    try {
+        const response = await fetch('/api/dispatcharr/refresh-provider-names', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showDispatcharrStatus(`✓ ${result.message}`, true);
+        } else {
+            showDispatcharrStatus(result.message || 'Refresh failed', false);
+        }
+    } catch (error) {
+        showDispatcharrStatus(`Error: ${error.message}`, false);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh Providers';
+    }
+}
+
+// =============================================================================
+// Soccer Multi-League Cache Functions
+// =============================================================================
+
+async function loadSoccerCacheStatus() {
+    const statusDiv = document.getElementById('soccer-cache-status');
+
+    try {
+        const response = await fetch('/api/soccer/cache/status');
+        const data = await response.json();
+
+        if (data.success) {
+            let statusHtml = '';
+
+            if (data.is_empty) {
+                statusHtml = `
+                    <div class="cache-status-item warning">
+                        <span class="status-icon">⚠️</span>
+                        <span>Cache is empty - click "Refresh Cache Now" to build</span>
+                    </div>
+                `;
+            } else {
+                const lastRefresh = data.last_refresh
+                    ? new Date(data.last_refresh).toLocaleString()
+                    : 'Never';
+
+                const stalenessClass = data.is_stale ? 'warning' : 'success';
+                const stalenessText = data.is_stale
+                    ? `${data.staleness_days} days old (stale)`
+                    : `${data.staleness_days} days old`;
+
+                statusHtml = `
+                    <div class="cache-status-item ${stalenessClass}">
+                        <span class="status-label">Last Refresh:</span>
+                        <span>${lastRefresh}</span>
+                    </div>
+                    <div class="cache-status-item">
+                        <span class="status-label">Leagues:</span>
+                        <span>${data.leagues_processed.toLocaleString()}</span>
+                    </div>
+                    <div class="cache-status-item">
+                        <span class="status-label">Teams:</span>
+                        <span>${data.teams_indexed.toLocaleString()}</span>
+                    </div>
+                    <div class="cache-status-item">
+                        <span class="status-label">Duration:</span>
+                        <span>${data.refresh_duration_seconds.toFixed(1)}s</span>
+                    </div>
+                `;
+            }
+
+            statusDiv.innerHTML = statusHtml;
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">Error loading status: ${error.message}</div>`;
+    }
+}
+
+async function refreshSoccerCache() {
+    const btn = document.getElementById('soccer-refresh-btn');
+    const statusDiv = document.getElementById('soccer-cache-status');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ ...';
+    statusDiv.innerHTML = '<span class="loading-spinner"></span> Building cache (~244 leagues)...';
+
+    try {
+        const response = await fetch('/api/soccer/cache/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusDiv.innerHTML = `
+                <div class="cache-status-item success">
+                    <span class="status-icon">✅</span>
+                    <span>Refreshed: ${result.teams_indexed.toLocaleString()} teams (${result.duration_seconds.toFixed(1)}s)</span>
+                </div>
+            `;
+            // Reload full status after a moment
+            setTimeout(loadSoccerCacheStatus, 1500);
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">❌ ${result.error || 'Refresh failed'}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">❌ Error: ${error.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Refresh';
+    }
+}
+
+// Team-League Cache Functions
+async function loadTeamCacheStatus() {
+    const statusDiv = document.getElementById('team-cache-status');
+
+    try {
+        const response = await fetch('/api/cache/team-league/status');
+        const data = await response.json();
+
+        if (data.success) {
+            if (!data.last_refresh) {
+                statusDiv.innerHTML = `
+                    <div class="cache-status-item warning">
+                        <span class="status-icon">⚠️</span>
+                        <span>Cache is empty - click "Refresh" to build</span>
+                    </div>
+                `;
+            } else {
+                const lastRefresh = new Date(data.last_refresh);
+                const formattedDate = lastRefresh.toLocaleDateString() + ' ' + lastRefresh.toLocaleTimeString();
+                const stalenessClass = data.is_stale ? 'warning' : 'success';
+                const stalenessIcon = data.is_stale ? '⚠️' : '✅';
+                const stalenessText = data.is_stale ? ` (${data.staleness_days}d ago - stale)` : '';
+
+                statusDiv.innerHTML = `
+                    <div class="cache-status-item ${stalenessClass}">
+                        <span class="status-icon">${stalenessIcon}</span>
+                        <span>Last refresh: ${formattedDate}${stalenessText}</span>
+                    </div>
+                    <div class="cache-status-item">
+                        <span class="status-icon">📊</span>
+                        <span>${data.teams_indexed.toLocaleString()} teams across ${data.leagues_processed} leagues</span>
+                    </div>
+                `;
+            }
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">Error loading status: ${error.message}</div>`;
+    }
+}
+
+async function refreshTeamCache() {
+    const btn = document.getElementById('team-refresh-btn');
+    const statusDiv = document.getElementById('team-cache-status');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ ...';
+    statusDiv.innerHTML = '<span class="loading-spinner"></span> Building cache (fetching team rosters)...';
+
+    try {
+        const response = await fetch('/api/cache/team-league/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusDiv.innerHTML = `
+                <div class="cache-status-item success">
+                    <span class="status-icon">✅</span>
+                    <span>Refreshed: ${result.teams_indexed.toLocaleString()} teams (${result.duration_seconds.toFixed(1)}s)</span>
+                </div>
+            `;
+            // Reload full status after a moment
+            setTimeout(loadTeamCacheStatus, 1500);
+        } else {
+            statusDiv.innerHTML = `<div class="cache-status-item error">❌ ${result.error || 'Refresh failed'}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="cache-status-item error">❌ Error: ${error.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Refresh';
+    }
+}
+
+async function refreshAllCaches() {
+    const btn = document.getElementById('refresh-all-btn');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Refreshing All...';
+
+    try {
+        const response = await fetch('/api/cache/refresh-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        // Reload both cache statuses
+        await Promise.all([loadSoccerCacheStatus(), loadTeamCacheStatus()]);
+
+        if (!result.success) {
+            console.warn('Cache refresh partial failure:', result);
+        }
+    } catch (error) {
+        console.error('Error refreshing caches:', error);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Refresh All Caches';
+    }
+}
+
+// Load both cache statuses on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSoccerCacheStatus();
+    loadTeamCacheStatus();
+});
+
+// ============================================================================
+// Exception Keywords (Consolidation Exceptions) - Global Settings
+// ============================================================================
+
+let exceptionKeywordsData = [];
+
+function handleDuplicateHandlingChange() {
+    const handling = document.getElementById('default_duplicate_event_handling');
+    const section = document.getElementById('exception-keywords-section');
+
+    if (handling && handling.value === 'consolidate') {
+        section.style.display = 'block';
+    } else {
+        section.style.display = 'none';
+    }
+}
+
+async function loadExceptionKeywords() {
+    try {
+        const response = await fetch('/api/settings/exception-keywords');
+        const data = await response.json();
+        exceptionKeywordsData = data.keywords || [];
+        renderExceptionKeywords();
+    } catch (error) {
+        console.error('Failed to load exception keywords:', error);
+    }
+}
+
+function renderExceptionKeywords() {
+    const tbody = document.getElementById('exception-keywords-body');
+    tbody.innerHTML = '';
+
+    if (exceptionKeywordsData.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="3" class="text-muted text-center" style="padding: 1rem;">
+            No exception keywords defined
+        </td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    exceptionKeywordsData.forEach(kw => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       value="${escapeHtml(kw.keywords)}"
+                       onchange="updateExceptionKeyword(${kw.id}, this.value, null)">
+            </td>
+            <td>
+                <select class="form-control form-control-sm"
+                        onchange="updateExceptionKeyword(${kw.id}, null, this.value)">
+                    <option value="consolidate" ${kw.behavior === 'consolidate' ? 'selected' : ''}>Sub-Consolidate</option>
+                    <option value="separate" ${kw.behavior === 'separate' ? 'selected' : ''}>Separate</option>
+                    <option value="ignore" ${kw.behavior === 'ignore' ? 'selected' : ''}>Ignore</option>
+                </select>
+            </td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        onclick="deleteExceptionKeyword(${kw.id})" title="Delete">
+                    &times;
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function addExceptionKeyword() {
+    const keywords = document.getElementById('new-keyword-input').value.trim();
+    const behavior = document.getElementById('new-keyword-behavior').value;
+
+    if (!keywords) {
+        alert('Please enter at least one keyword');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/settings/exception-keywords', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keywords, behavior})
+        });
+
+        if (response.ok) {
+            document.getElementById('new-keyword-input').value = '';
+            await loadExceptionKeywords();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to add keyword');
+        }
+    } catch (error) {
+        console.error('Failed to add keyword:', error);
+        alert('Failed to add keyword');
+    }
+}
+
+async function updateExceptionKeyword(keywordId, keywords, behavior) {
+    const body = {};
+    if (keywords !== null) body.keywords = keywords;
+    if (behavior !== null) body.behavior = behavior;
+
+    try {
+        await fetch(`/api/settings/exception-keywords/${keywordId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+    } catch (error) {
+        console.error('Failed to update keyword:', error);
+    }
+}
+
+async function deleteExceptionKeyword(keywordId) {
+    if (!confirm('Delete this keyword?')) return;
+
+    try {
+        const response = await fetch(`/api/settings/exception-keywords/${keywordId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            await loadExceptionKeywords();
+        }
+    } catch (error) {
+        console.error('Failed to delete keyword:', error);
+    }
+}
+
+// Initialize exception keywords on page load
+document.addEventListener('DOMContentLoaded', function() {
+    handleDuplicateHandlingChange();
+    loadExceptionKeywords();
+});
+</script>
+{% endblock %}

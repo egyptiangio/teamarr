@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Teamarr - Dynamic EPG Generator for Sports Channels{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ version }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}?v={{ version }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}?v={{ version }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v={{ version }}">
+</head>
+<body>
+    <!-- Notification Container (floating) -->
+    <div id="notification-container"></div>
+
+    <nav class="navbar">
+        <div class="container nav-container">
+            <div class="nav-brand">
+                <a href="{{ url_for('index') }}" class="brand-logo-link">
+                    <img src="{{ url_for('static', filename='logo.svg') }}?v={{ version }}" alt="Teamarr" class="brand-logo">
+                </a>
+                <div class="brand-text">
+                    <a href="{{ url_for('index') }}" class="brand-link">
+                        <h1>Teamarr</h1>
+                    </a>
+                    <span class="tagline">Dynamic EPG Generator for Sports Channels</span>
+                </div>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="{{ url_for('index') }}" class="nav-link">Dashboard</a></li>
+                <li><a href="{{ url_for('templates_list') }}" class="nav-link">Templates</a></li>
+                <li><a href="{{ url_for('teams_list') }}" class="nav-link">Teams</a></li>
+                <li><a href="{{ url_for('event_groups_list') }}" class="nav-link">Events</a></li>
+                <li><a href="{{ url_for('epg_management') }}" class="nav-link">EPG</a></li>
+                <li><a href="{{ url_for('channels_list') }}" class="nav-link">Channels</a></li>
+                <li><a href="{{ url_for('settings_form') }}" class="nav-link">Settings</a></li>
+            </ul>
+            <div class="nav-right">
+                <span class="version-badge">v{{ version }}</span>
+                <button onclick="toggleTheme()" class="theme-toggle" title="Toggle dark/light mode">
+                    <span id="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">
+                            {{ message }}
+                            <button onclick="this.parentElement.remove()" class="alert-close">&times;</button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="container footer-content">
+            <img src="{{ url_for('static', filename='logo.svg') }}?v={{ version }}" alt="Teamarr" class="footer-logo">
+            <p>Teamarr - Dynamic EPG Generator for Sports Channels | v{{ version }} | Port 9195</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    <!-- Global Time Format Settings -->
+    <script>
+    // Time format settings from server (available globally)
+    window.TEAMARR_SETTINGS = {
+        timezone: '{{ settings.epg_timezone | default("America/Detroit") }}',
+        timeFormat: '{{ settings.time_format | default("12h") }}',
+        showTimezone: {{ 'true' if settings.show_timezone in [1, True, '1', 'true', none] else 'false' }}
+    };
+
+    /**
+     * Format a date/time string using user's time format preferences.
+     * @param {string|Date} dateInput - ISO date string or Date object
+     * @param {Object} options - Additional formatting options
+     * @param {boolean} options.showDate - Include date (default: false)
+     * @param {string} options.dateFormat - 'long', 'short', or 'iso' (default: 'short')
+     * @returns {string} Formatted time string
+     */
+    function formatTime(dateInput, options = {}) {
+        if (!dateInput) return '—';
+
+        const settings = window.TEAMARR_SETTINGS;
+        const showDate = options.showDate || false;
+        const dateFormat = options.dateFormat || 'short';
+
+        try {
+            // Parse the date
+            let date;
+            if (dateInput instanceof Date) {
+                date = dateInput;
+            } else {
+                // Handle ISO strings - ensure timezone is appended if missing
+                let dateStr = String(dateInput);
+                if (!dateStr.includes('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+                    dateStr = dateStr + 'Z';
+                }
+                date = new Date(dateStr);
+            }
+
+            if (isNaN(date.getTime())) return '—';
+
+            // Build options for toLocaleString
+            const localeOptions = {
+                timeZone: settings.timezone,
+                hour: 'numeric',
+                minute: '2-digit'
+            };
+
+            // 12h vs 24h format
+            localeOptions.hour12 = (settings.timeFormat === '12h');
+
+            // Add timezone abbreviation if requested
+            if (settings.showTimezone) {
+                localeOptions.timeZoneName = 'short';
+            }
+
+            // Add date if requested
+            if (showDate) {
+                if (dateFormat === 'long') {
+                    localeOptions.month = 'long';
+                    localeOptions.day = 'numeric';
+                    localeOptions.year = 'numeric';
+                } else if (dateFormat === 'short') {
+                    localeOptions.month = 'numeric';
+                    localeOptions.day = 'numeric';
+                } else if (dateFormat === 'iso') {
+                    // For ISO, we'll format separately
+                }
+            }
+
+            return date.toLocaleString('en-US', localeOptions);
+        } catch (e) {
+            console.error('formatTime error:', e);
+            return '—';
+        }
+    }
+
+    /**
+     * Format a date only (no time) using user's timezone.
+     * @param {string|Date} dateInput - ISO date string or Date object
+     * @param {string} format - 'long', 'short', or 'iso' (default: 'short')
+     * @returns {string} Formatted date string
+     */
+    function formatDate(dateInput, format = 'short') {
+        if (!dateInput) return '—';
+
+        const settings = window.TEAMARR_SETTINGS;
+
+        try {
+            let date;
+            if (dateInput instanceof Date) {
+                date = dateInput;
+            } else {
+                let dateStr = String(dateInput);
+                if (!dateStr.includes('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+                    dateStr = dateStr + 'Z';
+                }
+                date = new Date(dateStr);
+            }
+
+            if (isNaN(date.getTime())) return '—';
+
+            const localeOptions = {
+                timeZone: settings.timezone
+            };
+
+            if (format === 'long') {
+                localeOptions.month = 'long';
+                localeOptions.day = 'numeric';
+                localeOptions.year = 'numeric';
+            } else if (format === 'short') {
+                localeOptions.month = 'numeric';
+                localeOptions.day = 'numeric';
+            } else if (format === 'iso') {
+                // Return ISO format in user's timezone
+                const parts = date.toLocaleDateString('en-CA', { timeZone: settings.timezone }).split('-');
+                return parts.join('-');
+            }
+
+            return date.toLocaleDateString('en-US', localeOptions);
+        } catch (e) {
+            console.error('formatDate error:', e);
+            return '—';
+        }
+    }
+
+    /**
+     * Format a datetime with both date and time.
+     * @param {string|Date} dateInput - ISO date string or Date object
+     * @param {Object} options - Formatting options
+     * @param {string} options.dateFormat - 'long', 'short', or 'iso'
+     * @returns {string} Formatted datetime string
+     */
+    function formatDateTime(dateInput, options = {}) {
+        return formatTime(dateInput, { ...options, showDate: true });
+    }
+    </script>
+
+    {% block scripts %}{% endblock %}
+
+    <style>
+    .flash-messages {
+        max-width: 1400px;
+        margin: 1rem auto 2rem auto;
+        padding: 0 1rem;
+    }
+
+    .alert {
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .alert-success {
+        background: rgba(16, 185, 129, 0.15);
+        color: #6ee7b7;
+        border-left: 3px solid var(--success);
+    }
+
+    .alert-error {
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+        border-left: 3px solid var(--danger);
+    }
+
+    .alert-warning {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fcd34d;
+        border-left: 3px solid var(--warning);
+    }
+
+    .alert-info {
+        background: rgba(59, 130, 246, 0.15);
+        color: #93c5fd;
+        border-left: 3px solid var(--primary);
+    }
+
+    .alert-close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 1.5rem;
+        line-height: 1;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+
+    .alert-close:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    /* Icon Buttons - shared across all pages */
+    .btn-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+    }
+
+    .btn-icon svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .btn-icon-test {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+
+    .btn-icon-test:hover {
+        background: rgba(59, 130, 246, 0.25);
+        color: #60a5fa;
+    }
+
+    .btn-icon-edit {
+        background: rgba(156, 163, 175, 0.15);
+        color: #9ca3af;
+    }
+
+    .btn-icon-edit:hover {
+        background: rgba(156, 163, 175, 0.25);
+        color: #d1d5db;
+    }
+
+    .btn-icon-delete {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .btn-icon-delete:hover {
+        background: rgba(239, 68, 68, 0.25);
+        color: #f87171;
+    }
+
+    .btn-icon-view {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .btn-icon-view:hover {
+        background: rgba(16, 185, 129, 0.25);
+        color: #34d399;
+    }
+
+    .btn-icon-duplicate {
+        background: rgba(139, 92, 246, 0.15);
+        color: #8b5cf6;
+    }
+
+    .btn-icon-duplicate:hover {
+        background: rgba(139, 92, 246, 0.25);
+        color: #a78bfa;
+    }
+
+    .btn-icon-export {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .btn-icon-export:hover {
+        background: rgba(34, 197, 94, 0.25);
+        color: #4ade80;
+    }
+
+    /* Action buttons container */
+    .action-buttons {
+        display: flex;
+        gap: 0.375rem;
+        align-items: center;
+    }
+    </style>
+</body>
+</html>

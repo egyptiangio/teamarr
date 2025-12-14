@@ -1,0 +1,2636 @@
+{% extends "base.html" %}
+
+{% block title %}Events - Teamarr{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <h1>Event Groups</h1>
+            <p class="page-subtitle">Configure event-based EPG from Dispatcharr M3U groups</p>
+        </div>
+        <div class="page-actions">
+            <a href="{{ url_for('event_groups_import') }}" class="btn btn-success">
+                📺 Import Groups
+            </a>
+        </div>
+    </div>
+
+    {% if groups %}
+        <!-- Stats Summary Tiles -->
+        {% set stats = namespace(
+            total_streams=0,
+            filtered_no_indicator=0,
+            filtered_exclude_regex=0,
+            filtered_outside_lookahead=0,
+            filtered_final=0,
+            filtered_league_not_enabled=0,
+            filtered_unsupported_sport=0,
+            eligible_streams=0,
+            matched_streams=0
+        ) %}
+        {% for group in groups %}
+            {% set stats.total_streams = stats.total_streams + (group.total_stream_count or 0) %}
+            {% set stats.filtered_no_indicator = stats.filtered_no_indicator + (group.filtered_no_indicator or 0) %}
+            {% set stats.filtered_exclude_regex = stats.filtered_exclude_regex + (group.filtered_exclude_regex or 0) %}
+            {% set stats.filtered_outside_lookahead = stats.filtered_outside_lookahead + (group.filtered_outside_lookahead or 0) %}
+            {% set stats.filtered_final = stats.filtered_final + (group.filtered_final or 0) %}
+            {% set stats.filtered_league_not_enabled = stats.filtered_league_not_enabled + (group.filtered_league_not_enabled or 0) %}
+            {% set stats.filtered_unsupported_sport = stats.filtered_unsupported_sport + (group.filtered_unsupported_sport or 0) %}
+            {% set stats.eligible_streams = stats.eligible_streams + (group.stream_count or 0) %}
+            {% set stats.matched_streams = stats.matched_streams + (group.matched_count or 0) %}
+        {% endfor %}
+        {% set stats.total_filtered = stats.filtered_no_indicator + stats.filtered_exclude_regex + stats.filtered_outside_lookahead + stats.filtered_final + stats.filtered_league_not_enabled + stats.filtered_unsupported_sport %}
+        {% set stats.match_rate = ((stats.matched_streams / stats.eligible_streams * 100) | round | int) if stats.eligible_streams > 0 else 0 %}
+
+        <h2 class="stats-section-title">📊 Event Groups Analysis</h2>
+        <div class="stats-tiles">
+            <div class="stat-tile" data-tooltip-id="tooltip-total">
+                <div class="stat-value">{{ stats.total_streams }}</div>
+                <div class="stat-label">Total Streams</div>
+                <div class="stat-tooltip" id="tooltip-total">
+                    <div class="tooltip-title">By Event Group</div>
+                    {% for group in groups if (group.total_stream_count or 0) > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ group.group_name|truncate(20) }}</span>
+                        <span class="tooltip-value">{{ group.total_stream_count or 0 }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="stat-tile {% if stats.total_filtered > 0 %}has-filtered{% endif %}" data-tooltip-id="tooltip-filtered">
+                <div class="stat-value">{{ stats.total_filtered }}</div>
+                <div class="stat-label">Filtered</div>
+                <div class="stat-tooltip" id="tooltip-filtered">
+                    <div class="tooltip-title">Filter Breakdown</div>
+                    {% if stats.filtered_no_indicator > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">No game indicator</span>
+                        <span class="tooltip-value">{{ stats.filtered_no_indicator }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_exclude_regex > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Exclusion regex</span>
+                        <span class="tooltip-value">{{ stats.filtered_exclude_regex }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_outside_lookahead > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Past events</span>
+                        <span class="tooltip-value">{{ stats.filtered_outside_lookahead }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_final > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Final (excluded)</span>
+                        <span class="tooltip-value">{{ stats.filtered_final }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_league_not_enabled > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">League not enabled</span>
+                        <span class="tooltip-value">{{ stats.filtered_league_not_enabled }}</span>
+                    </div>
+                    {% endif %}
+                    {% if stats.filtered_unsupported_sport > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">Unsupported sport</span>
+                        <span class="tooltip-value">{{ stats.filtered_unsupported_sport }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="tooltip-row tooltip-total">
+                        <span class="tooltip-name">Total</span>
+                        <span class="tooltip-value">{{ stats.total_filtered }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stat-tile" data-tooltip-id="tooltip-eligible">
+                <div class="stat-value">{{ stats.eligible_streams }}</div>
+                <div class="stat-label">Eligible</div>
+                <div class="stat-tooltip" id="tooltip-eligible">
+                    <div class="tooltip-title">By Event Group</div>
+                    {% for group in groups if (group.stream_count or 0) > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ group.group_name|truncate(20) }}</span>
+                        <span class="tooltip-value">{{ group.stream_count or 0 }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="stat-tile stat-tile-matched" data-tooltip-id="tooltip-matched">
+                <div class="stat-value">{{ stats.matched_streams }}</div>
+                <div class="stat-label">Matched ({{ stats.match_rate }}%)</div>
+                <div class="stat-tooltip" id="tooltip-matched">
+                    <div class="tooltip-title">Match Rate by Group</div>
+                    {% for group in groups if (group.stream_count or 0) > 0 %}
+                    {% set group_rate = ((group.matched_count or 0) / group.stream_count * 100)|round|int if group.stream_count else 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ group.group_name|truncate(20) }}</span>
+                        <span class="tooltip-value">{{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ group_rate }}%)</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch Operations Toolbar -->
+        <div class="batch-toolbar">
+            <div class="batch-info">
+                <strong>Batch Operations</strong>
+                <span class="batch-count">(<span id="selected-count">0</span> selected)</span>
+            </div>
+            <div class="batch-actions">
+                <button onclick="bulkActivate()" class="btn btn-sm btn-success" id="btn-bulk-activate" disabled>
+                    ✓ Activate
+                </button>
+                <button onclick="bulkDeactivate()" class="btn btn-sm btn-warning" id="btn-bulk-deactivate" disabled>
+                    ✗ Deactivate
+                </button>
+                <button onclick="bulkDelete()" class="btn btn-sm btn-danger" id="btn-bulk-delete" disabled>
+                    🗑️ Delete
+                </button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr class="header-row">
+                        <th style="width: 36px;">
+                            <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)">
+                        </th>
+                        <th class="sortable" onclick="sortTable('name')" data-sort="name">
+                            Group Name <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 70px;" class="sortable" onclick="sortTable('league')" data-sort="league">
+                            League <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 70px;" class="sortable" onclick="sortTable('sport')" data-sort="sport">
+                            Sport <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 120px;" class="sortable" onclick="sortTable('template')" data-sort="template">
+                            Template <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 100px;" class="sortable" onclick="sortTable('channel_start')" data-sort="channel_start">
+                            Ch Start <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 125px;" class="sortable" onclick="sortTable('channel_group')" data-sort="channel_group">
+                            Ch Group <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 110px;" class="sortable" onclick="sortTable('matched')" data-sort="matched">
+                            Matched <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 60px;" class="sortable" onclick="sortTable('status')" data-sort="status">
+                            Status <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 90px;">Actions</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th></th>
+                        <th></th>
+                        <th>
+                            <select id="filter-league" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                {% for league in groups|map(attribute='assigned_league')|unique|sort %}
+                                    <option value="{{ league }}">{{ league.upper() }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <select id="filter-sport" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                {% for sport in groups|map(attribute='assigned_sport')|unique|sort %}
+                                    <option value="{{ sport }}">{{ sport|title }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <select id="filter-template" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="_unassigned">Unassigned</option>
+                                {% for template in event_templates %}
+                                    <option value="{{ template.id }}">{{ template.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th>
+                            <select id="filter-status" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="groups-tbody">
+                    {# Reorganize groups: parent groups with their children nested below #}
+                    {# Separate AUTO groups (at top, draggable) from MANUAL groups (at bottom, fixed) #}
+                    {% set parent_groups = groups | selectattr('parent_group_id', 'none') | list %}
+                    {% set child_groups = groups | rejectattr('parent_group_id', 'none') | list %}
+                    {% set auto_groups = parent_groups | selectattr('channel_assignment_mode', 'equalto', 'auto') | sort(attribute='sort_order') | list %}
+                    {% set manual_groups = parent_groups | rejectattr('channel_assignment_mode', 'equalto', 'auto') | list %}
+
+                    {# ===== AUTO GROUPS SECTION (draggable) ===== #}
+                    {% if auto_groups %}
+                    <tr class="section-header-row auto-section-header">
+                        <td colspan="10">
+                            <span class="section-label">AUTO Channel Assignment</span>
+                            <span class="section-hint">Drag to reorder priority</span>
+                        </td>
+                    </tr>
+                    {% for group in auto_groups %}
+                        {% set match_rate = ((group.matched_count / group.stream_count * 100) | round | int) if group.stream_count > 0 else 0 %}
+                        <tr data-group-id="{{ group.id }}"
+                            class="parent-group-row auto-group-row draggable-group"
+                            data-dispatcharr-group-id="{{ group.dispatcharr_group_id }}"
+                            data-name="{{ group.group_name }}"
+                            data-league="{{ group.assigned_league }}"
+                            data-sport="{{ group.assigned_sport }}"
+                            data-template="{{ group.event_template_name or '' }}"
+                            data-template-id="{{ group.event_template_id or '' }}"
+                            data-channel-start="{{ group.channel_start or 0 }}"
+                            data-channel-group-id="{{ group.channel_group_id or '' }}"
+                            data-channel-group-name="{{ group.channel_group_name or '' }}"
+                            data-channel-assignment-mode="{{ group.channel_assignment_mode or 'manual' }}"
+                            data-sort-order="{{ group.sort_order or 0 }}"
+                            data-streams="{{ group.stream_count or 0 }}"
+                            data-matched="{{ group.matched_count or 0 }}"
+                            data-enabled="{{ group.enabled }}"
+                            data-refresh="{{ group.last_refresh or '' }}"
+                            draggable="true">
+                            <td>
+                                <div class="drag-checkbox-cell">
+                                    <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+                                    <input type="checkbox" class="group-checkbox" value="{{ group.id }}"
+                                           onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                    <strong style="font-size: 0.9375rem;">{{ group.group_name }}</strong>
+                                    <span class="badge badge-auto" title="Auto channel assignment">AUTO</span>
+                                    {% if group.account_name %}
+                                        <span class="badge badge-secondary">{{ group.account_name }}</span>
+                                    {% endif %}
+                                    {% if group.custom_regex_teams_enabled or group.custom_regex_date_enabled or group.custom_regex_time_enabled or group.stream_include_regex_enabled or group.stream_exclude_regex_enabled %}
+                                        <span class="badge badge-info" title="Custom regex patterns configured">Regex</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge" title="Multi-Sport / Multi-League">MUL</span>
+                                {% else %}
+                                <img src="{{ league_logos.get(group.assigned_league, '') }}"
+                                     alt="{{ group.assigned_league.upper() }}"
+                                     class="league-logo"
+                                     title="{{ group.assigned_league.upper() }}">
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;" title="{{ group.assigned_sport|title if not group.is_multi_sport else 'Multi-Sport' }}">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge">MUL</span>
+                                {% elif group.assigned_sport == 'basketball' %}<span style="font-size: 1.5rem;">🏀</span>
+                                {% elif group.assigned_sport == 'football' %}<span style="font-size: 1.5rem;">🏈</span>
+                                {% elif group.assigned_sport == 'baseball' %}<span style="font-size: 1.5rem;">⚾</span>
+                                {% elif group.assigned_sport == 'hockey' %}<span style="font-size: 1.5rem;">🏒</span>
+                                {% elif group.assigned_sport == 'soccer' %}<span style="font-size: 1.5rem;">⚽</span>
+                                {% else %}<span style="font-size: 1.5rem;">🏆</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if group.event_template_name %}
+                                    <span class="badge badge-success">{{ group.event_template_name }}</span>
+                                {% else %}
+                                    <span class="badge badge-warning" title="EPG will not be generated without a template" style="cursor: help;">Unassigned</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge badge-auto-channel" title="Auto-assigned from global range">AUTO</span>
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_group_name %}
+                                    <span class="badge badge-secondary" title="{{ group.channel_group_name }}">{{ group.channel_group_name|truncate(12, True) }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if group.stream_count and group.stream_count > 0 %}
+                                {% set past_events = group.filtered_outside_lookahead or 0 %}
+                                {% set final_events = group.filtered_final or 0 %}
+                                {% set league_disabled = group.filtered_league_not_enabled or 0 %}
+                                {% set unsupported_sport = group.filtered_unsupported_sport or 0 %}
+                                {% set total_excluded = past_events + final_events + league_disabled + unsupported_sport %}
+                                {% set exclusion_parts = [] %}
+                                {% if past_events > 0 %}{% set _ = exclusion_parts.append(past_events ~ ' past') %}{% endif %}
+                                {% if final_events > 0 %}{% set _ = exclusion_parts.append(final_events ~ ' final') %}{% endif %}
+                                {% if league_disabled > 0 %}{% set _ = exclusion_parts.append(league_disabled ~ ' league disabled') %}{% endif %}
+                                {% if unsupported_sport > 0 %}{% set _ = exclusion_parts.append(unsupported_sport ~ ' unsupported') %}{% endif %}
+                                <div class="match-rate-container" {% if total_excluded > 0 %}title="{{ total_excluded }} stream(s) excluded: {{ exclusion_parts | join(', ') }}"{% endif %}>
+                                    <div class="match-rate-bar">
+                                        <div class="match-rate-fill {% if match_rate >= 80 %}rate-good{% elif match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                             style="width: {{ match_rate }}%;"></div>
+                                    </div>
+                                    <span class="match-rate-text">
+                                        {{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)
+                                    </span>
+                                </div>
+                                {% else %}
+                                <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" {% if group.enabled %}checked{% endif %}
+                                           onchange="toggleGroupStatus({{ group.id }}, this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                    </button>
+                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </a>
+                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {# Render child groups nested under this parent #}
+                        {% for child in child_groups if child.parent_group_id == group.id %}
+                            {% set child_match_rate = ((child.matched_count / child.stream_count * 100) | round | int) if child.stream_count > 0 else 0 %}
+                            <tr data-group-id="{{ child.id }}"
+                                class="child-group-row"
+                                data-parent-id="{{ group.id }}"
+                                data-dispatcharr-group-id="{{ child.dispatcharr_group_id }}"
+                                data-name="{{ child.group_name }}"
+                                data-league="{{ child.assigned_league }}"
+                                data-sport="{{ child.assigned_sport }}"
+                                data-template="{{ child.event_template_name or '' }}"
+                                data-template-id="{{ child.event_template_id or '' }}"
+                                data-channel-start="{{ child.channel_start or 0 }}"
+                                data-channel-group-id="{{ child.channel_group_id or '' }}"
+                                data-streams="{{ child.stream_count or 0 }}"
+                                data-matched="{{ child.matched_count or 0 }}"
+                                data-enabled="{{ child.enabled }}"
+                                data-refresh="{{ child.last_refresh or '' }}">
+                                <td>
+                                    <div class="drag-checkbox-cell">
+                                        <span class="drag-handle-spacer"></span>
+                                        <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                               onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="child-group-indent">
+                                        <span class="child-connector">└</span>
+                                        <strong style="font-size: 0.875rem;">{{ child.group_name }}</strong>
+                                        <span class="badge badge-child" title="Child group: adds streams to parent's channels">
+                                            ↳ {{ group.group_name|truncate(15) }}
+                                        </span>
+                                        {% if child.account_name %}
+                                            <span class="badge badge-secondary" style="font-size: 0.65rem;">{{ child.account_name }}</span>
+                                        {% endif %}
+                                        {% if child.custom_regex_teams_enabled or child.custom_regex_date_enabled or child.custom_regex_time_enabled or child.stream_include_regex_enabled or child.stream_exclude_regex_enabled %}
+                                            <span class="badge badge-info" style="font-size: 0.65rem;" title="Custom regex patterns configured">Regex</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td style="text-align: center; vertical-align: middle;">
+                                    <img src="{{ league_logos.get(child.assigned_league, '') }}"
+                                         alt="{{ child.assigned_league.upper() }}"
+                                         class="league-logo"
+                                         style="opacity: 0.6;"
+                                         title="{{ child.assigned_league.upper() }}">
+                                </td>
+                                <td style="font-size: 1.25rem; text-align: center; vertical-align: middle; opacity: 0.6;" title="{{ child.assigned_sport|title }}">
+                                    {% if child.assigned_sport == 'basketball' %}🏀
+                                    {% elif child.assigned_sport == 'football' %}🏈
+                                    {% elif child.assigned_sport == 'baseball' %}⚾
+                                    {% elif child.assigned_sport == 'hockey' %}🏒
+                                    {% elif child.assigned_sport == 'soccer' %}⚽
+                                    {% else %}🏆
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td>
+                                    {% if child.stream_count and child.stream_count > 0 %}
+                                    {% set child_past_events = child.filtered_outside_lookahead or 0 %}
+                                    {% set child_final_events = child.filtered_final or 0 %}
+                                    {% set child_league_disabled = child.filtered_league_not_enabled or 0 %}
+                                    {% set child_unsupported_sport = child.filtered_unsupported_sport or 0 %}
+                                    {% set child_total_excluded = child_past_events + child_final_events + child_league_disabled + child_unsupported_sport %}
+                                    {% set child_exclusion_parts = [] %}
+                                    {% if child_past_events > 0 %}{% set _ = child_exclusion_parts.append(child_past_events ~ ' past') %}{% endif %}
+                                    {% if child_final_events > 0 %}{% set _ = child_exclusion_parts.append(child_final_events ~ ' final') %}{% endif %}
+                                    {% if child_league_disabled > 0 %}{% set _ = child_exclusion_parts.append(child_league_disabled ~ ' league disabled') %}{% endif %}
+                                    {% if child_unsupported_sport > 0 %}{% set _ = child_exclusion_parts.append(child_unsupported_sport ~ ' unsupported') %}{% endif %}
+                                    <div class="match-rate-container" {% if child_total_excluded > 0 %}title="{{ child_total_excluded }} stream(s) excluded: {{ child_exclusion_parts | join(', ') }}"{% endif %}>
+                                        <div class="match-rate-bar">
+                                            <div class="match-rate-fill {% if child_match_rate >= 80 %}rate-good{% elif child_match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                                 style="width: {{ child_match_rate }}%;"></div>
+                                        </div>
+                                        <span class="match-rate-text">
+                                            {{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)
+                                        </span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" {% if child.enabled %}checked{% endif %}
+                                               onchange="toggleGroupStatus({{ child.id }}, this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                        </button>
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        </a>
+                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    {% endif %}
+
+                    {# ===== MANUAL GROUPS SECTION (fixed order) ===== #}
+                    {% if manual_groups %}
+                    <tr class="section-header-row manual-section-header">
+                        <td colspan="10">
+                            <span class="section-label">MANUAL Channel Assignment</span>
+                            <span class="section-hint">Fixed channel start numbers</span>
+                        </td>
+                    </tr>
+                    {% for group in manual_groups %}
+                        {% set match_rate = ((group.matched_count / group.stream_count * 100) | round | int) if group.stream_count > 0 else 0 %}
+                        <tr data-group-id="{{ group.id }}"
+                            class="parent-group-row manual-group-row"
+                            data-dispatcharr-group-id="{{ group.dispatcharr_group_id }}"
+                            data-name="{{ group.group_name }}"
+                            data-league="{{ group.assigned_league }}"
+                            data-sport="{{ group.assigned_sport }}"
+                            data-template="{{ group.event_template_name or '' }}"
+                            data-template-id="{{ group.event_template_id or '' }}"
+                            data-channel-start="{{ group.channel_start or 0 }}"
+                            data-channel-group-id="{{ group.channel_group_id or '' }}"
+                            data-channel-group-name="{{ group.channel_group_name or '' }}"
+                            data-channel-assignment-mode="{{ group.channel_assignment_mode or 'manual' }}"
+                            data-sort-order="{{ group.sort_order or 0 }}"
+                            data-streams="{{ group.stream_count or 0 }}"
+                            data-matched="{{ group.matched_count or 0 }}"
+                            data-enabled="{{ group.enabled }}"
+                            data-refresh="{{ group.last_refresh or '' }}">
+                            <td>
+                                <input type="checkbox" class="group-checkbox" value="{{ group.id }}"
+                                       onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                    <strong style="font-size: 0.9375rem;">{{ group.group_name }}</strong>
+                                    {% if group.account_name %}
+                                        <span class="badge badge-secondary">{{ group.account_name }}</span>
+                                    {% endif %}
+                                    {% if group.custom_regex_teams_enabled or group.custom_regex_date_enabled or group.custom_regex_time_enabled or group.stream_include_regex_enabled or group.stream_exclude_regex_enabled %}
+                                        <span class="badge badge-info" title="Custom regex patterns configured">Regex</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge" title="Multi-Sport / Multi-League">MUL</span>
+                                {% else %}
+                                <img src="{{ league_logos.get(group.assigned_league, '') }}"
+                                     alt="{{ group.assigned_league.upper() }}"
+                                     class="league-logo"
+                                     title="{{ group.assigned_league.upper() }}">
+                                {% endif %}
+                            </td>
+                            <td style="text-align: center; vertical-align: middle;" title="{{ group.assigned_sport|title if not group.is_multi_sport else 'Multi-Sport' }}">
+                                {% if group.is_multi_sport %}
+                                <span class="multi-sport-badge">MUL</span>
+                                {% elif group.assigned_sport == 'basketball' %}<span style="font-size: 1.5rem;">🏀</span>
+                                {% elif group.assigned_sport == 'football' %}<span style="font-size: 1.5rem;">🏈</span>
+                                {% elif group.assigned_sport == 'baseball' %}<span style="font-size: 1.5rem;">⚾</span>
+                                {% elif group.assigned_sport == 'hockey' %}<span style="font-size: 1.5rem;">🏒</span>
+                                {% elif group.assigned_sport == 'soccer' %}<span style="font-size: 1.5rem;">⚽</span>
+                                {% else %}<span style="font-size: 1.5rem;">🏆</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if group.event_template_name %}
+                                    <span class="badge badge-success">{{ group.event_template_name }}</span>
+                                {% else %}
+                                    <span class="badge badge-warning" title="EPG will not be generated without a template" style="cursor: help;">Unassigned</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_start %}
+                                    <code>{{ group.channel_start }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if group.channel_group_name %}
+                                    <span class="badge badge-secondary" title="{{ group.channel_group_name }}">{{ group.channel_group_name|truncate(12, True) }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if group.stream_count and group.stream_count > 0 %}
+                                {% set past_events = group.filtered_outside_lookahead or 0 %}
+                                {% set final_events = group.filtered_final or 0 %}
+                                {% set league_disabled = group.filtered_league_not_enabled or 0 %}
+                                {% set unsupported_sport = group.filtered_unsupported_sport or 0 %}
+                                {% set total_excluded = past_events + final_events + league_disabled + unsupported_sport %}
+                                {% set exclusion_parts = [] %}
+                                {% if past_events > 0 %}{% set _ = exclusion_parts.append(past_events ~ ' past') %}{% endif %}
+                                {% if final_events > 0 %}{% set _ = exclusion_parts.append(final_events ~ ' final') %}{% endif %}
+                                {% if league_disabled > 0 %}{% set _ = exclusion_parts.append(league_disabled ~ ' league disabled') %}{% endif %}
+                                {% if unsupported_sport > 0 %}{% set _ = exclusion_parts.append(unsupported_sport ~ ' unsupported') %}{% endif %}
+                                <div class="match-rate-container" {% if total_excluded > 0 %}title="{{ total_excluded }} stream(s) excluded: {{ exclusion_parts | join(', ') }}"{% endif %}>
+                                    <div class="match-rate-bar">
+                                        <div class="match-rate-fill {% if match_rate >= 80 %}rate-good{% elif match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                             style="width: {{ match_rate }}%;"></div>
+                                    </div>
+                                    <span class="match-rate-text">
+                                        {{ group.matched_count or 0 }}/{{ group.stream_count }} ({{ match_rate }}%)
+                                    </span>
+                                </div>
+                                {% else %}
+                                <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" {% if group.enabled %}checked{% endif %}
+                                           onchange="toggleGroupStatus({{ group.id }}, this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button onclick='testMatchGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                    </button>
+                                    <a href="{{ url_for('event_group_edit', group_id=group.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </a>
+                                    <button onclick='deleteGroup({{ group.id }}, {{ group.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {# Render child groups nested under this MANUAL parent #}
+                        {% for child in child_groups if child.parent_group_id == group.id %}
+                            {% set child_match_rate = ((child.matched_count / child.stream_count * 100) | round | int) if child.stream_count > 0 else 0 %}
+                            <tr data-group-id="{{ child.id }}"
+                                class="child-group-row"
+                                data-parent-id="{{ group.id }}"
+                                data-dispatcharr-group-id="{{ child.dispatcharr_group_id }}"
+                                data-name="{{ child.group_name }}"
+                                data-league="{{ child.assigned_league }}"
+                                data-sport="{{ child.assigned_sport }}"
+                                data-template="{{ child.event_template_name or '' }}"
+                                data-template-id="{{ child.event_template_id or '' }}"
+                                data-channel-start="{{ child.channel_start or 0 }}"
+                                data-channel-group-id="{{ child.channel_group_id or '' }}"
+                                data-streams="{{ child.stream_count or 0 }}"
+                                data-matched="{{ child.matched_count or 0 }}"
+                                data-enabled="{{ child.enabled }}"
+                                data-refresh="{{ child.last_refresh or '' }}">
+                                <td>
+                                    <div class="drag-checkbox-cell">
+                                        <span class="drag-handle-spacer"></span>
+                                        <input type="checkbox" class="group-checkbox" value="{{ child.id }}"
+                                               onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="child-group-indent">
+                                        <span class="child-connector">└</span>
+                                        <strong style="font-size: 0.875rem;">{{ child.group_name }}</strong>
+                                        <span class="badge badge-child" title="Child group: adds streams to parent's channels">
+                                            ↳ {{ group.group_name|truncate(15) }}
+                                        </span>
+                                        {% if child.account_name %}
+                                            <span class="badge badge-secondary" style="font-size: 0.65rem;">{{ child.account_name }}</span>
+                                        {% endif %}
+                                        {% if child.custom_regex_teams_enabled or child.custom_regex_date_enabled or child.custom_regex_time_enabled or child.stream_include_regex_enabled or child.stream_exclude_regex_enabled %}
+                                            <span class="badge badge-info" style="font-size: 0.65rem;" title="Custom regex patterns configured">Regex</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td style="text-align: center; vertical-align: middle;">
+                                    <img src="{{ league_logos.get(child.assigned_league, '') }}"
+                                         alt="{{ child.assigned_league.upper() }}"
+                                         class="league-logo"
+                                         style="opacity: 0.6;"
+                                         title="{{ child.assigned_league.upper() }}">
+                                </td>
+                                <td style="font-size: 1.25rem; text-align: center; vertical-align: middle; opacity: 0.6;" title="{{ child.assigned_sport|title }}">
+                                    {% if child.assigned_sport == 'basketball' %}🏀
+                                    {% elif child.assigned_sport == 'football' %}🏈
+                                    {% elif child.assigned_sport == 'baseball' %}⚾
+                                    {% elif child.assigned_sport == 'hockey' %}🏒
+                                    {% elif child.assigned_sport == 'soccer' %}⚽
+                                    {% else %}🏆
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-inherited" title="Inherited from parent">↳</span>
+                                </td>
+                                <td>
+                                    {% if child.stream_count and child.stream_count > 0 %}
+                                    {% set child_past_events = child.filtered_outside_lookahead or 0 %}
+                                    {% set child_final_events = child.filtered_final or 0 %}
+                                    {% set child_league_disabled = child.filtered_league_not_enabled or 0 %}
+                                    {% set child_unsupported_sport = child.filtered_unsupported_sport or 0 %}
+                                    {% set child_total_excluded = child_past_events + child_final_events + child_league_disabled + child_unsupported_sport %}
+                                    {% set child_exclusion_parts = [] %}
+                                    {% if child_past_events > 0 %}{% set _ = child_exclusion_parts.append(child_past_events ~ ' past') %}{% endif %}
+                                    {% if child_final_events > 0 %}{% set _ = child_exclusion_parts.append(child_final_events ~ ' final') %}{% endif %}
+                                    {% if child_league_disabled > 0 %}{% set _ = child_exclusion_parts.append(child_league_disabled ~ ' league disabled') %}{% endif %}
+                                    {% if child_unsupported_sport > 0 %}{% set _ = child_exclusion_parts.append(child_unsupported_sport ~ ' unsupported') %}{% endif %}
+                                    <div class="match-rate-container" {% if child_total_excluded > 0 %}title="{{ child_total_excluded }} stream(s) excluded: {{ child_exclusion_parts | join(', ') }}"{% endif %}>
+                                        <div class="match-rate-bar">
+                                            <div class="match-rate-fill {% if child_match_rate >= 80 %}rate-good{% elif child_match_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}"
+                                                 style="width: {{ child_match_rate }}%;"></div>
+                                        </div>
+                                        <span class="match-rate-text">
+                                            {{ child.matched_count or 0 }}/{{ child.stream_count }} ({{ child_match_rate }}%)
+                                        </span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-style: italic; font-size: 0.75rem;">No active streams</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" {% if child.enabled %}checked{% endif %}
+                                               onchange="toggleGroupStatus({{ child.id }}, this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button onclick='testMatchGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-test" title="Test">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                        </button>
+                                        <a href="{{ url_for('event_group_edit', group_id=child.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        </a>
+                                        <button onclick='deleteGroup({{ child.id }}, {{ child.group_name | tojson }})' class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Team Aliases Section -->
+        <div class="compact-section" style="margin-top: 2rem;">
+            <div class="section-header">
+                <h2>Team Aliases</h2>
+                <span class="section-badge">{{ aliases|length }} aliases</span>
+                <button onclick="showAddAliasModal()" class="btn btn-sm btn-secondary" style="margin-left: auto;">+ Add</button>
+            </div>
+            <div class="table-container compact-table-container">
+                {% if aliases %}
+                    <table class="table compact-table">
+                        <thead>
+                            <tr>
+                                <th>Alias</th>
+                                <th>League</th>
+                                <th>Maps To</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for alias in aliases %}
+                                <tr>
+                                    <td><code>{{ alias.alias }}</code></td>
+                                    <td><span class="badge badge-primary">{{ alias.league.upper() }}</span></td>
+                                    <td>{{ alias.espn_team_name }}</td>
+                                    <td>
+                                        <button onclick="deleteAlias({{ alias.id }})" class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="aliases-empty">
+                        <p class="text-muted">No aliases defined. Aliases help match stream names to ESPN teams.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📺</div>
+            <h3>No Event Groups Yet</h3>
+            <p>Import M3U groups from Dispatcharr to generate event-based EPG data.</p>
+            <p>Event groups match stream names like "NFL: Giants @ Patriots" to ESPN events.</p>
+            <a href="{{ url_for('event_groups_import') }}" class="btn btn-primary">
+                📺 Import Your First Group
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Stream Preview Modal -->
+<div id="preview-modal" class="modal-overlay" onclick="closePreviewModal(event)">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="preview-modal-title">Stream Preview</h2>
+            <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="preview-loading" class="loading-state">
+                <div class="spinner"></div>
+                <span id="preview-status">Loading streams...</span>
+            </div>
+            <div id="preview-content" style="display: none;">
+                <div class="preview-summary">
+                    <span id="preview-total">0 streams</span>
+                    <span class="text-muted">|</span>
+                    <span id="preview-matched" class="text-success">0 matched</span>
+                    <span class="text-muted">|</span>
+                    <span id="preview-unmatched" class="text-warning">0 unmatched</span>
+                </div>
+                <div class="preview-table-container">
+                    <table class="table preview-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 45%;">Stream Name</th>
+                                <th style="width: 25%;">Parsed Teams</th>
+                                <th style="width: 30%;">ESPN Match</th>
+                            </tr>
+                        </thead>
+                        <tbody id="preview-streams-body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closePreviewModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Alias Modal -->
+<div id="alias-modal" class="modal-overlay" onclick="closeAliasModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="alias-modal-title">Add Team Alias</h2>
+            <button class="modal-close" onclick="closeAliasModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="alias-context" style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                Create a new alias to map stream names to ESPN teams.
+            </p>
+
+            <div class="form-group">
+                <label for="alias-text">Alias Text *</label>
+                <input type="text" id="alias-text" class="form-control" placeholder="e.g., spurs" required>
+                <small class="form-help">The text that appears in stream names (case-insensitive)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="alias-league">League *</label>
+                <select id="alias-league" class="form-control" onchange="loadTeamsForAlias()" required>
+                    <option value="">Select league...</option>
+                    {% for league in leagues %}
+                        <option value="{{ league.league_code }}">{{ league.league_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="alias-team">ESPN Team *</label>
+                <select id="alias-team" class="form-control" required>
+                    <option value="">Select league first...</option>
+                </select>
+                <small class="form-help">The actual ESPN team this alias should map to</small>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAliasModal()">Cancel</button>
+            <button class="btn btn-success" onclick="submitAlias()">Save Alias</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Sorting state
+let currentSort = { column: null, direction: 'asc' };
+let lastChecked = null;
+let channelGroups = [];  // Dispatcharr channel groups for assignment
+let nextChannelRange = 1001;  // Next available channel range (fallback)
+
+// Load next available channel range on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadNextChannelRange();
+});
+
+async function loadNextChannelRange() {
+    try {
+        const response = await fetch('/api/channel-lifecycle/next-channel-range');
+        const data = await response.json();
+        if (response.ok && data.next_channel_range) {
+            nextChannelRange = data.next_channel_range;
+        }
+    } catch (error) {
+        console.error('Failed to load next channel range:', error);
+    }
+}
+
+// ============================================================================
+// Checkbox & Batch Operations
+// ============================================================================
+
+function toggleSelectAll(checkbox) {
+    const rows = document.querySelectorAll('.table tbody tr');
+    rows.forEach(row => {
+        if (row.style.display !== 'none') {
+            const cb = row.querySelector('.group-checkbox');
+            if (cb) cb.checked = checkbox.checked;
+        }
+    });
+    updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+    const checkboxes = document.querySelectorAll('.group-checkbox:checked');
+    const hasSelection = checkboxes.length > 0;
+
+    document.getElementById('btn-bulk-activate').disabled = !hasSelection;
+    document.getElementById('btn-bulk-deactivate').disabled = !hasSelection;
+    document.getElementById('btn-bulk-delete').disabled = !hasSelection;
+    document.getElementById('selected-count').textContent = checkboxes.length;
+}
+
+function getSelectedGroupIds() {
+    const checkboxes = document.querySelectorAll('.group-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function handleCheckboxClick(event, checkbox) {
+    const checkboxes = Array.from(document.querySelectorAll('.group-checkbox'));
+
+    if (event.shiftKey && lastChecked && lastChecked !== checkbox) {
+        const start = checkboxes.indexOf(lastChecked);
+        const end = checkboxes.indexOf(checkbox);
+        const range = checkboxes.slice(Math.min(start, end), Math.max(start, end) + 1);
+        range.forEach(cb => cb.checked = lastChecked.checked);
+    }
+
+    lastChecked = checkbox;
+}
+
+// ============================================================================
+// Filtering & Sorting
+// ============================================================================
+
+function applyFilters() {
+    const leagueFilter = document.getElementById('filter-league').value;
+    const sportFilter = document.getElementById('filter-sport').value;
+    const templateFilter = document.getElementById('filter-template').value;
+    const statusFilter = document.getElementById('filter-status').value;
+
+    const rows = document.querySelectorAll('.table tbody tr');
+
+    rows.forEach(row => {
+        let show = true;
+
+        if (leagueFilter && row.dataset.league !== leagueFilter) show = false;
+        if (sportFilter && row.dataset.sport !== sportFilter) show = false;
+        if (templateFilter) {
+            if (templateFilter === '_unassigned') {
+                if (row.dataset.templateId) show = false;
+            } else {
+                if (row.dataset.templateId !== templateFilter) show = false;
+            }
+        }
+        if (statusFilter && row.dataset.enabled !== statusFilter) show = false;
+
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function sortTable(column) {
+    const tbody = document.querySelector('.table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    if (currentSort.column === column) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.column = column;
+        currentSort.direction = 'asc';
+    }
+
+    rows.sort((a, b) => {
+        let aVal, bVal;
+
+        switch(column) {
+            case 'name':
+                aVal = a.dataset.name.toLowerCase();
+                bVal = b.dataset.name.toLowerCase();
+                break;
+            case 'league':
+                aVal = a.dataset.league.toLowerCase();
+                bVal = b.dataset.league.toLowerCase();
+                break;
+            case 'sport':
+                aVal = a.dataset.sport.toLowerCase();
+                bVal = b.dataset.sport.toLowerCase();
+                break;
+            case 'template':
+                aVal = a.dataset.template.toLowerCase();
+                bVal = b.dataset.template.toLowerCase();
+                break;
+            case 'channel_start':
+                aVal = parseInt(a.dataset.channelStart) || 0;
+                bVal = parseInt(b.dataset.channelStart) || 0;
+                break;
+            case 'channel_group':
+                aVal = (a.dataset.channelGroupName || '').toLowerCase();
+                bVal = (b.dataset.channelGroupName || '').toLowerCase();
+                break;
+            case 'streams':
+                aVal = parseInt(a.dataset.streams) || 0;
+                bVal = parseInt(b.dataset.streams) || 0;
+                break;
+            case 'matched':
+                aVal = parseInt(a.dataset.matched) || 0;
+                bVal = parseInt(b.dataset.matched) || 0;
+                break;
+            case 'status':
+                aVal = a.dataset.enabled;
+                bVal = b.dataset.enabled;
+                break;
+            case 'refresh':
+                aVal = a.dataset.refresh || '0';
+                bVal = b.dataset.refresh || '0';
+                break;
+        }
+
+        if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort indicators
+    document.querySelectorAll('.sort-indicator').forEach(indicator => {
+        indicator.textContent = '';
+        indicator.parentElement.classList.remove('sort-asc', 'sort-desc');
+    });
+
+    const activeHeader = document.querySelector(`th[data-sort="${column}"]`);
+    if (activeHeader) {
+        activeHeader.classList.add(`sort-${currentSort.direction}`);
+        activeHeader.querySelector('.sort-indicator').textContent = currentSort.direction === 'asc' ? ' ▲' : ' ▼';
+    }
+}
+
+// ============================================================================
+// Group Actions
+// ============================================================================
+
+async function toggleGroupStatus(groupId, enabled) {
+    try {
+        const response = await fetch(`/api/event-epg/groups/${groupId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        if (response.ok) {
+            showNotification(`Group ${enabled ? 'activated' : 'deactivated'}`, 'success');
+        } else {
+            const data = await response.json();
+            showNotification(`Error: ${data.error}`, 'error');
+            // Revert toggle
+            const row = document.querySelector(`tr[data-group-id="${groupId}"]`);
+            const toggle = row?.querySelector('.toggle-switch input');
+            if (toggle) toggle.checked = !enabled;
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+async function bulkActivate() {
+    const groupIds = getSelectedGroupIds();
+    if (!groupIds.length) return;
+
+    if (!confirm(`Activate ${groupIds.length} group(s)?`)) return;
+
+    let successCount = 0;
+    for (const groupId of groupIds) {
+        try {
+            const response = await fetch(`/api/event-epg/groups/${groupId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: true })
+            });
+            if (response.ok) successCount++;
+        } catch (error) {
+            // continue
+        }
+    }
+
+    storeNotification(`Activated ${successCount} of ${groupIds.length} groups`, 'success');
+    location.reload();
+}
+
+async function bulkDeactivate() {
+    const groupIds = getSelectedGroupIds();
+    if (!groupIds.length) return;
+
+    if (!confirm(`Deactivate ${groupIds.length} group(s)?`)) return;
+
+    let successCount = 0;
+    for (const groupId of groupIds) {
+        try {
+            const response = await fetch(`/api/event-epg/groups/${groupId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: false })
+            });
+            if (response.ok) successCount++;
+        } catch (error) {
+            // continue
+        }
+    }
+
+    storeNotification(`Deactivated ${successCount} of ${groupIds.length} groups`, 'success');
+    location.reload();
+}
+
+async function bulkDelete() {
+    const groupIds = getSelectedGroupIds();
+    if (!groupIds.length) return;
+
+    if (!confirm(`Delete ${groupIds.length} group(s)? This cannot be undone.`)) return;
+
+    let successCount = 0;
+    for (const groupId of groupIds) {
+        try {
+            const response = await fetch(`/api/event-epg/groups/${groupId}`, { method: 'DELETE' });
+            if (response.ok) successCount++;
+        } catch (error) {
+            // continue
+        }
+    }
+
+    storeNotification(`Deleted ${successCount} of ${groupIds.length} groups`, 'success');
+    location.reload();
+}
+
+async function deleteGroup(groupId, groupName) {
+    if (!confirm(`Delete "${groupName}"?\n\nThis will also delete all managed channels created for this group.`)) return;
+
+    try {
+        const response = await fetch(`/api/event-epg/groups/${groupId}`, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (response.ok) {
+            const channelsDeleted = data.channels_deleted || 0;
+            const msg = channelsDeleted > 0
+                ? `Group "${groupName}" deleted (${channelsDeleted} channel${channelsDeleted !== 1 ? 's' : ''} removed)`
+                : `Group "${groupName}" deleted`;
+            storeNotification(msg, 'success');
+            location.reload();
+        } else {
+            showNotification(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Stream Preview Modal
+// ============================================================================
+
+// Active EventSource for preview (for cleanup on close)
+let previewEventSource = null;
+
+// Test stream matching with SSE progress updates
+function testMatchGroup(groupId, groupName) {
+    const modal = document.getElementById('preview-modal');
+    const titleEl = document.getElementById('preview-modal-title');
+    const loadingEl = document.getElementById('preview-loading');
+    const statusEl = document.getElementById('preview-status');
+    const contentEl = document.getElementById('preview-content');
+
+    titleEl.textContent = `Test Match: ${groupName}`;
+    loadingEl.style.display = 'flex';
+    statusEl.textContent = 'Connecting...';
+    contentEl.style.display = 'none';
+    modal.classList.add('active');
+
+    // Get league and dispatcharr group ID from row data
+    const row = document.querySelector(`tr[data-group-id="${groupId}"]`);
+    const league = row?.dataset.league;
+    const dispatcharrGroupId = row?.dataset.dispatcharrGroupId;
+
+    // Build SSE URL
+    let url = `/api/event-epg/dispatcharr/groups/${dispatcharrGroupId}/streams/stream`;
+    if (league) url += `?league=${league}`;
+
+    // Close any existing EventSource
+    if (previewEventSource) {
+        previewEventSource.close();
+        previewEventSource = null;
+    }
+
+    // Create EventSource for SSE
+    previewEventSource = new EventSource(url);
+
+    previewEventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+
+            // Update status text based on progress
+            if (data.status === 'progress') {
+                statusEl.textContent = data.message;
+            } else if (data.status === 'complete') {
+                // Hide loading, show content
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+                renderPreviewStreams(data.streams, data.total_streams, data.filtered_count || 0, data.custom_regex_info);
+                previewEventSource.close();
+                previewEventSource = null;
+            } else if (data.status === 'error') {
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+                document.getElementById('preview-streams-body').innerHTML =
+                    `<tr><td colspan="4" class="text-danger">Error: ${data.message}</td></tr>`;
+                previewEventSource.close();
+                previewEventSource = null;
+            }
+        } catch (e) {
+            console.error('Error parsing SSE data:', e);
+        }
+    };
+
+    previewEventSource.onerror = function(event) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+        document.getElementById('preview-streams-body').innerHTML =
+            `<tr><td colspan="4" class="text-danger">Connection error - please try again</td></tr>`;
+        previewEventSource.close();
+        previewEventSource = null;
+    };
+}
+
+function renderPreviewStreams(streams, totalCount, filteredCount, customRegexInfo) {
+    const tbody = document.getElementById('preview-streams-body');
+    const totalEl = document.getElementById('preview-total');
+    const matchedEl = document.getElementById('preview-matched');
+    const unmatchedEl = document.getElementById('preview-unmatched');
+
+    let matchedCount = 0;
+    let unmatchedCount = 0;
+    let filteredDisplayCount = 0;
+
+    tbody.innerHTML = '';
+
+    // Show/hide custom regex indicator with granular details
+    let regexIndicator = document.getElementById('preview-regex-indicator');
+    if (!regexIndicator) {
+        // Create the indicator element if it doesn't exist
+        const summaryDiv = document.querySelector('.preview-summary');
+        if (summaryDiv) {
+            const indicator = document.createElement('span');
+            indicator.id = 'preview-regex-indicator';
+            indicator.style.cssText = 'margin-left: 0.5rem; font-size: 0.75rem;';
+            summaryDiv.appendChild(indicator);
+            regexIndicator = indicator;
+        }
+    }
+    if (regexIndicator) {
+        const badgeStyle = 'display: inline-block; padding: 0.15rem 0.4rem; border-radius: 3px; margin-right: 0.25rem; font-size: 0.7rem;';
+
+        if (customRegexInfo) {
+            // Build badges for each enabled custom regex component
+            let badges = [];
+
+            if (customRegexInfo.teams) {
+                badges.push(`<span style="${badgeStyle} background: var(--info); color: white;" title="Custom teams extraction pattern">Teams</span>`);
+            }
+            if (customRegexInfo.date) {
+                badges.push(`<span style="${badgeStyle} background: var(--info); color: white;" title="Custom date extraction pattern">Date</span>`);
+            }
+            if (customRegexInfo.time) {
+                badges.push(`<span style="${badgeStyle} background: var(--info); color: white;" title="Custom time extraction pattern">Time</span>`);
+            }
+            if (customRegexInfo.exclude) {
+                badges.push(`<span style="${badgeStyle} background: var(--warning); color: black;" title="Custom exclusion pattern active">Exclude</span>`);
+            }
+
+            if (badges.length > 0) {
+                regexIndicator.innerHTML = '<span style="color: var(--text-muted); margin-right: 0.25rem;">Custom:</span>' + badges.join('');
+                regexIndicator.style.display = 'inline';
+            } else {
+                regexIndicator.innerHTML = `<span style="${badgeStyle} background: var(--bg-tertiary); color: var(--text-secondary);" title="Using built-in team matching">Built-in</span>`;
+                regexIndicator.style.display = 'inline';
+            }
+        } else {
+            // No custom regex - show built-in indicator
+            regexIndicator.innerHTML = `<span style="${badgeStyle} background: var(--bg-tertiary); color: var(--text-secondary);" title="Using built-in team matching">Built-in</span>`;
+            regexIndicator.style.display = 'inline';
+        }
+    }
+
+    streams.forEach(stream => {
+        const teamMatch = stream.team_match || {};
+        const eventMatch = stream.event_match || {};
+
+        // Count stats
+        if (teamMatch.filtered || eventMatch.filtered) {
+            filteredDisplayCount++;
+        } else if (eventMatch.found) {
+            matchedCount++;
+        } else {
+            unmatchedCount++;
+        }
+
+        // Build team match display
+        let teamHtml = '';
+        if (teamMatch.filtered) {
+            teamHtml = `<span class="text-muted" style="font-style: italic;">Filtered</span>`;
+        } else if (teamMatch.matched) {
+            teamHtml = `<span class="text-success">${escapeHtml(teamMatch.away_team_name || '?')} @ ${escapeHtml(teamMatch.home_team_name || '?')}</span>`;
+        } else if (teamMatch.parsed_teams) {
+            // Teams were parsed but not found in ESPN - show what was parsed
+            const t1 = teamMatch.parsed_teams.team1 || '?';
+            const t2 = teamMatch.parsed_teams.team2 || '?';
+            teamHtml = `<span class="text-muted" title="Parsed but not found in ESPN">${escapeHtml(t1)} vs ${escapeHtml(t2)}</span>`;
+        } else {
+            teamHtml = `<span class="text-muted">—</span>`;
+        }
+
+        // Build status display
+        let statusHtml = '';
+        if (teamMatch.filtered) {
+            // Stream was filtered out
+            const reason = teamMatch.reason || 'Filtered';
+            statusHtml = `<span class="text-muted" style="font-style: italic;">${escapeHtml(reason)}</span>`;
+        } else if (eventMatch.found) {
+            statusHtml = `<span class="text-success">✓ Matched</span>`;
+        } else if (eventMatch.is_past) {
+            // Event from a past day - always excluded
+            statusHtml = `<span class="text-muted" style="font-style: italic;">Event already passed</span>`;
+        } else if (eventMatch.is_final) {
+            // Today's event but final - excluded by user setting
+            statusHtml = `<span class="text-danger" style="font-weight: 600;">Event is final (excluded)</span>`;
+        } else if (!teamMatch.matched) {
+            // Team parsing failed or teams not found in ESPN
+            const detail = teamMatch.detail || teamMatch.reason || 'Teams not parsed';
+            const parsedTeams = teamMatch.parsed_teams;
+            if (parsedTeams) {
+                // Teams were parsed but not found in ESPN database
+                statusHtml = `<span class="text-warning" title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>`;
+            } else {
+                statusHtml = `<span class="text-warning">${escapeHtml(detail)}</span>`;
+            }
+        } else {
+            // Teams matched but no event found - show specific reason
+            const reason = eventMatch.reason || 'No game scheduled';
+            statusHtml = `<span class="text-danger">${escapeHtml(reason)}</span>`;
+        }
+
+        // Style filtered rows differently
+        const rowStyle = (teamMatch.filtered || eventMatch.filtered)
+            ? 'opacity: 0.6; background: var(--bg-tertiary);'
+            : '';
+
+        const row = document.createElement('tr');
+        row.style.cssText = rowStyle;
+        row.innerHTML = `
+            <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(stream.name)}">
+                ${escapeHtml(stream.name)}
+            </td>
+            <td>${teamHtml}</td>
+            <td>${statusHtml}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // Update summary stats
+    let totalText = `${totalCount} streams`;
+    if (filteredCount > 0 || filteredDisplayCount > 0) {
+        const filterNum = filteredCount || filteredDisplayCount;
+        totalText += ` (${filterNum} filtered)`;
+    }
+    totalEl.textContent = totalText;
+    matchedEl.textContent = `${matchedCount} matched`;
+    unmatchedEl.textContent = `${unmatchedCount} unmatched`;
+}
+
+function closePreviewModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    // Clean up EventSource if still running
+    if (previewEventSource) {
+        previewEventSource.close();
+        previewEventSource = null;
+    }
+    document.getElementById('preview-modal').classList.remove('active');
+}
+
+// ============================================================================
+// Team Aliases
+// ============================================================================
+
+function showAddAliasModal() {
+    document.getElementById('alias-modal-title').textContent = 'Add Team Alias';
+    document.getElementById('alias-context').textContent = 'Create a new alias to map stream names to ESPN teams.';
+    document.getElementById('alias-text').value = '';
+    document.getElementById('alias-league').value = '';
+    document.getElementById('alias-team').innerHTML = '<option value="">Select league first...</option>';
+
+    document.getElementById('alias-modal').classList.add('active');
+}
+
+function showFixMatchModal(unmatchedText) {
+    document.getElementById('alias-modal-title').textContent = 'Fix Team Match';
+    document.getElementById('alias-context').innerHTML =
+        `The text "<strong>${escapeHtml(unmatchedText)}</strong>" was not recognized. Select the correct ESPN team to create an alias.`;
+    document.getElementById('alias-text').value = unmatchedText.toLowerCase();
+
+    document.getElementById('alias-modal').classList.add('active');
+}
+
+function closeAliasModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('alias-modal').classList.remove('active');
+}
+
+async function loadTeamsForAlias() {
+    const league = document.getElementById('alias-league').value;
+    const teamSelect = document.getElementById('alias-team');
+
+    if (!league) {
+        teamSelect.innerHTML = '<option value="">Select league first...</option>';
+        return;
+    }
+
+    teamSelect.innerHTML = '<option value="">Loading teams...</option>';
+
+    try {
+        const response = await fetch(`/api/event-epg/teams?league=${league}`);
+        const data = await response.json();
+
+        teamSelect.innerHTML = '<option value="">Select team...</option>';
+
+        if (response.ok) {
+            // For college leagues, show teams grouped by conference
+            if (data.conferences && Object.keys(data.conferences).length > 0) {
+                // Sort conference names alphabetically
+                const confNames = Object.keys(data.conferences).sort();
+
+                for (const confName of confNames) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = confName;
+
+                    // Teams within conference are already sorted by API
+                    data.conferences[confName].forEach(team => {
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify({ id: team.id, name: team.name });
+                        option.textContent = team.name;
+                        optgroup.appendChild(option);
+                    });
+
+                    teamSelect.appendChild(optgroup);
+                }
+
+                // Add "Other Teams" group for teams not in any conference
+                // (independents, teams in transition)
+                if (data.teams) {
+                    const confTeamIds = new Set();
+                    Object.values(data.conferences).forEach(teams => {
+                        teams.forEach(t => confTeamIds.add(String(t.id)));
+                    });
+
+                    const otherTeams = data.teams.filter(t => !confTeamIds.has(String(t.id)));
+                    if (otherTeams.length > 0) {
+                        const optgroup = document.createElement('optgroup');
+                        optgroup.label = '— Other Teams —';
+
+                        otherTeams.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                        otherTeams.forEach(team => {
+                            const option = document.createElement('option');
+                            option.value = JSON.stringify({ id: team.id, name: team.name });
+                            option.textContent = team.name;
+                            optgroup.appendChild(option);
+                        });
+
+                        teamSelect.appendChild(optgroup);
+                    }
+                }
+            } else if (data.teams) {
+                // For pro leagues, just list teams alphabetically
+                data.teams.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                data.teams.forEach(team => {
+                    const option = document.createElement('option');
+                    option.value = JSON.stringify({ id: team.id, name: team.name });
+                    option.textContent = team.name;
+                    teamSelect.appendChild(option);
+                });
+            }
+        }
+    } catch (error) {
+        teamSelect.innerHTML = '<option value="">Error loading teams</option>';
+    }
+}
+
+async function submitAlias() {
+    const aliasText = document.getElementById('alias-text').value.trim();
+    const league = document.getElementById('alias-league').value;
+    const teamJson = document.getElementById('alias-team').value;
+
+    if (!aliasText || !league || !teamJson) {
+        showNotification('Please fill in all fields', 'error');
+        return;
+    }
+
+    let team;
+    try {
+        team = JSON.parse(teamJson);
+    } catch (e) {
+        showNotification('Please select a valid team', 'error');
+        return;
+    }
+
+    const payload = {
+        alias: aliasText.toLowerCase(),
+        league: league,
+        espn_team_id: String(team.id),
+        espn_team_name: team.name
+    };
+
+    try {
+        const response = await fetch('/api/event-epg/aliases', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            storeNotification(`Alias "${aliasText}" created for ${team.name}`, 'success');
+            closeAliasModal();
+            location.reload();
+        } else {
+            showNotification(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+async function deleteAlias(aliasId) {
+    if (!confirm('Delete this alias?')) return;
+
+    try {
+        const response = await fetch(`/api/event-epg/aliases/${aliasId}`, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (response.ok) {
+            storeNotification('Alias deleted', 'success');
+            location.reload();
+        } else {
+            showNotification(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showNotification(message, type = 'info') {
+    if (typeof window.showNotification === 'function') {
+        window.showNotification(message, type);
+        return;
+    }
+    alert(message);
+}
+
+// ============================================================================
+// Drag & Drop for AUTO Groups
+// ============================================================================
+
+let draggedRow = null;
+let draggedGroupId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initDragAndDrop();
+});
+
+function initDragAndDrop() {
+    const tbody = document.getElementById('groups-tbody');
+    if (!tbody) return;
+
+    // Add drag event listeners to draggable rows
+    const draggableRows = tbody.querySelectorAll('.draggable-group');
+    draggableRows.forEach(row => {
+        row.addEventListener('dragstart', handleDragStart);
+        row.addEventListener('dragend', handleDragEnd);
+        row.addEventListener('dragover', handleDragOver);
+        row.addEventListener('drop', handleDrop);
+        row.addEventListener('dragleave', handleDragLeave);
+    });
+}
+
+function handleDragStart(e) {
+    draggedRow = this;
+    draggedGroupId = this.dataset.groupId;
+    this.classList.add('dragging');
+
+    // Set drag data
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedGroupId);
+
+    // Highlight valid drop targets
+    const autoRows = document.querySelectorAll('.auto-group-row');
+    autoRows.forEach(row => {
+        if (row !== this) {
+            row.classList.add('drop-target-hint');
+        }
+    });
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+
+    // Remove all drop hints
+    document.querySelectorAll('.drop-target-hint, .drop-target-above, .drop-target-below').forEach(el => {
+        el.classList.remove('drop-target-hint', 'drop-target-above', 'drop-target-below');
+    });
+
+    draggedRow = null;
+    draggedGroupId = null;
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedRow || this === draggedRow) return;
+
+    // Only allow drops on AUTO group rows
+    if (!this.classList.contains('auto-group-row')) return;
+
+    // Determine if we're in the top or bottom half of the row
+    const rect = this.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    this.classList.remove('drop-target-above', 'drop-target-below');
+    if (e.clientY < midpoint) {
+        this.classList.add('drop-target-above');
+    } else {
+        this.classList.add('drop-target-below');
+    }
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drop-target-above', 'drop-target-below');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+
+    if (!draggedRow || this === draggedRow) return;
+    if (!this.classList.contains('auto-group-row')) return;
+
+    const tbody = document.getElementById('groups-tbody');
+    const rect = this.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    // Collect the dragged group and its children
+    const rowsToMove = [draggedRow];
+    const childRows = tbody.querySelectorAll(`.child-group-row[data-parent-id="${draggedGroupId}"]`);
+    childRows.forEach(child => rowsToMove.push(child));
+
+    // Find target position
+    if (e.clientY < midpoint) {
+        // Insert before this row
+        rowsToMove.forEach(row => tbody.insertBefore(row, this));
+    } else {
+        // Insert after this row (and its children)
+        let targetGroupId = this.dataset.groupId;
+        let lastTargetRow = this;
+        let targetChildren = tbody.querySelectorAll(`.child-group-row[data-parent-id="${targetGroupId}"]`);
+        if (targetChildren.length > 0) {
+            lastTargetRow = targetChildren[targetChildren.length - 1];
+        }
+        rowsToMove.forEach(row => {
+            lastTargetRow.after(row);
+            lastTargetRow = row;
+        });
+    }
+
+    // Clean up visual hints
+    this.classList.remove('drop-target-above', 'drop-target-below');
+
+    // Save new order to server
+    saveGroupOrder();
+}
+
+async function saveGroupOrder() {
+    // Collect new order of AUTO groups
+    const autoRows = document.querySelectorAll('.auto-group-row');
+    const newOrder = [];
+
+    autoRows.forEach((row, index) => {
+        newOrder.push({
+            group_id: parseInt(row.dataset.groupId),
+            sort_order: index
+        });
+    });
+
+    try {
+        const response = await fetch('/api/event-epg/groups/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: newOrder })
+        });
+
+        if (response.ok) {
+            showNotification('Group order saved', 'success');
+        } else {
+            const data = await response.json();
+            showNotification(`Failed to save order: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error saving order: ${error.message}`, 'error');
+    }
+}
+</script>
+
+<style>
+.page-container {
+    max-width: 100%;
+    padding: 2rem 0;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    gap: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.page-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* Table styles */
+.table-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead {
+    background: var(--bg-tertiary);
+    border-bottom: 2px solid var(--border);
+}
+
+.table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    padding: 0.625rem 0.75rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-danger { color: var(--danger); }
+
+/* Batch toolbar */
+.batch-toolbar {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.batch-info {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.batch-count {
+    color: var(--text-muted);
+    font-weight: normal;
+    font-size: 0.875rem;
+}
+
+.batch-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.batch-actions button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Filter row */
+.filter-row th {
+    padding: 0.125rem 0.75rem 0.5rem 0.75rem !important;
+    border-bottom: 2px solid var(--border);
+}
+
+.filter-dropdown {
+    width: 100%;
+    padding: 0.25rem 0.375rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+/* Sortable headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.sort-indicator {
+    font-size: 0.75rem;
+    opacity: 0.5;
+}
+
+/* Match rate */
+.match-rate-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.match-rate-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.match-rate-fill {
+    height: 100%;
+    transition: width 0.3s;
+}
+
+.match-rate-fill.rate-good { background: var(--success); }
+.match-rate-fill.rate-warn { background: var(--warning); }
+.match-rate-fill.rate-bad { background: var(--danger); }
+
+.match-rate-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Action buttons */
+.action-buttons {
+    display: flex;
+    gap: 0.375rem;
+}
+
+.action-buttons .btn {
+    white-space: nowrap;
+    display: inline-block;
+    box-sizing: border-box;
+}
+
+.action-buttons button.btn {
+    height: auto;
+    line-height: inherit;
+}
+
+.action-buttons form {
+    margin: 0;
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 0.1875rem 0.4375rem;
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+}
+
+.badge-primary {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+}
+
+code {
+    background: var(--bg-tertiary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-state .empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+}
+
+.empty-state .btn {
+    margin-top: 1.5rem;
+}
+
+/* League logo */
+.league-logo {
+    height: 30px;
+    width: auto;
+    vertical-align: middle;
+    object-fit: contain;
+    display: inline-block;
+}
+
+.multi-sport-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 30px;
+    min-width: 30px;
+    padding: 0 6px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    font-weight: 700;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+}
+
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border);
+    transition: .3s;
+    border-radius: 22px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--success);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+}
+
+/* Bottom sections layout - extra compact */
+.bottom-sections {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.compact-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.compact-section .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+}
+
+.compact-section h2 {
+    margin: 0;
+    font-size: 0.75rem;
+}
+
+.compact-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 0.1875rem 0.375rem;
+    font-size: 0.6875rem;
+}
+
+.compact-table th {
+    font-size: 0.5625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.section-badge {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    padding: 0.125rem 0.375rem;
+    border-radius: 10px;
+    font-size: 0.5625rem;
+    font-weight: 500;
+}
+
+.aliases-empty {
+    padding: 0.5rem;
+    font-size: 0.6875rem;
+}
+
+/* Extra small buttons for compact sections */
+.compact-section .btn-sm {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.5625rem;
+}
+
+.compact-table .btn-sm {
+    padding: 0.0625rem 0.25rem;
+    font-size: 0.5rem;
+    line-height: 1.2;
+}
+
+/* Badge styles */
+.badge-secondary {
+    background: rgba(100, 116, 139, 0.25);
+    color: #94a3b8;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fcd34d;
+}
+
+.badge-info {
+    background: rgba(6, 182, 212, 0.2);
+    color: #67e8f9;
+}
+
+.badge-child {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c4b5fd;
+    font-style: italic;
+}
+
+.light-theme .badge-child {
+    background: rgba(168, 85, 247, 0.15);
+    color: #7c3aed;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.badge-inherited {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a78bfa;
+    font-size: 0.7rem;
+    font-style: italic;
+}
+
+.light-theme .badge-inherited {
+    background: rgba(168, 85, 247, 0.1);
+    color: #7c3aed;
+}
+
+.badge-league-disabled {
+    background: rgba(251, 146, 60, 0.2);
+    color: #fb923c;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    margin-left: 0.25rem;
+    cursor: help;
+}
+
+.light-theme .badge-league-disabled {
+    background: rgba(251, 146, 60, 0.15);
+    color: #ea580c;
+}
+
+/* Child group row styling */
+.child-group-row {
+    background: rgba(168, 85, 247, 0.05);
+}
+
+.child-group-row:hover {
+    background: rgba(168, 85, 247, 0.1);
+}
+
+.light-theme .child-group-row {
+    background: rgba(168, 85, 247, 0.03);
+}
+
+.light-theme .child-group-row:hover {
+    background: rgba(168, 85, 247, 0.08);
+}
+
+.child-group-indent {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 1rem;
+}
+
+.child-connector {
+    color: #a78bfa;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.light-theme .child-connector {
+    color: #7c3aed;
+}
+
+.light-theme .badge-success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #047857;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.light-theme .badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Modal styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-large {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-tertiary);
+}
+
+/* Preview modal */
+.preview-summary {
+    display: flex;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+}
+
+.preview-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.preview-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-tertiary);
+    z-index: 1;
+}
+
+/* Loading state */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    color: var(--text-muted);
+    gap: 1rem;
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Refreshing state */
+.refreshing {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Form styles */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.375rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Light mode overrides */
+.light-theme .badge-primary {
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+}
+
+.light-theme .section-badge {
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+}
+
+/* Stats Summary Tiles */
+.stats-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.stats-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.stat-tile {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    position: relative;
+    cursor: default;
+}
+
+.stat-tile[data-tooltip-id] {
+    cursor: help;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stat-tile.has-filtered .stat-value {
+    color: var(--warning);
+}
+
+.stat-tile-matched .stat-value {
+    color: var(--success);
+}
+
+/* Stat Tooltip */
+.stat-tooltip {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    min-width: 180px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.stat-tile:hover .stat-tooltip {
+    display: block;
+}
+
+.tooltip-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.375rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    padding: 0.125rem 0;
+}
+
+.tooltip-name {
+    color: var(--text-secondary);
+}
+
+.tooltip-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.tooltip-row.tooltip-total {
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.tooltip-row.tooltip-total .tooltip-name,
+.tooltip-row.tooltip-total .tooltip-value {
+    font-weight: 700;
+}
+
+/* ============================================================================
+   Section Headers for AUTO/MANUAL groups
+   ============================================================================ */
+
+.section-header-row {
+    background: var(--bg-tertiary) !important;
+}
+
+.section-header-row td {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border);
+}
+
+.auto-section-header td {
+    color: #10b981;
+    border-bottom-color: rgba(16, 185, 129, 0.4);
+}
+
+.manual-section-header td {
+    color: var(--text-muted);
+    border-bottom-color: var(--border);
+}
+
+.section-label {
+    margin-right: 1rem;
+}
+
+.section-hint {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+/* ============================================================================
+   Drag and Drop Styles
+   ============================================================================ */
+
+.drag-checkbox-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 1rem;
+    user-select: none;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+    width: 1rem;
+    text-align: center;
+}
+
+.drag-handle:hover {
+    opacity: 1;
+    color: #10b981;
+}
+
+.drag-handle-spacer {
+    width: 1rem;
+    display: inline-block;
+}
+
+.draggable-group {
+    cursor: default;
+}
+
+.draggable-group:hover .drag-handle {
+    opacity: 0.8;
+}
+
+.dragging {
+    opacity: 0.5;
+    background: var(--bg-tertiary) !important;
+}
+
+.drop-target-hint {
+    background: rgba(16, 185, 129, 0.05) !important;
+}
+
+.drop-target-above {
+    box-shadow: inset 0 3px 0 #10b981;
+}
+
+.drop-target-below {
+    box-shadow: inset 0 -3px 0 #10b981;
+}
+
+/* ============================================================================
+   AUTO/MANUAL Badges
+   ============================================================================ */
+
+.badge-auto {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+}
+
+.badge-auto-channel {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+}
+
+.light-theme .badge-auto,
+.light-theme .badge-auto-channel {
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* Row styling for different modes */
+.auto-group-row {
+    border-left: 3px solid transparent;
+}
+
+.auto-group-row:hover {
+    border-left-color: #10b981;
+}
+
+.manual-group-row {
+    border-left: 3px solid transparent;
+}
+</style>
+{% endblock %}

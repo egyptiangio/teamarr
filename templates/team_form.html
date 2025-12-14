@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+{% from "_macros.html" import channel_id_vars %}
+
+{% block title %}{% if mode == 'add' %}Add{% else %}Edit{% endif %} Team - Teamarr{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <h1>{% if mode == 'add' %}Add Team{% else %}Edit Team{% endif %}</h1>
+        {% if mode == 'edit' %}
+            <p class="page-subtitle">Update team settings</p>
+        {% endif %}
+    </div>
+
+    <form method="POST" action="{% if mode == 'add' %}{{ url_for('teams_add') }}{% else %}{{ url_for('teams_edit', team_id=team.id) }}{% endif %}">
+
+        <div class="form-section">
+            {% if mode == 'add' %}
+                <!-- ESPN URL Parser -->
+                <div class="form-group">
+                    <label for="espn_url">ESPN Team URL *</label>
+                    <div class="input-group">
+                        <input type="text" id="espn_url" class="form-control" placeholder="https://www.espn.com/nba/team/_/name/det/detroit-pistons">
+                        <button type="button" onclick="parseESPNUrl()" class="btn btn-secondary">Parse URL</button>
+                    </div>
+                    <small class="form-help">Paste the ESPN team page URL to fetch team information</small>
+                </div>
+
+                <!-- Hidden fields for team data -->
+                <input type="hidden" id="team_name" name="team_name" required>
+                <input type="hidden" id="team_abbrev" name="team_abbrev">
+                <input type="hidden" id="league" name="league" required>
+                <input type="hidden" id="sport" name="sport" required>
+                <input type="hidden" id="espn_team_id" name="espn_team_id">
+                <input type="hidden" id="team_logo_url" name="team_logo_url">
+                <input type="hidden" id="team_color" name="team_color">
+            {% endif %}
+
+            {% if mode == 'edit' %}
+                <!-- Read-only team info for edit mode -->
+                <div class="team-info-display">
+                    <div style="display: flex; align-items: center; gap: 1.5rem;">
+                        <img src="{{ team.team_logo_url }}" alt="{{ team.team_name }}" class="team-logo-large">
+                        <div>
+                            <h3>{{ team.team_name }}</h3>
+                            <p class="text-muted">{{ team.league.upper() }} &bull; {{ team.sport.title() }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden fields to preserve team data -->
+                <input type="hidden" name="team_name" value="{{ team.team_name }}">
+                <input type="hidden" name="team_abbrev" value="{{ team.team_abbrev }}">
+                <input type="hidden" name="league" value="{{ team.league }}">
+                <input type="hidden" name="sport" value="{{ team.sport }}">
+                <input type="hidden" name="espn_team_id" value="{{ team.espn_team_id }}">
+                <input type="hidden" name="team_logo_url" value="{{ team.team_logo_url }}">
+                <input type="hidden" name="team_color" value="{{ team.team_color }}">
+            {% endif %}
+
+            <div class="form-group">
+                <label>Channel ID *</label>
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="use_default_channel_id" {% if not team %}checked{% endif %} onchange="toggleChannelIdMode()">
+                        <span>Use Global Default Format</span>
+                    </label>
+                    <small class="form-help">Current: <code>{{ settings.default_channel_id_format or '{team_name_pascal}.{league_id}' }}</code><br>
+                    Available variables: {{ channel_id_vars() }}</small>
+                </div>
+                <div id="channel_id_preview" style="display: none; margin-bottom: 0.75rem;">
+                    <div style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem;">
+                        <small style="color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Preview:</small>
+                        <code id="channel_id_preview_text" style="color: var(--primary); font-size: 0.9375rem;">-</code>
+                    </div>
+                </div>
+                <div id="channel_id_custom_container">
+                    <input type="text" id="channel_id" name="channel_id" class="form-control" required
+                           value="{{ team.channel_id if team else '' }}"
+                           placeholder="DetroitPistons.nba or {team_name_pascal}.{league_id}"
+                           oninput="updateCustomChannelPreview()">
+                    <small class="form-help">Enter a channel ID directly or use variables (they will be translated)</small>
+                    <div id="custom_channel_preview" style="display: none; margin-top: 0.5rem;">
+                        <small style="color: var(--text-muted);">Preview: </small>
+                        <code id="custom_channel_preview_text" style="color: var(--primary);"></code>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="template_id">Template</label>
+                <select id="template_id" name="template_id" class="form-control">
+                    <option value="">-- No Template --</option>
+                    {% for template in templates %}
+                        <option value="{{ template.id }}"
+                                {% if team and team.template_id == template.id %}selected{% endif %}>
+                            {{ template.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <small class="form-help">Unassigned teams won't generate EPG</small>
+            </div>
+
+            <div class="form-group">
+                <label for="channel_logo_url">Channel Logo URL (Optional)</label>
+                <div style="display: flex; gap: 1rem; align-items: flex-start;">
+                    <div style="flex: 1;">
+                        <input type="url" id="channel_logo_url" name="channel_logo_url" class="form-control"
+                               value="{{ team.channel_logo_url if team and team.channel_logo_url else '' }}"
+                               placeholder="https://example.com/custom-logo.png"
+                               oninput="updateLogoPreview()">
+                        <small class="form-help">Custom logo URL for this channel. If not set, uses team logo from ESPN.</small>
+                    </div>
+                    <div id="logo-preview-container" style="display: none;">
+                        <img id="logo-preview" src="" alt="Logo preview" class="logo-preview">
+                        <small class="form-help" style="display: block; text-align: center; margin-top: 0.25rem;">Preview</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="active" {% if not team or team.active %}checked{% endif %}>
+                    <span>Active</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                {% if mode == 'add' %}➕ Add Team{% else %}💾 Save Changes{% endif %}
+            </button>
+            <a href="{{ url_for('teams_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+async function parseESPNUrl() {
+    const url = document.getElementById('espn_url').value.trim();
+
+    if (!url) {
+        alert('Please enter an ESPN team URL');
+        return;
+    }
+
+    try {
+        const response = await fetch('{{ url_for("api_parse_espn_url") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url: url })
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.team) {
+            const team = result.team;
+
+            // Fill in form fields
+            document.getElementById('team_name').value = team.team_name || '';
+            document.getElementById('team_abbrev').value = team.team_abbrev || '';
+            document.getElementById('league').value = team.league || '';
+            document.getElementById('sport').value = team.sport || '';
+            document.getElementById('espn_team_id').value = team.espn_team_id || '';
+            document.getElementById('team_logo_url').value = team.team_logo_url || '';
+            document.getElementById('team_color').value = team.team_color || '';
+
+            // Update channel ID preview if using default format
+            if (document.getElementById('use_default_channel_id').checked) {
+                updateChannelIdPreview();
+            } else {
+                // Auto-generate channel_id from team name if using custom
+                if (team.team_name) {
+                    const channelId = team.team_name.toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-|-$/g, '');
+                    document.getElementById('channel_id').value = channelId;
+                }
+            }
+
+            alert('Team information loaded successfully!');
+        } else {
+            alert('Error: ' + (result.message || 'Could not fetch team data'));
+        }
+    } catch (error) {
+        alert('Error parsing ESPN URL: ' + error.message);
+    }
+}
+
+function updateLogoPreview() {
+    const url = document.getElementById('channel_logo_url').value.trim();
+    const preview = document.getElementById('logo-preview');
+    const container = document.getElementById('logo-preview-container');
+
+    if (url) {
+        preview.src = url;
+        container.style.display = 'block';
+
+        // Hide preview if image fails to load
+        preview.onerror = function() {
+            container.style.display = 'none';
+        };
+    } else {
+        container.style.display = 'none';
+    }
+}
+
+// Initialize preview on page load if URL exists
+document.addEventListener('DOMContentLoaded', function() {
+    updateLogoPreview();
+    toggleChannelIdMode();
+});
+
+function toggleChannelIdMode() {
+    const useDefault = document.getElementById('use_default_channel_id').checked;
+    const customContainer = document.getElementById('channel_id_custom_container');
+    const preview = document.getElementById('channel_id_preview');
+    const channelIdInput = document.getElementById('channel_id');
+
+    if (useDefault) {
+        customContainer.style.display = 'none';
+        preview.style.display = 'block';
+        channelIdInput.removeAttribute('required');
+        updateChannelIdPreview();
+    } else {
+        customContainer.style.display = 'block';
+        preview.style.display = 'none';
+        channelIdInput.setAttribute('required', 'required');
+    }
+}
+
+function updateChannelIdPreview() {
+    const format = '{{ settings.default_channel_id_format or "{team_name_pascal}.{league_id}" }}';
+    const channelId = generateChannelId(format);
+    document.getElementById('channel_id_preview_text').textContent = channelId || '(Parse ESPN URL to see preview)';
+
+    // Update the hidden input for form submission if using default
+    if (document.getElementById('use_default_channel_id').checked) {
+        document.getElementById('channel_id').value = channelId;
+    }
+}
+
+function generateChannelId(format) {
+    {% if mode == 'add' %}
+        // For add mode, get from hidden fields populated by ESPN URL parser
+        const teamAbbrev = document.getElementById('team_abbrev')?.value || '';
+        const teamName = document.getElementById('team_name')?.value || '';
+        const teamSlug = ''; // We don't have slug yet in add mode
+        const espnTeamId = document.getElementById('espn_team_id')?.value || '';
+        const league = document.getElementById('league')?.value || '';
+        const leagueName = ''; // Not available in add mode, will use league.upper() as fallback
+        const sport = document.getElementById('sport')?.value || '';
+    {% else %}
+        // For edit mode, use team data from template
+        const teamAbbrev = '{{ team.team_abbrev or "" }}';
+        const teamName = '{{ team.team_name or "" }}';
+        const teamSlug = '{{ team.team_slug or "" }}';
+        const espnTeamId = '{{ team.espn_team_id or "" }}';
+        const league = '{{ team.league or "" }}';
+        const leagueName = '{{ team.league_name or "" }}';
+        const sport = '{{ team.sport or "" }}';
+    {% endif %}
+
+    if (!teamAbbrev && !teamName) {
+        return '';
+    }
+
+    // Convert team_name to PascalCase, stripping punctuation (e.g., "St. Louis Blues" -> "StLouisBlues")
+    const teamNamePascal = teamName
+        .split(/\s+/)
+        .map(word => word.replace(/[^a-zA-Z0-9]/g, ''))
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join('');
+
+    // Replace variables in format (matching Python logic in template_engine.py)
+    let channelId = format
+        .replace('{team_name_pascal}', teamNamePascal)
+        .replace('{league_id}', league.toLowerCase())
+        .replace('{team_abbrev}', teamAbbrev.toLowerCase())
+        .replace('{team_name}', teamName.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+        .replace('{team_slug}', teamSlug || teamName.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+        .replace('{espn_team_id}', espnTeamId)
+        .replace('{league}', leagueName || league.toUpperCase())  // Use league_name (NBA) or fallback to league.upper()
+        .replace('{sport}', sport.toLowerCase());
+
+    // Clean up channel ID - match Python logic in app.py
+    if (format.includes('{team_name_pascal}') || (format.includes('{league}') && !format.includes('{league_id}'))) {
+        // Allow uppercase letters (for PascalCase channel IDs)
+        channelId = channelId.replace(/[^a-zA-Z0-9.-]+/g, '');
+    } else {
+        // Traditional: lowercase only, replace special chars with dashes
+        channelId = channelId.replace(/[^a-z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    }
+
+    return channelId;
+}
+
+function updateCustomChannelPreview() {
+    const input = document.getElementById('channel_id').value;
+    const previewDiv = document.getElementById('custom_channel_preview');
+    const previewText = document.getElementById('custom_channel_preview_text');
+
+    // Check if input contains any variables
+    if (input.includes('{') && input.includes('}')) {
+        // Translate vars and show preview
+        const translated = generateChannelId(input);
+        previewDiv.style.display = 'block';
+        previewText.textContent = translated || '(Parse ESPN URL to see preview)';
+    } else {
+        // No vars, hide preview
+        previewDiv.style.display = 'none';
+    }
+}
+
+// Translate vars in channel_id before form submission
+document.querySelector('form').addEventListener('submit', function(e) {
+    if (!document.getElementById('use_default_channel_id').checked) {
+        const channelIdInput = document.getElementById('channel_id');
+        const value = channelIdInput.value;
+        // If the input contains variables, translate them
+        if (value.includes('{') && value.includes('}')) {
+            channelIdInput.value = generateChannelId(value);
+        }
+    }
+});
+</script>
+
+<style>
+.form-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.page-header {
+    margin-bottom: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.form-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.form-section h2 {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border);
+}
+
+.team-info-display {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.team-info-display h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.team-info-display p {
+    margin: 0;
+    font-size: 0.9375rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9375rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+select.form-control {
+    padding-right: 2rem;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+}
+
+.light-theme select.form-control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-control:read-only {
+    background: var(--bg-primary);
+    color: var(--text-muted);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-group .form-control {
+    flex: 1;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.info-box {
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+    color: #93c5fd;
+    font-size: 0.9375rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    padding-top: 1rem;
+}
+
+/* Team logo display */
+.team-logo-large {
+    height: 80px;
+    width: 80px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+/* Logo preview */
+.logo-preview {
+    height: 80px;
+    width: 80px;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    padding: 0.5rem;
+}
+</style>
+{% endblock %}

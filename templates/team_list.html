@@ -1,0 +1,1517 @@
+{% extends "base.html" %}
+{% from "_macros.html" import channel_id_vars_help %}
+
+{% block title %}Teams - Teamarr{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <h1>Teams</h1>
+            <p class="page-subtitle">Manage your sports teams</p>
+        </div>
+        <div class="page-actions">
+            <a href="{{ url_for('teams_import') }}" class="btn btn-success">
+                🏆 Import Teams
+            </a>
+            <a href="{{ url_for('teams_add_form') }}" class="btn btn-secondary">
+                ➕ Add Team Manually
+            </a>
+        </div>
+    </div>
+
+    {% if teams %}
+        <!-- Stats Summary Tiles -->
+        {% set team_stats = namespace(total=0, enabled=0, by_league={}) %}
+        {% for team in teams %}
+            {% set team_stats.total = team_stats.total + 1 %}
+            {% if team.active %}
+                {% set team_stats.enabled = team_stats.enabled + 1 %}
+            {% endif %}
+            {% set league = team.league %}
+            {% if league not in team_stats.by_league %}
+                {% set _ = team_stats.by_league.update({league: {'total': 0, 'enabled': 0}}) %}
+            {% endif %}
+            {% set _ = team_stats.by_league[league].update({'total': team_stats.by_league[league].total + 1}) %}
+            {% if team.active %}
+                {% set _ = team_stats.by_league[league].update({'enabled': team_stats.by_league[league].enabled + 1}) %}
+            {% endif %}
+        {% endfor %}
+
+        <h2 class="stats-section-title">📊 Teams Analysis</h2>
+        <div class="stats-tiles">
+            <div class="stat-tile" data-tooltip-id="tooltip-configured">
+                <div class="stat-value">{{ team_stats.total }}</div>
+                <div class="stat-label">Configured</div>
+                <div class="stat-tooltip" id="tooltip-configured">
+                    <div class="tooltip-title">By League</div>
+                    {% for league, counts in team_stats.by_league.items()|sort %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ league.upper() }}</span>
+                        <span class="tooltip-value">{{ counts.total }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="stat-tile" data-tooltip-id="tooltip-enabled">
+                <div class="stat-value">{{ team_stats.enabled }}</div>
+                <div class="stat-label">Enabled</div>
+                <div class="stat-tooltip" id="tooltip-enabled">
+                    <div class="tooltip-title">By League</div>
+                    {% for league, counts in team_stats.by_league.items()|sort if counts.enabled > 0 %}
+                    <div class="tooltip-row">
+                        <span class="tooltip-name">{{ league.upper() }}</span>
+                        <span class="tooltip-value">{{ counts.enabled }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="stat-tile" data-tooltip-id="tooltip-games-today" id="tile-games-today">
+                <div class="stat-value" id="games-today-value">--</div>
+                <div class="stat-label">Games Today</div>
+                <div class="stat-tooltip" id="tooltip-games-today">
+                    <div class="tooltip-title">Today's Games</div>
+                    <div id="games-today-list">
+                        <div class="tooltip-row">
+                            <span class="tooltip-name" style="font-style: italic;">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stat-tile" data-tooltip-id="tooltip-live-now" id="tile-live-now">
+                <div class="stat-value" id="live-now-value">--</div>
+                <div class="stat-label">Live Now</div>
+                <div class="stat-tooltip" id="tooltip-live-now">
+                    <div class="tooltip-title">Live Games</div>
+                    <div id="live-now-list">
+                        <div class="tooltip-row">
+                            <span class="tooltip-name" style="font-style: italic;">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch Operations Toolbar (Static) -->
+        <div class="batch-toolbar">
+            <div class="batch-info">
+                <strong>Batch Operations</strong>
+                <span class="batch-count">(<span id="selected-count">0</span> selected)</span>
+            </div>
+            <div class="batch-actions">
+                <select id="bulk-template" class="form-control form-control-sm" disabled>
+                    <option value="">Select template...</option>
+                    <option value="">-- Unassign --</option>
+                    {% for template in templates %}
+                        <option value="{{ template.id }}">{{ template.name }}</option>
+                    {% endfor %}
+                </select>
+                <button onclick="bulkAssignTemplate()" class="btn btn-sm btn-secondary" id="btn-assign" disabled>
+                    🔗 Assign Template
+                </button>
+                <button onclick="showChannelIdModal()" class="btn btn-sm btn-primary" id="btn-change-channel-id" disabled>
+                    🔧 Change Channel ID
+                </button>
+                <button onclick="bulkActivate()" class="btn btn-sm btn-success" id="btn-activate" disabled>
+                    ✅ Activate
+                </button>
+                <button onclick="bulkDeactivate()" class="btn btn-sm btn-warning" id="btn-deactivate" disabled>
+                    ⏸️ Deactivate
+                </button>
+                <button onclick="bulkDelete()" class="btn btn-sm btn-danger" id="btn-delete" disabled>
+                    🗑️ Delete
+                </button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr class="header-row">
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)">
+                        </th>
+                        <th class="sortable" onclick="sortTable('team')" data-sort="team">
+                            Team <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 70px;" class="sortable" onclick="sortTable('league')" data-sort="league">
+                            League <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 70px;" class="sortable" onclick="sortTable('sport')" data-sort="sport">
+                            Sport <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 120px;" class="sortable" onclick="sortTable('template')" data-sort="template">
+                            Template <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 300px;" class="sortable" onclick="sortTable('channel')" data-sort="channel">
+                            Channel ID <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 60px;" class="sortable" onclick="sortTable('status')" data-sort="status">
+                            Status <span class="sort-indicator"></span>
+                        </th>
+                        <th style="width: 70px;">Actions</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th></th>
+                        <th></th>
+                        <th>
+                            <select id="filter-league" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                {% for league in teams|map(attribute='league')|unique|sort %}
+                                    <option value="{{ league }}">{{ league.upper() }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <select id="filter-sport" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                {% for sport in teams|map(attribute='sport')|unique|sort %}
+                                    <option value="{{ sport }}">{{ sport|title }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <select id="filter-template" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="_unassigned">Unassigned</option>
+                                {% for template in templates %}
+                                    <option value="{{ template.id }}">{{ template.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th></th>
+                        <th>
+                            <select id="filter-status" class="filter-dropdown" onchange="applyFilters()">
+                                <option value="">All</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for team in teams %}
+                        <tr data-team-id="{{ team.id }}"
+                            data-team-name="{{ team.team_name }}"
+                            data-league="{{ team.league }}"
+                            data-sport="{{ team.sport }}"
+                            data-template="{{ team.template_id or '' }}"
+                            data-template-name="{{ team.template_name or 'Unassigned' }}"
+                            data-channel="{{ team.channel_id }}"
+                            data-status="{{ 'active' if team.active else 'inactive' }}">
+                            <td>
+                                <input type="checkbox" class="team-checkbox" value="{{ team.id }}"
+                                       onclick="handleCheckboxClick(event, this)" onchange="updateBulkToolbar()">
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    <img src="{{ team.team_logo_url }}" alt="{{ team.team_name }}" class="team-logo-small">
+                                    <div>
+                                        <strong style="font-size: 0.9375rem;">{{ team.team_name }}</strong>
+                                        <div class="text-muted" style="font-size: 0.8125rem;">{{ team.team_abbrev }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="league-cell{% if team.sport == 'soccer' %} soccer-multi-league{% endif %}"
+                                     {% if team.sport == 'soccer' %}data-team-id="{{ team.espn_team_id }}"{% endif %}>
+                                    <div class="league-logo-wrapper">
+                                        <img src="{{ league_logos.get(team.league, '') }}"
+                                             alt="{{ team.league.upper() }}"
+                                             class="league-logo"
+                                             title="{{ team.league.upper() }}">
+                                        {% if team.sport == 'soccer' %}
+                                        <span class="multi-league-indicator" style="display: none;">+</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if team.sport == 'soccer' %}
+                                    <div class="multi-league-tooltip" style="display: none;">
+                                        <div class="tooltip-title">Competitions</div>
+                                        <div class="multi-league-list">Loading...</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td style="font-size: 1.5rem; padding-left: 1rem; line-height: 1; vertical-align: middle;" title="{{ team.sport|title }}">
+                                <span style="display: inline-block; height: 1.5rem; line-height: 1.5rem;">
+                                {% if team.sport == 'basketball' %}🏀
+                                {% elif team.sport == 'football' %}🏈
+                                {% elif team.sport == 'baseball' %}⚾
+                                {% elif team.sport == 'hockey' %}🏒
+                                {% elif team.sport == 'soccer' %}⚽
+                                {% else %}🏆
+                                {% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                {% if team.template_name %}
+                                    <span class="badge badge-success">{{ team.template_name }}</span>
+                                {% else %}
+                                    <span class="badge badge-warning">Unassigned</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted">
+                                <code>{{ team.channel_id }}</code>
+                            </td>
+                            <td>
+                                <label class="toggle-switch" title="Toggle active status">
+                                    <input type="checkbox"
+                                           {% if team.active %}checked{% endif %}
+                                           onchange="toggleTeamStatus({{ team.id }}, this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{{ url_for('teams_edit_form', team_id=team.id) }}" class="btn-icon btn-icon-edit" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('teams_delete_single', team_id=team.id) }}" style="display: inline;"
+                                          onsubmit="return confirm('Delete {{ team.team_name }}?')">
+                                        <button type="submit" class="btn-icon btn-icon-delete" title="Delete">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🏆</div>
+            <h3>No Teams Yet</h3>
+            <p>Add your favorite sports teams to start generating EPG data.</p>
+            <p>You can add teams using their ESPN team page URLs.</p>
+            <a href="{{ url_for('teams_add_form') }}" class="btn btn-primary">
+                ➕ Add Your First Team
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<script>
+// Sorting state
+let currentSort = { column: null, direction: 'asc' };
+let lastChecked = null;
+
+// Toggle select all (only visible rows)
+function toggleSelectAll(checkbox) {
+    const rows = document.querySelectorAll('.table tbody tr');
+    rows.forEach(row => {
+        if (row.style.display !== 'none') {
+            const cb = row.querySelector('.team-checkbox');
+            cb.checked = checkbox.checked;
+        }
+    });
+    updateBulkToolbar();
+}
+
+// Update batch toolbar button states
+function updateBulkToolbar() {
+    const checkboxes = document.querySelectorAll('.team-checkbox:checked');
+    const hasSelection = checkboxes.length > 0;
+
+    // Enable/disable batch operation controls
+    document.getElementById('bulk-template').disabled = !hasSelection;
+    document.getElementById('btn-assign').disabled = !hasSelection;
+    document.getElementById('btn-change-channel-id').disabled = !hasSelection;
+    document.getElementById('btn-activate').disabled = !hasSelection;
+    document.getElementById('btn-deactivate').disabled = !hasSelection;
+    document.getElementById('btn-delete').disabled = !hasSelection;
+
+    // Update count display
+    const allRows = document.querySelectorAll('.table tbody tr');
+    const visibleRows = Array.from(allRows).filter(row => row.style.display !== 'none');
+    updateFilterInfo(visibleRows.length, allRows.length);
+}
+
+// Get selected team IDs
+function getSelectedTeamIds() {
+    const checkboxes = document.querySelectorAll('.team-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Handle checkbox click with shift/ctrl support
+function handleCheckboxClick(event, checkbox) {
+    const checkboxes = Array.from(document.querySelectorAll('.team-checkbox'));
+
+    if (event.shiftKey && lastChecked && lastChecked !== checkbox) {
+        // Shift-click: select range
+        const start = checkboxes.indexOf(lastChecked);
+        const end = checkboxes.indexOf(checkbox);
+        const range = checkboxes.slice(Math.min(start, end), Math.max(start, end) + 1);
+
+        range.forEach(cb => cb.checked = lastChecked.checked);
+    }
+
+    lastChecked = checkbox;
+}
+
+// Apply filters to table
+function applyFilters() {
+    const leagueFilter = document.getElementById('filter-league').value;
+    const sportFilter = document.getElementById('filter-sport').value;
+    const templateFilter = document.getElementById('filter-template').value;
+    const statusFilter = document.getElementById('filter-status').value;
+
+    const rows = document.querySelectorAll('.table tbody tr');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        let show = true;
+
+        // League filter
+        if (leagueFilter && row.dataset.league !== leagueFilter) {
+            show = false;
+        }
+
+        // Sport filter
+        if (sportFilter && row.dataset.sport !== sportFilter) {
+            show = false;
+        }
+
+        // Template filter
+        if (templateFilter) {
+            if (templateFilter === '_unassigned') {
+                if (row.dataset.template !== '') show = false;
+            } else {
+                if (row.dataset.template !== templateFilter) show = false;
+            }
+        }
+
+        // Status filter
+        if (statusFilter && row.dataset.status !== statusFilter) {
+            show = false;
+        }
+
+        row.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+
+    // Update the batch toolbar info
+    updateFilterInfo(visibleCount, rows.length);
+}
+
+// Update filter info display
+function updateFilterInfo(visible, total) {
+    const batchInfo = document.querySelector('.batch-info');
+    const selectedCount = document.querySelectorAll('.team-checkbox:checked').length;
+
+    if (visible < total) {
+        batchInfo.innerHTML = `<strong>Batch Operations</strong> <span class="batch-count">(<span id="selected-count">${selectedCount}</span> selected, ${visible} of ${total} visible)</span>`;
+    } else {
+        batchInfo.innerHTML = `<strong>Batch Operations</strong> <span class="batch-count">(<span id="selected-count">${selectedCount}</span> selected)</span>`;
+    }
+}
+
+// Sort table (respects filters)
+function sortTable(column) {
+    const tbody = document.querySelector('.table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Toggle direction if same column
+    if (currentSort.column === column) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.column = column;
+        currentSort.direction = 'asc';
+    }
+
+    // Sort rows (including hidden ones to maintain consistent order)
+    rows.sort((a, b) => {
+        let aVal, bVal;
+
+        switch(column) {
+            case 'team':
+                aVal = a.dataset.teamName.toLowerCase();
+                bVal = b.dataset.teamName.toLowerCase();
+                break;
+            case 'league':
+                aVal = a.dataset.league.toLowerCase();
+                bVal = b.dataset.league.toLowerCase();
+                break;
+            case 'sport':
+                aVal = a.dataset.sport.toLowerCase();
+                bVal = b.dataset.sport.toLowerCase();
+                break;
+            case 'template':
+                aVal = a.dataset.templateName.toLowerCase();
+                bVal = b.dataset.templateName.toLowerCase();
+                break;
+            case 'channel':
+                aVal = a.dataset.channel.toLowerCase();
+                bVal = b.dataset.channel.toLowerCase();
+                break;
+            case 'status':
+                aVal = a.dataset.status;
+                bVal = b.dataset.status;
+                break;
+        }
+
+        if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // Re-append rows (preserving their visibility state)
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort indicators
+    document.querySelectorAll('.sort-indicator').forEach(indicator => {
+        indicator.textContent = '';
+        indicator.parentElement.classList.remove('sort-asc', 'sort-desc');
+    });
+
+    const activeHeader = document.querySelector(`th[data-sort="${column}"]`);
+    activeHeader.classList.add(`sort-${currentSort.direction}`);
+    activeHeader.querySelector('.sort-indicator').textContent = currentSort.direction === 'asc' ? ' ▲' : ' ▼';
+}
+
+// Toggle team active status
+async function toggleTeamStatus(teamId, isActive) {
+    try {
+        const formData = new FormData();
+        formData.append('active', isActive ? '1' : '0');
+
+        const response = await fetch(`/teams/${teamId}/toggle-status`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            alert('Error: ' + result.message);
+            // Revert the toggle
+            const toggle = event.target;
+            toggle.checked = !toggle.checked;
+        } else {
+            // Update the row data attribute
+            const row = document.querySelector(`tr[data-team-id="${teamId}"]`);
+            row.dataset.status = isActive ? 'active' : 'inactive';
+        }
+    } catch (error) {
+        alert('Error toggling status: ' + error.message);
+        // Revert the toggle
+        const toggle = event.target;
+        toggle.checked = !toggle.checked;
+    }
+}
+
+async function bulkAssignTemplate() {
+    const teamIds = getSelectedTeamIds();
+    const templateId = document.getElementById('bulk-template').value;
+
+    if (!teamIds.length) {
+        alert('No teams selected');
+        return;
+    }
+
+    const formData = new FormData();
+    teamIds.forEach(id => formData.append('team_ids[]', id));
+    formData.append('template_id', templateId);
+
+    try {
+        const response = await fetch('{{ url_for("teams_bulk_assign_template") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message);
+            location.reload();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function bulkActivate() {
+    const teamIds = getSelectedTeamIds();
+
+    if (!teamIds.length || !confirm(`Activate ${teamIds.length} team(s)?`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    teamIds.forEach(id => formData.append('team_ids[]', id));
+
+    try {
+        const response = await fetch('{{ url_for("teams_bulk_activate") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message);
+            location.reload();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function bulkDeactivate() {
+    const teamIds = getSelectedTeamIds();
+
+    if (!teamIds.length || !confirm(`Deactivate ${teamIds.length} team(s)?`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    teamIds.forEach(id => formData.append('team_ids[]', id));
+
+    try {
+        const response = await fetch('{{ url_for("teams_bulk_deactivate") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message);
+            location.reload();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function bulkDelete() {
+    const teamIds = getSelectedTeamIds();
+
+    if (!teamIds.length) {
+        alert('No teams selected');
+        return;
+    }
+
+    if (!confirm(`⚠️ DELETE ${teamIds.length} team(s)? This cannot be undone!`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    teamIds.forEach(id => formData.append('team_ids[]', id));
+
+    try {
+        const response = await fetch('{{ url_for("teams_bulk_delete") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message);
+            location.reload();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Load live game stats from EPG
+async function loadLiveStats() {
+    try {
+        const response = await fetch('/api/epg-stats/live');
+        const result = await response.json();
+
+        if (result.success) {
+            const teamStats = result.stats.team;
+
+            // Update Games Today
+            document.getElementById('games-today-value').textContent = teamStats.games_today;
+
+            // Update Live Now
+            document.getElementById('live-now-value').textContent = teamStats.live_now;
+
+            // Update tooltips
+            const gamesTodayList = document.getElementById('games-today-list');
+            if (teamStats.today_events.length > 0) {
+                gamesTodayList.innerHTML = teamStats.today_events.slice(0, 5).map(e =>
+                    `<div class="tooltip-row">
+                        <span class="tooltip-name">${e.start}</span>
+                        <span class="tooltip-value" style="font-size: 0.65rem; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${e.title}</span>
+                    </div>`
+                ).join('');
+                if (teamStats.today_events.length > 5) {
+                    gamesTodayList.innerHTML += `<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">+${teamStats.today_events.length - 5} more</span></div>`;
+                }
+            } else {
+                gamesTodayList.innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">No games today</span></div>';
+            }
+
+            const liveNowList = document.getElementById('live-now-list');
+            const liveEvents = teamStats.today_events.filter((_, i) => i < teamStats.live_now);
+            if (teamStats.live_now > 0) {
+                liveNowList.innerHTML = `<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">${teamStats.live_now} game(s) in progress</span></div>`;
+            } else {
+                liveNowList.innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">No games live</span></div>';
+            }
+        } else {
+            document.getElementById('games-today-value').textContent = '--';
+            document.getElementById('live-now-value').textContent = '--';
+            document.getElementById('games-today-list').innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">Run EPG generation first</span></div>';
+            document.getElementById('live-now-list').innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">Run EPG generation first</span></div>';
+        }
+    } catch (error) {
+        console.error('Error loading live stats:', error);
+        document.getElementById('games-today-value').textContent = '--';
+        document.getElementById('live-now-value').textContent = '--';
+        document.getElementById('games-today-list').innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">Run EPG generation first</span></div>';
+        document.getElementById('live-now-list').innerHTML = '<div class="tooltip-row"><span class="tooltip-name" style="font-style: italic;">Run EPG generation first</span></div>';
+    }
+}
+
+// Load stats on page load
+loadLiveStats();
+</script>
+
+<style>
+.page-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 0;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    gap: 2rem;
+}
+
+.page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: var(--text-primary);
+}
+
+.page-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.page-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.table-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead {
+    background: var(--bg-tertiary);
+    border-bottom: 2px solid var(--border);
+}
+
+.table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    padding: 0.625rem 0.75rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.table td:has(.league-logo) {
+    vertical-align: middle;
+}
+
+.table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.action-buttons form {
+    margin: 0;
+}
+
+.action-buttons .btn {
+    white-space: nowrap;
+    display: inline-block;
+    box-sizing: border-box;
+}
+
+.action-buttons button.btn {
+    height: auto;
+    line-height: inherit;
+}
+
+/* Batch operations toolbar */
+.batch-toolbar {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.batch-info {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.batch-count {
+    color: var(--text-muted);
+    font-weight: normal;
+    font-size: 0.875rem;
+}
+
+.batch-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.batch-actions button:disabled,
+.batch-actions select:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.form-control-sm {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.875rem;
+    min-width: 150px;
+}
+
+/* Filter row in table header */
+.filter-row th {
+    padding: 0.125rem 0.75rem 0.5rem 0.75rem !important;
+    border-bottom: 2px solid var(--border);
+}
+
+.filter-dropdown {
+    width: 100%;
+    padding: 0.25rem 0.375rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.filter-dropdown:focus {
+    outline: none;
+    border-color: var(--primary);
+    color: var(--text-primary);
+}
+
+.filter-dropdown option {
+    font-style: normal;
+}
+
+/* Sortable headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.sortable:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.sortable.sort-asc,
+.sortable.sort-desc {
+    background: rgba(59, 130, 246, 0.15);
+}
+
+.sort-indicator {
+    font-size: 0.75rem;
+    opacity: 0.5;
+}
+
+/* Toggle switch for active status */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(239, 68, 68, 0.3);
+    border: 1px solid var(--danger);
+    border-radius: 24px;
+    transition: all 0.3s;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--danger);
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: rgba(16, 185, 129, 0.3);
+    border-color: var(--success);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+    background-color: var(--success);
+}
+
+.toggle-switch:hover .toggle-slider {
+    opacity: 0.8;
+}
+
+.form-control {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.875rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.1875rem 0.4375rem;
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fcd34d;
+}
+
+.badge-inactive {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+}
+
+/* Light mode badge overrides */
+.light-theme .badge {
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.light-theme .badge-success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #047857;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.light-theme .badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.light-theme .badge-inactive {
+    background: rgba(239, 68, 68, 0.15);
+    color: #b91c1c;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-state .empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+}
+
+.empty-state .btn {
+    margin-top: 1.5rem;
+}
+
+code {
+    background: var(--bg-tertiary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* League logos */
+.league-logo {
+    height: 30px;
+    width: auto;
+    vertical-align: middle;
+    object-fit: contain;
+    display: inline-block;
+}
+
+/* Multi-league indicator for soccer teams */
+.league-cell {
+    position: relative;
+    display: inline-block;
+}
+
+.league-logo-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.multi-league-indicator {
+    position: absolute;
+    bottom: -2px;
+    right: -4px;
+    background: var(--accent);
+    color: white;
+    font-size: 0.6rem;
+    font-weight: 700;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border: 1px solid var(--bg-secondary);
+}
+
+.soccer-multi-league {
+    cursor: help;
+}
+
+.multi-league-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem;
+    min-width: 200px;
+    max-width: 280px;
+    z-index: 1000;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.soccer-multi-league:hover .multi-league-tooltip {
+    display: block !important;
+}
+
+.multi-league-tooltip .tooltip-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.multi-league-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.multi-league-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.multi-league-item img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.multi-league-item > span:first-of-type {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.multi-league-item.primary {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.multi-league-item .league-category {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    text-transform: capitalize;
+    text-align: right;
+    min-width: 70px;
+}
+
+/* Team logos in table */
+.team-logo-small {
+    height: 32px;
+    width: 32px;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+/* Modal styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem;
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--border);
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    margin-bottom: 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+/* Stats Summary Tiles */
+.stats-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.stats-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.stat-tile {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    position: relative;
+    cursor: default;
+}
+
+.stat-tile[data-tooltip-id] {
+    cursor: help;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stat-tile-placeholder .stat-value {
+    color: var(--text-muted);
+}
+
+/* Stat Tooltip */
+.stat-tooltip {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    min-width: 160px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.stat-tile:hover .stat-tooltip {
+    display: block;
+}
+
+.tooltip-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.375rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    padding: 0.125rem 0;
+}
+
+.tooltip-name {
+    color: var(--text-secondary);
+}
+
+.tooltip-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+</style>
+
+<!-- Channel ID Modal -->
+<div id="channel-id-modal" class="modal-overlay" onclick="closeModalOnBackdrop(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>Change Channel ID</h2>
+            <button class="modal-close" onclick="closeChannelIdModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                Update channel IDs for <strong id="modal-team-count">0</strong> selected team(s).
+            </p>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label class="checkbox-label">
+                    <input type="radio" name="channel_id_mode" value="default" checked onchange="toggleChannelIdModeModal()">
+                    <span>Use Global Default Format</span>
+                </label>
+                <small class="form-help" style="margin-left: 1.5rem;">Current: <code id="modal-default-format">{{ settings.default_channel_id_format or '{team_name_pascal}.{league_id}' }}</code></small>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label class="checkbox-label">
+                    <input type="radio" name="channel_id_mode" value="custom" onchange="toggleChannelIdModeModal()">
+                    <span>Use Custom Format</span>
+                </label>
+            </div>
+
+            <div id="custom-format-container" style="display: none; margin-top: 1rem;">
+                <div class="form-group">
+                    <label for="modal-custom-format">Custom Channel ID Format</label>
+                    <input type="text" id="modal-custom-format" class="form-control" placeholder="{team_name_pascal}.{league_id}">
+                    {{ channel_id_vars_help() }}
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeChannelIdModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="applyBulkChannelId()">Apply to Selected Teams</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function showChannelIdModal() {
+    const teamIds = getSelectedTeamIds();
+    if (!teamIds.length) {
+        alert('No teams selected');
+        return;
+    }
+
+    document.getElementById('modal-team-count').textContent = teamIds.length;
+    document.getElementById('channel-id-modal').classList.add('active');
+}
+
+function closeChannelIdModal() {
+    document.getElementById('channel-id-modal').classList.remove('active');
+}
+
+function closeModalOnBackdrop(event) {
+    if (event.target === event.currentTarget) {
+        closeChannelIdModal();
+    }
+}
+
+function toggleChannelIdModeModal() {
+    const mode = document.querySelector('input[name="channel_id_mode"]:checked').value;
+    const customContainer = document.getElementById('custom-format-container');
+
+    if (mode === 'custom') {
+        customContainer.style.display = 'block';
+    } else {
+        customContainer.style.display = 'none';
+    }
+}
+
+async function applyBulkChannelId() {
+    const teamIds = getSelectedTeamIds();
+    const mode = document.querySelector('input[name="channel_id_mode"]:checked').value;
+    let format = '';
+
+    if (mode === 'default') {
+        format = document.getElementById('modal-default-format').textContent;
+    } else {
+        format = document.getElementById('modal-custom-format').value.trim();
+        if (!format) {
+            alert('Please enter a custom format');
+            return;
+        }
+    }
+
+    if (!confirm(`Apply channel ID format "${format}" to ${teamIds.length} team(s)?`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    teamIds.forEach(id => formData.append('team_ids[]', id));
+    formData.append('format', format);
+
+    try {
+        const response = await fetch('{{ url_for("teams_bulk_change_channel_id") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(`✅ Successfully updated ${result.updated} team channel ID(s)`);
+            closeChannelIdModal();
+            location.reload();
+        } else {
+            alert(`❌ Error: ${result.message}`);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// =============================================================================
+// Soccer Multi-League Indicator
+// =============================================================================
+
+// Cache for multi-league data to avoid repeated API calls
+const multiLeagueCache = {};
+
+async function loadMultiLeagueData(teamId) {
+    if (multiLeagueCache[teamId]) {
+        return multiLeagueCache[teamId];
+    }
+
+    try {
+        const response = await fetch(`/api/soccer/team/${teamId}/leagues`);
+        const data = await response.json();
+
+        if (data.success) {
+            multiLeagueCache[teamId] = data;
+            return data;
+        }
+    } catch (error) {
+        console.warn(`Failed to load multi-league data for team ${teamId}:`, error);
+    }
+    return null;
+}
+
+function renderMultiLeagueTooltip(data, primaryLeague) {
+    if (!data || !data.leagues || data.leagues.length <= 1) {
+        return '';
+    }
+
+    // Sort leagues: primary first, then by category
+    const sorted = [...data.leagues].sort((a, b) => {
+        if (a.slug === primaryLeague) return -1;
+        if (b.slug === primaryLeague) return 1;
+        // Prioritize domestic leagues
+        const categoryOrder = ['domestic', 'domestic_cup', 'continental_club', 'continental_national', 'world_club', 'qualifier', 'friendly', 'other'];
+        return categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category);
+    });
+
+    return sorted.map(league => {
+        const isPrimary = league.slug === primaryLeague;
+        return `
+            <div class="multi-league-item ${isPrimary ? 'primary' : ''}">
+                <img src="${league.logo_url || ''}" alt="${league.name}" onerror="this.style.display='none'">
+                <span>${league.name}</span>
+                <span class="league-category">${league.category.replace('_', ' ')}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+async function initMultiLeagueIndicators() {
+    const soccerCells = document.querySelectorAll('.soccer-multi-league');
+
+    for (const cell of soccerCells) {
+        const teamId = cell.dataset.teamId;
+        if (!teamId) continue;
+
+        const data = await loadMultiLeagueData(teamId);
+
+        if (data && data.leagues && data.leagues.length > 1) {
+            // Show the indicator badge
+            const indicator = cell.querySelector('.multi-league-indicator');
+            if (indicator) {
+                indicator.style.display = 'flex';
+                indicator.textContent = `+${data.leagues.length - 1}`;
+                indicator.title = `${data.leagues.length} competitions`;
+            }
+
+            // Populate the tooltip
+            const tooltip = cell.querySelector('.multi-league-tooltip');
+            const list = cell.querySelector('.multi-league-list');
+            if (tooltip && list) {
+                const primaryLeague = cell.querySelector('.league-logo')?.alt?.toLowerCase() || '';
+                list.innerHTML = renderMultiLeagueTooltip(data, data.default_league || primaryLeague);
+                tooltip.style.display = 'none'; // CSS hover will show it
+            }
+        }
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Small delay to not block initial render
+    setTimeout(initMultiLeagueIndicators, 500);
+});
+</script>
+{% endblock %}
