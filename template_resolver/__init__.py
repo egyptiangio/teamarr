@@ -13,6 +13,7 @@ The resolver uses registered variable extractors to resolve placeholders.
 Variables are organized by category and support suffix rules (.next, .last).
 """
 
+from template_resolver.context_builder import ContextBuilder, build_context_for_event
 from template_resolver.registry import (
     Category,
     SuffixRules,
@@ -27,6 +28,9 @@ __all__ = [
     # Main API
     "TemplateResolver",
     "resolve",
+    # Context Builder
+    "ContextBuilder",
+    "build_context_for_event",
     # Registry
     "Category",
     "SuffixRules",
