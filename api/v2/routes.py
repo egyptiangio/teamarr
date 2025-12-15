@@ -376,6 +376,111 @@ def get_events(league: str, date_str: str):
 
 
 # -----------------------------------------------------------------------------
+# Full EPG Generation
+# -----------------------------------------------------------------------------
+
+
+@bp.route("/generate", methods=["POST"])
+def generate_full_epg():
+    """Generate complete EPG using V2 pure dataclass pipeline.
+
+    This is the V2 equivalent of generate_all_epg().
+
+    Request body (optional):
+    {
+        "save_files": true,
+        "run_lifecycle": false
+    }
+
+    Returns:
+        JSON with generation stats and optionally XMLTV content
+    """
+    from consumers.generation import generate_epg
+
+    try:
+        data = request.get_json() or {}
+        save_files = data.get("save_files", True)
+        include_xmltv = data.get("include_xmltv", False)
+
+        def progress(status, message, percent):
+            # For now just log - could use SSE for real-time updates
+            logger.debug(f"[{percent}%] {status}: {message}")
+
+        result = generate_epg(progress_callback=progress)
+
+        response = {
+            "success": result.success,
+            "error": result.error,
+            "generation_time": result.generation_time,
+            "team_stats": {
+                "teams": result.team_stats.count,
+                "programmes": result.team_stats.programmes,
+                "events": result.team_stats.events,
+                "pregame": result.team_stats.pregame,
+                "postgame": result.team_stats.postgame,
+                "idle": result.team_stats.idle,
+            },
+            "event_stats": {
+                "groups_refreshed": result.event_stats.groups_refreshed,
+                "streams_matched": result.event_stats.streams_matched,
+                "programmes": result.event_stats.programmes,
+                "events": result.event_stats.events,
+                "pregame": result.event_stats.pregame,
+                "postgame": result.event_stats.postgame,
+            },
+        }
+
+        if include_xmltv:
+            response["team_xmltv"] = result.team_xmltv
+            response["event_xmltv_files"] = result.event_xmltv_files
+
+        # Save files if requested
+        if save_files and result.success:
+            _save_epg_files(result)
+            response["files_saved"] = True
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.exception("V2 EPG generation failed")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _save_epg_files(result):
+    """Save generated EPG files to disk."""
+    import os
+    from database import get_connection
+
+    # Get output path from settings
+    conn = get_connection()
+    try:
+        settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+        if not settings:
+            return
+
+        output_path = settings["epg_output_path"] or "/app/data/teamarr.xml"
+        data_dir = os.path.dirname(output_path)
+        os.makedirs(data_dir, exist_ok=True)
+
+        # Save team EPG
+        if result.team_xmltv:
+            team_path = os.path.join(data_dir, "teams.xml")
+            with open(team_path, "w", encoding="utf-8") as f:
+                f.write(result.team_xmltv)
+            logger.info(f"Saved team EPG to {team_path}")
+
+        # Save event EPG files
+        for group_id, xmltv in result.event_xmltv_files.items():
+            event_path = os.path.join(data_dir, f"event_epg_{group_id}.xml")
+            with open(event_path, "w", encoding="utf-8") as f:
+                f.write(xmltv)
+            logger.info(f"Saved event EPG for group {group_id}")
+
+    finally:
+        conn.close()
+
+
+# -----------------------------------------------------------------------------
 # Health Check
 # -----------------------------------------------------------------------------
 

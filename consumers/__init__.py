@@ -12,6 +12,13 @@ from consumers.event_epg import (
     MatchedStream,
 )
 from consumers.event_matcher import EventMatcher, has_game_indicator
+from consumers.generation import (
+    EPGResult,
+    EventStats,
+    LifecycleStats,
+    TeamStats,
+    generate_epg,
+)
 from consumers.orchestrator import (
     GenerationResult,
     Orchestrator,
@@ -30,6 +37,12 @@ from consumers.team_epg import (
 )
 
 __all__ = [
+    # Full Generation (main entry point)
+    "EPGResult",
+    "EventStats",
+    "LifecycleStats",
+    "TeamStats",
+    "generate_epg",
     # Orchestrator
     "GenerationResult",
     "Orchestrator",
