@@ -16,6 +16,12 @@ from consumers.orchestrator import (
     GenerationResult,
     Orchestrator,
 )
+from consumers.stream_matcher import (
+    BatchMatchResult,
+    MultiLeagueMatcher,
+    SingleLeagueMatcher,
+    StreamMatchResult,
+)
 from consumers.team_epg import (
     TeamChannelConfig,
     TeamEPGGenerator,
@@ -38,7 +44,12 @@ __all__ = [
     "EventEPGOptions",
     "EventTemplateConfig",
     "MatchedStream",
-    # Event Matcher
+    # Event Matcher (V1 approach)
     "EventMatcher",
     "has_game_indicator",
+    # Stream Matcher (V2 approach - Events→Streams)
+    "BatchMatchResult",
+    "MultiLeagueMatcher",
+    "SingleLeagueMatcher",
+    "StreamMatchResult",
 ]
