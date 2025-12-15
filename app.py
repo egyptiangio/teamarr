@@ -194,6 +194,14 @@ xmltv_generator = XMLTVGenerator(
     version=VERSION
 )
 
+# Register V2 API blueprint (pure dataclass pipeline)
+try:
+    from api.v2 import v2_bp
+    app.register_blueprint(v2_bp)
+    app.logger.info("✅ V2 API registered at /api/v2")
+except ImportError as e:
+    app.logger.warning(f"V2 API not available: {e}")
+
 # Scheduler thread
 scheduler_thread = None
 scheduler_running = False
