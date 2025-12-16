@@ -99,7 +99,8 @@ def test_single_league_nba():
         else:
             print(f"  {status} {result.stream_name}")
 
-    return matched, len(results)
+    # Assert reasonable match rate (at least 50% - API may have schedule drift)
+    assert matched >= len(results) // 2, f"Expected at least 50% match rate, got {matched}/{len(results)}"
 
 
 def test_single_league_nfl():
@@ -129,7 +130,8 @@ def test_single_league_nfl():
         else:
             print(f"  {status} {result.stream_name}")
 
-    return matched, len(results)
+    # Assert at least one NFL game matched (primary stream should always match)
+    assert matched >= 1, f"Expected at least 1 NFL match, got {matched}"
 
 
 def test_multi_league():
@@ -190,7 +192,9 @@ def test_multi_league():
         if not r.matched and not r.is_exception:
             print(f"  ✗ {r.stream_name}")
 
-    return result
+    # Assert multi-league matching found events
+    assert result.events_found > 0, "Expected to find some events across leagues"
+    assert result.matched_count > 0, "Expected at least some streams to match"
 
 
 def test_expected_failures():
@@ -235,36 +239,30 @@ def test_expected_failures():
             if r.matched:
                 print(f"  {r.stream_name} → {r.event.name}")
 
-    return result.matched_count == 0
+    # Assert these non-ESPN streams don't match
+    assert result.matched_count == 0, f"Expected 0 matches for non-ESPN content, got {result.matched_count}"
 
 
 def main():
-    """Run all matching tests."""
+    """Run all matching tests manually (use pytest for CI)."""
     print("\n" + "=" * 70)
     print("  TEAMARR V2 - Events → Streams Matching Pipeline Test")
     print("=" * 70)
 
     # Test single-league matchers
-    nba_matched, nba_total = test_single_league_nba()
-    nfl_matched, nfl_total = test_single_league_nfl()
+    test_single_league_nba()
+    test_single_league_nfl()
 
     # Test multi-league matcher
-    multi_result = test_multi_league()
+    test_multi_league()
 
     # Test expected failures
-    failures_correct = test_expected_failures()
+    test_expected_failures()
 
     # Summary
     print("\n" + "=" * 60)
-    print("SUMMARY")
+    print("ALL TESTS PASSED")
     print("=" * 60)
-    print(f"  NBA SingleLeagueMatcher: {nba_matched}/{nba_total}")
-    print(f"  NFL SingleLeagueMatcher: {nfl_matched}/{nfl_total}")
-    print(
-        f"  MultiLeagueMatcher: {multi_result.matched_count}/{multi_result.total} matched, "
-        f"{multi_result.included_count} included"
-    )
-    print(f"  Expected failures handled: {'✓' if failures_correct else '✗'}")
 
 
 if __name__ == "__main__":

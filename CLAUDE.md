@@ -203,16 +203,19 @@ events = service.get_events('ohl', date.today())  # → TSDB
 - Stream matching (single/multi-league)
 - Stream match fingerprint cache
 - Dispatcharr integration modules
-- Database schema and CRUD
-- FastAPI REST API
+- Database schema and CRUD (15 tables)
+- FastAPI REST API (84 routes)
+- Processing stats tracking
+- Exception keywords management
+- Condition presets management
+- SQL injection protection
 
 ## What's Missing (To Build)
 
 - **UI**: No frontend (will build fresh)
-- **Full Dispatcharr integration**: Channel lifecycle not wired up
-- **Scheduler**: Background EPG generation
-- **Full API coverage**: Some endpoints need implementation
-- **Tests**: Need expansion
+- **Full Dispatcharr integration**: Channel lifecycle not fully wired up
+- **Integration tests**: New API endpoints need test coverage
+- **E2E tests**: Full pipeline testing
 
 ---
 
@@ -234,25 +237,37 @@ events = service.get_events('ohl', date.today())  # → TSDB
 | `event_epg_groups` | Event-based EPG groups |
 | `managed_channels` | Dynamic channels |
 | `managed_channel_streams` | Multi-stream per channel |
+| `managed_channel_history` | Channel lifecycle audit trail |
 | `league_provider_mappings` | League → provider routing |
 | `stream_match_cache` | Fingerprint cache |
 | `team_cache` | Team → league lookup |
 | `league_cache` | League metadata |
+| `processing_runs` | EPG generation stats per run |
+| `stats_snapshots` | Aggregate stats for dashboards |
+| `condition_presets` | Saved condition configurations |
+| `consolidation_exception_keywords` | Language/variant keywords |
 
 ---
 
 ## API Endpoints
 
 ```
-GET  /health                    # Health check
-GET  /api/v1/teams              # List/create teams
-GET  /api/v1/templates          # List/create templates
-POST /api/v1/epg/generate       # Generate EPG
-GET  /api/v1/epg/xmltv          # Get XMLTV output
-GET  /api/v1/cache/status       # Cache statistics
-POST /api/v1/cache/refresh      # Refresh league/team cache
-GET  /api/v1/cache/teams/search # Search teams
-GET  /api/v1/matching/events    # Preview stream matches
+GET  /health                      # Health check
+GET  /api/v1/teams                # List/create teams
+GET  /api/v1/templates            # List/create templates
+POST /api/v1/epg/generate         # Generate EPG
+GET  /api/v1/epg/xmltv            # Get XMLTV output
+GET  /api/v1/cache/status         # Cache statistics
+POST /api/v1/cache/refresh        # Refresh league/team cache
+GET  /api/v1/cache/teams/search   # Search teams
+GET  /api/v1/matching/events      # Preview stream matches
+GET  /api/v1/groups               # Event EPG groups CRUD
+GET  /api/v1/channels             # Managed channels CRUD
+GET  /api/v1/settings             # Global settings
+GET  /api/v1/stats                # Processing run statistics
+GET  /api/v1/stats/history        # Stats history for charts
+GET  /api/v1/keywords             # Exception keywords CRUD
+GET  /api/v1/presets              # Condition presets CRUD
 ```
 
 Full docs: http://localhost:9198/docs
@@ -261,21 +276,25 @@ Full docs: http://localhost:9198/docs
 
 ## Current Status
 
-### Session Summary (Dec 15, 2025)
+### Session Summary (Dec 16, 2025)
 
 **Completed this session:**
+1. Added processing stats system (`processing_runs` table, stats API)
+2. Added exception keywords CRUD (language variant handling)
+3. Added condition presets CRUD
+4. Added safe_sql module for SQL injection prevention
+5. Added XMLTV channel definition support
+6. Fixed test return value warnings (proper pytest assertions)
+7. Codebase audit and cleanup
+
+**Previous session (Dec 15):**
 1. Simplified variable system (removed h2h, player_leaders, home/away streaks)
 2. Consolidated duplicate condition systems (deleted enum-based conditional.py)
 3. Fixed TSDB API key (was using old demo key `3`, now uses `123`)
-4. Implemented two-phase data pipeline:
-   - Discovery: scoreboard/schedule (batch, 8hr cache)
-   - Enrichment: summary endpoint (per-event, 30min cache, ESPN only)
-5. ESPN enrichment provides odds ~1 week out via pickcenter
-6. TSDB enrichment skipped (lookupevent returns same data as eventsday)
-7. Fixed broadcast parsing for summary endpoint format
-8. Removed dead variables: `head_coach`, `odds_opponent_spread`
+4. Implemented two-phase data pipeline
+5. Removed dead variables: `head_coach`, `odds_opponent_spread`
 
-**Variable count: 143 → 141**
+**Variable count: 141**
 
 ### Backend Validated
 

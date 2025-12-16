@@ -146,6 +146,8 @@ def get_keyword(keyword_id: int):
 )
 def create_keyword(request: ExceptionKeywordCreate):
     """Create a new exception keyword."""
+    import sqlite3
+
     from teamarr.database.exception_keywords import (
         create_keyword as db_create_keyword,
     )
@@ -153,15 +155,21 @@ def create_keyword(request: ExceptionKeywordCreate):
         get_keyword as db_get_keyword,
     )
 
-    with get_db() as conn:
-        keyword_id = db_create_keyword(
-            conn,
-            keywords=request.keywords,
-            behavior=request.behavior,
-            display_name=request.display_name,
-            enabled=request.enabled,
+    try:
+        with get_db() as conn:
+            keyword_id = db_create_keyword(
+                conn,
+                keywords=request.keywords,
+                behavior=request.behavior,
+                display_name=request.display_name,
+                enabled=request.enabled,
+            )
+            keyword = db_get_keyword(conn, keyword_id)
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Keywords '{request.keywords}' already exist",
         )
-        keyword = db_get_keyword(conn, keyword_id)
 
     return ExceptionKeywordResponse(
         id=keyword.id,
