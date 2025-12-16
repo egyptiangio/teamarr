@@ -1,9 +1,12 @@
-"""FastAPI application factory - Clean V2 API only."""
+"""FastAPI application factory - Clean V2 API with React UI."""
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from teamarr.api.routes import (
     cache,
@@ -117,6 +120,31 @@ def create_app() -> FastAPI:
     app.include_router(channels.router, prefix="/api/v1/channels", tags=["Channels"])
     app.include_router(settings.router, prefix="/api/v1", tags=["Settings"])
     app.include_router(stats.router, prefix="/api/v1/stats", tags=["Stats"])
+
+    # Serve React UI static files
+    frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+    if frontend_dist.exists():
+        # Serve static assets (JS, CSS, etc.)
+        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+
+        # Serve index.html for all non-API routes (SPA routing)
+        @app.get("/{path:path}")
+        async def serve_spa(path: str):
+            # Don't intercept API routes
+            if path.startswith("api/") or path.startswith("docs") or path.startswith("redoc") or path.startswith("openapi"):
+                return None
+
+            # Serve static files if they exist
+            file_path = frontend_dist / path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(file_path)
+
+            # Fall back to index.html for SPA routing
+            return FileResponse(frontend_dist / "index.html")
+
+        logger.info(f"Serving React UI from {frontend_dist}")
+    else:
+        logger.warning(f"Frontend dist not found at {frontend_dist} - UI not available")
 
     return app
 
