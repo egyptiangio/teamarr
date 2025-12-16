@@ -24,7 +24,7 @@ class GroupCreate(BaseModel):
     """Create event EPG group request."""
 
     name: str = Field(..., min_length=1, max_length=100)
-    leagues: list[str] = Field(..., min_items=1)
+    leagues: list[str] = Field(..., min_length=1)
     template_id: int | None = None
     channel_start_number: int | None = Field(None, ge=1)
     channel_group_id: int | None = None
