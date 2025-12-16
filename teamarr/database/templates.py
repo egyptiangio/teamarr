@@ -13,7 +13,7 @@ from sqlite3 import Connection, Row
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from teamarr.consumers.filler.types import FillerConfig
+    from teamarr.core.filler_types import FillerConfig
 
 
 # =============================================================================
@@ -407,8 +407,8 @@ def template_to_filler_config(template: Template) -> FillerConfig:
     Returns:
         FillerConfig ready for FillerGenerator
     """
-    # Lazy import to avoid circular dependency
-    from teamarr.consumers.filler.types import (
+    # Import from core layer (proper layer isolation)
+    from teamarr.core.filler_types import (
         ConditionalFillerTemplate,
         FillerConfig,
         FillerTemplate,
