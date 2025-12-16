@@ -1,6 +1,7 @@
 """Background scheduler for channel lifecycle tasks.
 
 Runs periodic tasks:
+- EPG generation and file delivery
 - Process scheduled channel deletions
 - Light reconciliation (detect and log issues)
 - Cleanup old history records
@@ -12,6 +13,7 @@ import logging
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -161,27 +163,35 @@ class LifecycleScheduler:
         self._last_run = datetime.now()
         results = {
             "started_at": self._last_run.isoformat(),
+            "epg_generation": {},
             "deletions": {},
             "reconciliation": {},
             "cleanup": {},
         }
 
         try:
-            # Task 1: Process scheduled deletions
+            # Task 1: EPG generation and file delivery
+            results["epg_generation"] = self._task_generate_epg()
+        except Exception as e:
+            logger.warning(f"EPG generation task failed: {e}")
+            results["epg_generation"] = {"error": str(e)}
+
+        try:
+            # Task 2: Process scheduled deletions
             results["deletions"] = self._task_process_deletions()
         except Exception as e:
             logger.warning(f"Deletion task failed: {e}")
             results["deletions"] = {"error": str(e)}
 
         try:
-            # Task 2: Light reconciliation (detect only)
+            # Task 3: Light reconciliation (detect only)
             results["reconciliation"] = self._task_light_reconciliation()
         except Exception as e:
             logger.warning(f"Reconciliation task failed: {e}")
             results["reconciliation"] = {"error": str(e)}
 
         try:
-            # Task 3: Cleanup old history
+            # Task 4: Cleanup old history
             results["cleanup"] = self._task_cleanup_history()
         except Exception as e:
             logger.warning(f"Cleanup task failed: {e}")
@@ -189,6 +199,96 @@ class LifecycleScheduler:
 
         results["completed_at"] = datetime.now().isoformat()
         return results
+
+    def _task_generate_epg(self) -> dict:
+        """Generate EPG for all groups and write to output file.
+
+        Flow:
+        1. Process all active event groups (generates XMLTV per group)
+        2. Get all stored XMLTV from database
+        3. Merge into single XMLTV document
+        4. Write to output file path
+
+        Returns:
+            Dict with generation stats
+        """
+        from teamarr.consumers import process_all_event_groups
+        from teamarr.database.groups import get_all_group_xmltv
+        from teamarr.database.settings import get_epg_settings
+        from teamarr.utilities.xmltv import merge_xmltv_content
+
+        result = {
+            "groups_processed": 0,
+            "programmes_generated": 0,
+            "file_written": False,
+            "file_path": None,
+            "file_size": 0,
+        }
+
+        # Get settings
+        with self._db_factory() as conn:
+            settings = get_epg_settings(conn)
+
+        output_path = settings.epg_output_path
+        if not output_path:
+            logger.debug("EPG output path not configured, skipping file write")
+            return result
+
+        # Process all event groups
+        batch_result = process_all_event_groups(
+            db_factory=self._db_factory,
+            dispatcharr_client=self._dispatcharr_client,
+        )
+
+        result["groups_processed"] = batch_result.groups_processed
+        result["programmes_generated"] = batch_result.total_programmes
+
+        if batch_result.groups_processed == 0:
+            logger.debug("No event groups processed, skipping EPG file write")
+            return result
+
+        # Get all stored XMLTV content
+        with self._db_factory() as conn:
+            xmltv_contents = get_all_group_xmltv(conn)
+
+        if not xmltv_contents:
+            logger.debug("No XMLTV content available, skipping file write")
+            return result
+
+        # Merge all XMLTV documents
+        merged_xmltv = merge_xmltv_content(xmltv_contents)
+
+        # Write to file
+        try:
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write with backup
+            if output_file.exists():
+                backup_path = output_file.with_suffix(".xml.bak")
+                try:
+                    if backup_path.exists():
+                        backup_path.unlink()
+                    output_file.rename(backup_path)
+                except Exception as e:
+                    logger.warning(f"Could not create backup: {e}")
+
+            output_file.write_text(merged_xmltv, encoding="utf-8")
+
+            result["file_written"] = True
+            result["file_path"] = str(output_file.absolute())
+            result["file_size"] = len(merged_xmltv)
+
+            logger.info(
+                f"EPG written to {output_path} "
+                f"({len(merged_xmltv):,} bytes, {batch_result.total_programmes} programmes)"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to write EPG file: {e}")
+            result["error"] = str(e)
+
+        return result
 
     def _task_process_deletions(self) -> dict:
         """Process channels past their scheduled delete time."""
