@@ -476,9 +476,9 @@ INSERT OR IGNORE INTO leagues (league_code, provider, provider_league_id, provid
     ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1),
     ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1),
 
-    -- Lacrosse (TSDB)
-    ('nll', 'tsdb', '4424', 'National Lacrosse League', 'National Lacrosse League', 'Lacrosse', 'https://r2.thesportsdb.com/images/media/league/badge/c5r83j1521893739.png', 1),
-    ('pll', 'tsdb', '5149', 'Premier Lacrosse League', 'Premier Lacrosse League', 'Lacrosse', 'https://r2.thesportsdb.com/images/media/league/badge/a1r2yw1734950969.png', 1),
+    -- Lacrosse (ESPN)
+    ('nll', 'espn', 'lacrosse/nll', NULL, 'National Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/guid/5f77fe12-e54f-41a1-904e-77135452f348/logos/default.png', 1),
+    ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', 1),
 
     -- Cricket (TSDB)
     ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', NULL, 1),
