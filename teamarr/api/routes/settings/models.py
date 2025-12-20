@@ -157,6 +157,7 @@ class DisplaySettingsModel(BaseModel):
     channel_id_format: str = "{team_name_pascal}.{league}"
     xmltv_generator_name: str = "Teamarr v2"
     xmltv_generator_url: str = ""
+    tsdb_api_key: str | None = None  # Optional TheSportsDB premium API key
 
 
 # =============================================================================

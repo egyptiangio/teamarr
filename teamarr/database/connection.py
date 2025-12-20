@@ -55,6 +55,7 @@ def init_db(db_path: Path | str | None = None) -> None:
     """Initialize database with schema.
 
     Creates tables if they don't exist. Safe to call multiple times.
+    Also seeds TSDB cache from distributed seed file if needed.
 
     Args:
         db_path: Path to database file. Uses DEFAULT_DB_PATH if not specified.
@@ -65,6 +66,23 @@ def init_db(db_path: Path | str | None = None) -> None:
         conn.executescript(schema_sql)
         # Run migrations for existing databases
         _run_migrations(conn)
+        # Seed TSDB cache if empty or incomplete
+        _seed_tsdb_cache_if_needed(conn)
+
+
+def _seed_tsdb_cache_if_needed(conn: sqlite3.Connection) -> None:
+    """Seed TSDB cache from distributed seed file if needed."""
+    from teamarr.database.seed import seed_if_needed
+
+    result = seed_if_needed(conn)
+    if result and result.get("seeded"):
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Seeded TSDB cache: {result.get('teams_added', 0)} teams, "
+            f"{result.get('leagues_added', 0)} leagues"
+        )
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -77,6 +95,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _add_column_if_not_exists(
         conn, "templates", "description_template", "TEXT DEFAULT '{matchup} | {venue_full}'"
     )
+
+    # Migration: Add tsdb_api_key to settings table
+    _add_column_if_not_exists(conn, "settings", "tsdb_api_key", "TEXT")
 
 
 def _add_column_if_not_exists(

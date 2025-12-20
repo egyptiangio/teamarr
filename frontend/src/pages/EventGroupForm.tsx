@@ -179,6 +179,14 @@ export function EventGroupForm() {
         m3u_group_name: group.m3u_group_name,
         m3u_account_id: group.m3u_account_id,
         m3u_account_name: group.m3u_account_name,
+        // Stream filtering
+        stream_include_regex: group.stream_include_regex,
+        stream_include_regex_enabled: group.stream_include_regex_enabled,
+        stream_exclude_regex: group.stream_exclude_regex,
+        stream_exclude_regex_enabled: group.stream_exclude_regex_enabled,
+        custom_regex_teams: group.custom_regex_teams,
+        custom_regex_teams_enabled: group.custom_regex_teams_enabled,
+        skip_builtin_filter: group.skip_builtin_filter,
         enabled: group.enabled,
       })
 
@@ -817,6 +825,120 @@ export function EventGroupForm() {
                 <p className="text-xs text-muted-foreground">
                   How to handle multiple streams matching the same event
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Stream Filtering */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Stream Filtering</CardTitle>
+              <CardDescription>
+                Use regex patterns to filter which streams are processed
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Include Regex */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="include_regex">Include Pattern</Label>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.stream_include_regex_enabled || false}
+                      onCheckedChange={(checked) =>
+                        setFormData({ ...formData, stream_include_regex_enabled: checked })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">Enabled</span>
+                  </div>
+                </div>
+                <Input
+                  id="include_regex"
+                  value={formData.stream_include_regex || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, stream_include_regex: e.target.value || null })
+                  }
+                  placeholder="e.g., (HD|1080p|720p)"
+                  disabled={!formData.stream_include_regex_enabled}
+                  className={cn(!formData.stream_include_regex_enabled && "opacity-50")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Only streams matching this pattern will be processed
+                </p>
+              </div>
+
+              {/* Exclude Regex */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="exclude_regex">Exclude Pattern</Label>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.stream_exclude_regex_enabled || false}
+                      onCheckedChange={(checked) =>
+                        setFormData({ ...formData, stream_exclude_regex_enabled: checked })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">Enabled</span>
+                  </div>
+                </div>
+                <Input
+                  id="exclude_regex"
+                  value={formData.stream_exclude_regex || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, stream_exclude_regex: e.target.value || null })
+                  }
+                  placeholder="e.g., (Spanish|French|German)"
+                  disabled={!formData.stream_exclude_regex_enabled}
+                  className={cn(!formData.stream_exclude_regex_enabled && "opacity-50")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Streams matching this pattern will be skipped
+                </p>
+              </div>
+
+              {/* Custom Teams Regex */}
+              <div className="space-y-2 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="teams_regex">Custom Team Extraction</Label>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.custom_regex_teams_enabled || false}
+                      onCheckedChange={(checked) =>
+                        setFormData({ ...formData, custom_regex_teams_enabled: checked })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">Enabled</span>
+                  </div>
+                </div>
+                <Input
+                  id="teams_regex"
+                  value={formData.custom_regex_teams || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, custom_regex_teams: e.target.value || null })
+                  }
+                  placeholder="e.g., (.+?) vs (.+)"
+                  disabled={!formData.custom_regex_teams_enabled}
+                  className={cn(!formData.custom_regex_teams_enabled && "opacity-50")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Custom regex to extract team names from stream names. Use capture groups or named groups (?P&lt;team1&gt;...) (?P&lt;team2&gt;...).
+                </p>
+              </div>
+
+              {/* Skip Builtin Filter */}
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div>
+                  <Label>Skip Builtin Patterns</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Disable automatic "Team A vs Team B" pattern detection
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.skip_builtin_filter || false}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, skip_builtin_filter: checked })
+                  }
+                />
               </div>
             </CardContent>
           </Card>

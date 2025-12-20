@@ -68,6 +68,7 @@ export interface DisplaySettings {
   channel_id_format: string
   xmltv_generator_name: string
   xmltv_generator_url: string
+  tsdb_api_key: string | null  // Optional TheSportsDB premium API key
 }
 
 export interface ExceptionKeyword {

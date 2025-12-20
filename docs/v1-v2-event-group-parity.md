@@ -193,6 +193,89 @@ ALTER TABLE event_epg_groups ADD COLUMN filtered_exclude_regex INTEGER DEFAULT 0
 ALTER TABLE event_epg_groups ADD COLUMN filtered_final INTEGER DEFAULT 0;
 ```
 
+#### 2.3 User-Defined Team Aliases
+
+**Why needed**: Users need to map stream team names to provider team names for edge cases where automatic matching fails. Examples: "Spurs" → "Tottenham Hotspur", "Man U" → "Manchester United", "NYG" → "New York Giants".
+
+**Schema changes**:
+```sql
+CREATE TABLE IF NOT EXISTS team_aliases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Alias Definition
+    alias TEXT NOT NULL,                    -- Alias string (normalized) e.g., "spurs", "man u"
+    league TEXT NOT NULL,                   -- League code (e.g., "epl", "nfl")
+
+    -- Provider Team Mapping
+    provider TEXT NOT NULL DEFAULT 'espn',  -- Provider name
+    team_id TEXT NOT NULL,                  -- Provider's team ID
+    team_name TEXT NOT NULL,                -- Provider's team name (e.g., "Tottenham Hotspur")
+
+    UNIQUE(alias, league)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_aliases_league ON team_aliases(league);
+CREATE INDEX IF NOT EXISTS idx_team_aliases_alias ON team_aliases(alias);
+```
+
+**New service module**: `teamarr/services/team_alias.py`
+
+```python
+@dataclass
+class TeamAlias:
+    """A user-defined team alias."""
+    id: int
+    alias: str
+    league: str
+    provider: str
+    team_id: str
+    team_name: str
+    created_at: datetime | None = None
+
+class TeamAliasService:
+    """Manages user-defined team aliases."""
+
+    def get_alias(self, text: str, league: str) -> TeamAlias | None:
+        """Look up alias for a team name in a league."""
+        pass
+
+    def create_alias(self, alias: str, league: str, team_id: str, team_name: str) -> TeamAlias:
+        """Create a new alias."""
+        pass
+
+    def delete_alias(self, alias_id: int) -> bool:
+        """Delete an alias."""
+        pass
+
+    def list_aliases(self, league: str | None = None) -> list[TeamAlias]:
+        """List all aliases, optionally filtered by league."""
+        pass
+```
+
+**Integration with matching engine**:
+- `teamarr/consumers/matching.py` should check aliases before fuzzy matching
+- Priority order: exact alias match → exact team name → fuzzy match
+
+**Files to modify**:
+- `teamarr/database/schema.sql` - add team_aliases table
+- `teamarr/database/aliases.py` - NEW: CRUD operations
+- `teamarr/services/team_alias.py` - NEW: alias service
+- `teamarr/consumers/matching.py` - integrate alias lookup
+- `teamarr/api/routes/aliases.py` - NEW: REST endpoints
+- `frontend/src/api/aliases.ts` - NEW: API client
+- `frontend/src/pages/TeamAliases.tsx` - NEW: management UI
+
+**API Endpoints**:
+```
+GET    /api/v1/aliases                    # List all aliases
+GET    /api/v1/aliases?league=epl         # Filter by league
+POST   /api/v1/aliases                    # Create alias
+DELETE /api/v1/aliases/{id}               # Delete alias
+POST   /api/v1/aliases/import             # Bulk import
+GET    /api/v1/aliases/export             # Export as JSON
+```
+
 ### Phase 3: Multi-Sport Enhancements (Nice to Have)
 
 #### 3.1 Channel Sort Order
@@ -289,18 +372,25 @@ For existing V2 users:
   - [x] API layer (all endpoints return stats)
   - [x] Frontend (EventGroups.tsx stats tiles and table column)
 
-### Phase 2: Stream Filtering - BACKEND COMPLETE (Dec 20, 2025)
+### Phase 2: Stream Filtering - COMPLETE (Dec 20, 2025)
 - [x] 2.1 Custom Regex
   - [x] Schema migration (stream_include/exclude_regex, custom_regex_teams, skip_builtin_filter)
   - [x] StreamFilter service (`teamarr/services/stream_filter.py`)
-  - [ ] Consumer integration (pending - use StreamFilter in event_group_processor)
+  - [x] Consumer integration (`event_group_processor.py` uses StreamFilter)
   - [x] API layer (Pydantic models, all CRUD endpoints)
-  - [ ] Frontend UI (Regex tab in EventGroupForm)
+  - [x] Frontend UI (Stream Filtering card in EventGroupForm)
 - [x] 2.2 Filtering Stats
   - [x] Schema migration (filtered_include_regex, filtered_exclude_regex, filtered_no_match)
   - [x] Database layer (update_group_stats updated)
   - [x] API layer (returns filtering stats)
   - [x] Frontend types updated
+- [ ] 2.3 User-Defined Team Aliases
+  - [ ] Schema migration (team_aliases table)
+  - [ ] Database layer (CRUD operations)
+  - [ ] TeamAliasService (`teamarr/services/team_alias.py`)
+  - [ ] Matching engine integration
+  - [ ] API layer (REST endpoints)
+  - [ ] Frontend UI (TeamAliases.tsx)
 
 ### Phase 3: Multi-Sport
 - [ ] 3.1 Channel Sort Order

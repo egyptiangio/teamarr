@@ -1,0 +1,1530 @@
+{
+  "generated_at": "2025-12-20T16:36:37.491373Z",
+  "generated_with": "premium_key",
+  "leagues": [
+    {
+      "code": "ohl",
+      "provider_league_id": "5159",
+      "provider_league_name": "Canadian OHL",
+      "sport": "Hockey",
+      "team_count": 20
+    },
+    {
+      "code": "whl",
+      "provider_league_id": "5160",
+      "provider_league_name": "Canadian WHL",
+      "sport": "Hockey",
+      "team_count": 23
+    },
+    {
+      "code": "qmjhl",
+      "provider_league_id": "5161",
+      "provider_league_name": "Canadian QMJHL",
+      "sport": "Hockey",
+      "team_count": 18
+    },
+    {
+      "code": "ipl",
+      "provider_league_id": "4460",
+      "provider_league_name": "Indian Premier League",
+      "sport": "Cricket",
+      "team_count": 10
+    },
+    {
+      "code": "cpl",
+      "provider_league_id": "5176",
+      "provider_league_name": "Caribbean Premier League",
+      "sport": "Cricket",
+      "team_count": 6
+    },
+    {
+      "code": "bpl",
+      "provider_league_id": "5529",
+      "provider_league_name": "Bangladesh Premier League",
+      "sport": "Cricket",
+      "team_count": 17
+    },
+    {
+      "code": "bbl",
+      "provider_league_id": "4461",
+      "provider_league_name": "Australian Big Bash League",
+      "sport": "Cricket",
+      "team_count": 8
+    },
+    {
+      "code": "psl",
+      "provider_league_id": "5067",
+      "provider_league_name": "Pakistan Super League",
+      "sport": "Cricket",
+      "team_count": 6
+    },
+    {
+      "code": "ilt20",
+      "provider_league_id": "5490",
+      "provider_league_name": "International League T20",
+      "sport": "Cricket",
+      "team_count": 6
+    },
+    {
+      "code": "sa20",
+      "provider_league_id": "5532",
+      "provider_league_name": "SA20",
+      "sport": "Cricket",
+      "team_count": 6
+    },
+    {
+      "code": "hundred",
+      "provider_league_id": "5177",
+      "provider_league_name": "The Hundred",
+      "sport": "Cricket",
+      "team_count": 8
+    },
+    {
+      "code": "mlc",
+      "provider_league_id": "5401",
+      "provider_league_name": "Major League Cricket",
+      "sport": "Cricket",
+      "team_count": 6
+    },
+    {
+      "code": "boxing",
+      "provider_league_id": "4445",
+      "provider_league_name": "Boxing",
+      "sport": "Boxing",
+      "team_count": 33
+    },
+    {
+      "code": "motogp",
+      "provider_league_id": "4407",
+      "provider_league_name": "MotoGP",
+      "sport": "Motorsport",
+      "team_count": 11
+    }
+  ],
+  "teams": [
+    {
+      "provider_team_id": "144346",
+      "team_name": "Barrie Colts",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/44aj7u1637782142.png"
+    },
+    {
+      "provider_team_id": "144347",
+      "team_name": "Brampton Steelheads",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/e4igir1749497719.png"
+    },
+    {
+      "provider_team_id": "144341",
+      "team_name": "Brantford Bulldogs",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/bqm4hz1637782113.png"
+    },
+    {
+      "provider_team_id": "144351",
+      "team_name": "Erie Otters",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/j5n6ks1637782172.png"
+    },
+    {
+      "provider_team_id": "144356",
+      "team_name": "Flint Firebirds",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/qagig11637782201.png"
+    },
+    {
+      "provider_team_id": "144352",
+      "team_name": "Guelph Storm",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/bqlb9k1637782177.png"
+    },
+    {
+      "provider_team_id": "144342",
+      "team_name": "Kingston Frontenacs",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vbdz7l1637782118.png"
+    },
+    {
+      "provider_team_id": "144353",
+      "team_name": "Kitchener Rangers",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/otxl041637782184.png"
+    },
+    {
+      "provider_team_id": "144354",
+      "team_name": "London Knights",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/3xqe721637782189.png"
+    },
+    {
+      "provider_team_id": "144348",
+      "team_name": "Niagara IceDogs",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/v66f861637782152.png"
+    },
+    {
+      "provider_team_id": "144349",
+      "team_name": "North Bay Battalion",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fxa7691637782159.png"
+    },
+    {
+      "provider_team_id": "144343",
+      "team_name": "Oshawa Generals",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/m5tmk41637782124.png"
+    },
+    {
+      "provider_team_id": "144344",
+      "team_name": "Ottawa 67s",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/nsubsf1637782130.png"
+    },
+    {
+      "provider_team_id": "144355",
+      "team_name": "Owen Sound Attack",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/63aswd1637782196.png"
+    },
+    {
+      "provider_team_id": "144345",
+      "team_name": "Peterborough Petes",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/9x1kdy1637782136.png"
+    },
+    {
+      "provider_team_id": "144357",
+      "team_name": "Saginaw Spirit",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vfq4b61637782211.png"
+    },
+    {
+      "provider_team_id": "144358",
+      "team_name": "Sarnia Sting",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/h4frut1637782218.png"
+    },
+    {
+      "provider_team_id": "144359",
+      "team_name": "Soo Greyhounds",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/niidrm1637782223.png"
+    },
+    {
+      "provider_team_id": "144350",
+      "team_name": "Sudbury Wolves",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lvtpkc1637782166.png"
+    },
+    {
+      "provider_team_id": "144360",
+      "team_name": "Windsor Spitfires",
+      "team_abbrev": "",
+      "league": "ohl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ad0lfd1637782228.png"
+    },
+    {
+      "provider_team_id": "144367",
+      "team_name": "Brandon Wheat Kings",
+      "team_abbrev": "BWK",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/h7g64w1637782276.png"
+    },
+    {
+      "provider_team_id": "144361",
+      "team_name": "Calgary Hitmen",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2322vo1637782235.png"
+    },
+    {
+      "provider_team_id": "144362",
+      "team_name": "Edmonton Oil Kings",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/byw4a71637782242.png"
+    },
+    {
+      "provider_team_id": "144378",
+      "team_name": "Everett Silvertips",
+      "team_abbrev": "EST",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/cbj07k1637782347.png"
+    },
+    {
+      "provider_team_id": "144373",
+      "team_name": "Kamloops Blazers",
+      "team_abbrev": "KB",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/x2yyc81637782312.png"
+    },
+    {
+      "provider_team_id": "144374",
+      "team_name": "Kelowna Rockets",
+      "team_abbrev": "KR",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6dcs491637782319.png"
+    },
+    {
+      "provider_team_id": "144363",
+      "team_name": "Lethbridge Hurricanes",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/8j0vj71637782247.png"
+    },
+    {
+      "provider_team_id": "144364",
+      "team_name": "Medicine Hat Tigers",
+      "team_abbrev": "MHT",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/s4ki8u1637782253.png"
+    },
+    {
+      "provider_team_id": "144368",
+      "team_name": "Moose Jaw Warriors",
+      "team_abbrev": "MJW",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/e2hgyi1749833353.png"
+    },
+    {
+      "provider_team_id": "152227",
+      "team_name": "Penticton Vees",
+      "team_abbrev": "PV",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/f8e7r41749501854.png"
+    },
+    {
+      "provider_team_id": "144379",
+      "team_name": "Portland Winterhawks",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/184hk21637782354.png"
+    },
+    {
+      "provider_team_id": "144369",
+      "team_name": "Prince Albert Raiders",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ikvfdn1637782288.png"
+    },
+    {
+      "provider_team_id": "144375",
+      "team_name": "Prince George Cougars",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2i2ewm1637782326.png"
+    },
+    {
+      "provider_team_id": "144365",
+      "team_name": "Red Deer Rebels",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/je9a6b1637782263.png"
+    },
+    {
+      "provider_team_id": "144370",
+      "team_name": "Regina Pats",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/wvwmog1637782293.png"
+    },
+    {
+      "provider_team_id": "144371",
+      "team_name": "Saskatoon Blades",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/pmtld41637782299.png"
+    },
+    {
+      "provider_team_id": "144380",
+      "team_name": "Seattle Thunderbirds",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/cif0u71637782359.png"
+    },
+    {
+      "provider_team_id": "144381",
+      "team_name": "Spokane Chiefs",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/85zpum1637782364.png"
+    },
+    {
+      "provider_team_id": "144366",
+      "team_name": "Swift Current Broncos",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lnagxq1637782269.png"
+    },
+    {
+      "provider_team_id": "144382",
+      "team_name": "Tri-City Americans",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lml8tz1637782370.png"
+    },
+    {
+      "provider_team_id": "144376",
+      "team_name": "Vancouver Giants",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/8ic3n21637782333.png"
+    },
+    {
+      "provider_team_id": "144377",
+      "team_name": "Victoria Royals",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/45kci91637782339.png"
+    },
+    {
+      "provider_team_id": "144372",
+      "team_name": "Wenatchee Wild",
+      "team_abbrev": "",
+      "league": "whl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/b2lrnk1700472739.png"
+    },
+    {
+      "provider_team_id": "144389",
+      "team_name": "Baie-Comeau Drakkar",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/jffpev1637782408.png"
+    },
+    {
+      "provider_team_id": "144383",
+      "team_name": "Blainville-Boisbriand Armada",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ib9mo91637782375.png"
+    },
+    {
+      "provider_team_id": "144396",
+      "team_name": "Cape Breton Eagles",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/0bpgy71637782453.png"
+    },
+    {
+      "provider_team_id": "144397",
+      "team_name": "Charlottetown Islanders",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/gzz1p61637782459.png"
+    },
+    {
+      "provider_team_id": "144390",
+      "team_name": "Chicoutimi Saguen\u00e9ens",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/3lfk471637782414.png"
+    },
+    {
+      "provider_team_id": "144384",
+      "team_name": "Drummondville Voltigeurs",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/cfb15z1637782380.png"
+    },
+    {
+      "provider_team_id": "144385",
+      "team_name": "Gatineau Olympiques",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/7injlh1637782385.png"
+    },
+    {
+      "provider_team_id": "144398",
+      "team_name": "Halifax Mooseheads",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ocizpt1637782466.png"
+    },
+    {
+      "provider_team_id": "144399",
+      "team_name": "Moncton Wildcats",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/xoxkhy1637782472.png"
+    },
+    {
+      "provider_team_id": "144395",
+      "team_name": "Newfoundland Regiment",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/qzaze71749628071.png"
+    },
+    {
+      "provider_team_id": "144391",
+      "team_name": "Quebec Remparts",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lx4gw91637782420.png"
+    },
+    {
+      "provider_team_id": "144392",
+      "team_name": "Rimouski Oc\u00e9anic",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/c8w2dg1637782426.png"
+    },
+    {
+      "provider_team_id": "144386",
+      "team_name": "Rouyn-Noranda Huskies",
+      "team_abbrev": "RNH",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/spv5kd1637782391.png"
+    },
+    {
+      "provider_team_id": "144400",
+      "team_name": "Saint John Sea Dogs",
+      "team_abbrev": "SJS",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/j77g5k1637782479.png"
+    },
+    {
+      "provider_team_id": "144393",
+      "team_name": "Shawinigan Cataractes",
+      "team_abbrev": "",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/yo9fqb1637782433.png"
+    },
+    {
+      "provider_team_id": "144387",
+      "team_name": "Sherbrooke Phoenix",
+      "team_abbrev": "SP",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/pbp7031637782396.png"
+    },
+    {
+      "provider_team_id": "144388",
+      "team_name": "Val-d'Or Foreurs",
+      "team_abbrev": "VDF",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/qkcg731637782403.png"
+    },
+    {
+      "provider_team_id": "144394",
+      "team_name": "Victoriaville Tigres",
+      "team_abbrev": "VT",
+      "league": "qmjhl",
+      "sport": "Hockey",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/dy7n9f1637782439.png"
+    },
+    {
+      "provider_team_id": "135800",
+      "team_name": "Chennai Super Kings",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/okceh51487601098.png"
+    },
+    {
+      "provider_team_id": "135792",
+      "team_name": "Delhi Capitals",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/dg4g0z1587334054.png"
+    },
+    {
+      "provider_team_id": "145834",
+      "team_name": "Gujarat Titans",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6qw4r71654174508.png"
+    },
+    {
+      "provider_team_id": "135794",
+      "team_name": "Kolkata Knight Riders",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ows99r1487678296.png"
+    },
+    {
+      "provider_team_id": "145835",
+      "team_name": "Lucknow Super Giants",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/4tzmfa1647445839.png"
+    },
+    {
+      "provider_team_id": "135795",
+      "team_name": "Mumbai Indians",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/l40j8p1487678631.png"
+    },
+    {
+      "provider_team_id": "135793",
+      "team_name": "Punjab Kings",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/r1tcie1630697821.png"
+    },
+    {
+      "provider_team_id": "135801",
+      "team_name": "Rajasthan Royals",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lehnfw1487601864.png"
+    },
+    {
+      "provider_team_id": "135796",
+      "team_name": "Royal Challengers Bangalore",
+      "team_abbrev": "",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/kynj5v1588331757.png"
+    },
+    {
+      "provider_team_id": "135797",
+      "team_name": "Sunrisers Hyderabad",
+      "team_abbrev": "SRH",
+      "league": "ipl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/sc7m161487419327.png"
+    },
+    {
+      "provider_team_id": "148126",
+      "team_name": "Antigua and Barbuda Falcons",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fwozcu1752736011.png"
+    },
+    {
+      "provider_team_id": "144887",
+      "team_name": "Barbados Royals",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fk3tip1645215737.png"
+    },
+    {
+      "provider_team_id": "144888",
+      "team_name": "Guyana Amazon Warriors",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/amct1d1641785128.png"
+    },
+    {
+      "provider_team_id": "144891",
+      "team_name": "Saint Lucia Kings",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/981c6z1752736461.png"
+    },
+    {
+      "provider_team_id": "144890",
+      "team_name": "St Kitts and Nevis Patriots",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/t2zoaz1641785142.png"
+    },
+    {
+      "provider_team_id": "144892",
+      "team_name": "Trinbago Knight Riders",
+      "team_abbrev": "",
+      "league": "cpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/c8zwd61641785158.png"
+    },
+    {
+      "provider_team_id": "139506",
+      "team_name": "Abahani Ltd Dhaka",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/q4llqf1693028473.png"
+    },
+    {
+      "provider_team_id": "142145",
+      "team_name": "Arambagh KS",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://www.thesportsdb.com/images/media/team/badge/94adu01760890909.png"
+    },
+    {
+      "provider_team_id": "142154",
+      "team_name": "Bangladesh Police",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1au7ms1653072255.png"
+    },
+    {
+      "provider_team_id": "139528",
+      "team_name": "Bashundhara Kings",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/mmrj6b1693027114.png"
+    },
+    {
+      "provider_team_id": "142146",
+      "team_name": "Brothers Union",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/axm59o1732836352.png"
+    },
+    {
+      "provider_team_id": "150056",
+      "team_name": "Chittagong Kings",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/kbd9341734342594.png"
+    },
+    {
+      "provider_team_id": "150057",
+      "team_name": "Dhaka Capitals",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ak27xm1734342873.png"
+    },
+    {
+      "provider_team_id": "142147",
+      "team_name": "Dhaka Mohammedan",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1ms8h41732836529.png"
+    },
+    {
+      "provider_team_id": "150058",
+      "team_name": "Durbar Rajshahi",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/pu9zwj1734343068.png"
+    },
+    {
+      "provider_team_id": "150040",
+      "team_name": "Fakirerpool YMC",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ovzr571732835793.png"
+    },
+    {
+      "provider_team_id": "150041",
+      "team_name": "Fortis",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/d12jir1732836221.png"
+    },
+    {
+      "provider_team_id": "147093",
+      "team_name": "Fortune Barishal",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/le1zwt1675495288.png"
+    },
+    {
+      "provider_team_id": "147083",
+      "team_name": "Khulna Tigers",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/geh2qk1675420011.png"
+    },
+    {
+      "provider_team_id": "153584",
+      "team_name": "PWD Sports Club",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://www.thesportsdb.com/images/media/team/badge/umergl1760891207.png"
+    },
+    {
+      "provider_team_id": "142149",
+      "team_name": "Rahmatganj MFS",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/9qn70a1653072729.png"
+    },
+    {
+      "provider_team_id": "150059",
+      "team_name": "Rangpur Riders",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/k26ccz1734181960.png"
+    },
+    {
+      "provider_team_id": "146016",
+      "team_name": "Sylhet Strikers",
+      "team_abbrev": "",
+      "league": "bpl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/4xc8d01650476389.png"
+    },
+    {
+      "provider_team_id": "135748",
+      "team_name": "Adelaide Strikers",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/c36k301492606884.png"
+    },
+    {
+      "provider_team_id": "135749",
+      "team_name": "Brisbane Heat",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6r5cly1492606239.png"
+    },
+    {
+      "provider_team_id": "135750",
+      "team_name": "Hobart Hurricanes",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vdcla41492606553.png"
+    },
+    {
+      "provider_team_id": "135751",
+      "team_name": "Melbourne Renegades",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fy0wik1492607045.png"
+    },
+    {
+      "provider_team_id": "135752",
+      "team_name": "Melbourne Stars",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/l0t7v31715269757.png"
+    },
+    {
+      "provider_team_id": "135753",
+      "team_name": "Perth Scorchers",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ithlp51546681732.png"
+    },
+    {
+      "provider_team_id": "135754",
+      "team_name": "Sydney Sixers",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/jtkm601492607206.png"
+    },
+    {
+      "provider_team_id": "135755",
+      "team_name": "Sydney Thunder",
+      "team_abbrev": "",
+      "league": "bbl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/t0tooq1492606384.png"
+    },
+    {
+      "provider_team_id": "142102",
+      "team_name": "Islamabad United",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/5bi3eb1709123559.png"
+    },
+    {
+      "provider_team_id": "142103",
+      "team_name": "Karachi Kings",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/tfuvu11709123541.png"
+    },
+    {
+      "provider_team_id": "142104",
+      "team_name": "Lahore Qalandars",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/hvrtrg1709123519.png"
+    },
+    {
+      "provider_team_id": "142105",
+      "team_name": "Multan Sultans",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/mpijr01709123512.png"
+    },
+    {
+      "provider_team_id": "142106",
+      "team_name": "Peshawar Zalmi",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/frp6xj1709123501.png"
+    },
+    {
+      "provider_team_id": "142107",
+      "team_name": "Quetta Gladiators",
+      "team_abbrev": "",
+      "league": "psl",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/rox6ge1709123486.png"
+    },
+    {
+      "provider_team_id": "149053",
+      "team_name": "Abu Dhabi Knight Riders",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/llghxr1721480701.png"
+    },
+    {
+      "provider_team_id": "149056",
+      "team_name": "Desert Vipers",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/uqmlhc1721480710.png"
+    },
+    {
+      "provider_team_id": "149051",
+      "team_name": "Dubai Capitals",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/f95loc1721480695.png"
+    },
+    {
+      "provider_team_id": "149055",
+      "team_name": "Gulf Giants",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/y9hem51721480707.png"
+    },
+    {
+      "provider_team_id": "149052",
+      "team_name": "MI Emirates",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6ttrki1721480699.png"
+    },
+    {
+      "provider_team_id": "149054",
+      "team_name": "Sharjah Warriorz",
+      "team_abbrev": "",
+      "league": "ilt20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/gq0stf1721480730.png"
+    },
+    {
+      "provider_team_id": "150064",
+      "team_name": "Durban's Super Giants",
+      "team_abbrev": "",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/oe6ikv1734183540.png"
+    },
+    {
+      "provider_team_id": "150065",
+      "team_name": "Joburg Super Kings",
+      "team_abbrev": "JSK",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/bvjydr1734183753.png"
+    },
+    {
+      "provider_team_id": "150066",
+      "team_name": "MI Cape Town",
+      "team_abbrev": "",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/s146kh1734183906.png"
+    },
+    {
+      "provider_team_id": "150067",
+      "team_name": "Paarl Royals",
+      "team_abbrev": "",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/41azkk1734184030.png"
+    },
+    {
+      "provider_team_id": "150068",
+      "team_name": "Pretoria Capitals",
+      "team_abbrev": "",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/brbk561734184169.png"
+    },
+    {
+      "provider_team_id": "150069",
+      "team_name": "Sunrisers Eastern Cape",
+      "team_abbrev": "",
+      "league": "sa20",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/us5vei1734184224.png"
+    },
+    {
+      "provider_team_id": "144895",
+      "team_name": "Birmingham Phoenix",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/aihn2d1641785176.png"
+    },
+    {
+      "provider_team_id": "144898",
+      "team_name": "London Spirit",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/3xjjir1692900192.png"
+    },
+    {
+      "provider_team_id": "144893",
+      "team_name": "Manchester Originals",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/0szv2n1641785166.png"
+    },
+    {
+      "provider_team_id": "144894",
+      "team_name": "Northern Superchargers",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/utb0so1641785170.png"
+    },
+    {
+      "provider_team_id": "144899",
+      "team_name": "Oval Invincibles",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/0y1wnl1645212994.png"
+    },
+    {
+      "provider_team_id": "144900",
+      "team_name": "Southern Brave",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/whbl2x1692900272.png"
+    },
+    {
+      "provider_team_id": "144896",
+      "team_name": "Trent Rockets",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/9cp1ac1692900475.png"
+    },
+    {
+      "provider_team_id": "144897",
+      "team_name": "Welsh Fire",
+      "team_abbrev": "",
+      "league": "hundred",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/49jl241645213505.png"
+    },
+    {
+      "provider_team_id": "147491",
+      "team_name": "Los Angeles Knight Riders",
+      "team_abbrev": "",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6q2cnq1689146300.png"
+    },
+    {
+      "provider_team_id": "147492",
+      "team_name": "MI New York",
+      "team_abbrev": "",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/i4lxb71689146303.png"
+    },
+    {
+      "provider_team_id": "147493",
+      "team_name": "San Francisco Unicorns",
+      "team_abbrev": "SFU",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/k6pv961689146306.png"
+    },
+    {
+      "provider_team_id": "147494",
+      "team_name": "Seattle Orcas",
+      "team_abbrev": "",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/wg325p1689146309.png"
+    },
+    {
+      "provider_team_id": "147495",
+      "team_name": "Texas Super Kings",
+      "team_abbrev": "",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/777fr51689161316.png"
+    },
+    {
+      "provider_team_id": "147496",
+      "team_name": "Washington Freedom",
+      "team_abbrev": "",
+      "league": "mlc",
+      "sport": "Cricket",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ro0khs1750233280.png"
+    },
+    {
+      "provider_team_id": "151178",
+      "team_name": "Boxing Atomweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/wqplm51740305072.png"
+    },
+    {
+      "provider_team_id": "151150",
+      "team_name": "Boxing Bantamweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/j1u7th1740230151.png"
+    },
+    {
+      "provider_team_id": "151171",
+      "team_name": "Boxing Bantamweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/hhgheq1740300429.png"
+    },
+    {
+      "provider_team_id": "151152",
+      "team_name": "Boxing Bridgerweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/d623u91740230177.png"
+    },
+    {
+      "provider_team_id": "151153",
+      "team_name": "Boxing Cruiserweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/o0oliz1740230182.png"
+    },
+    {
+      "provider_team_id": "151149",
+      "team_name": "Boxing Featherweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fryh8u1740230189.png"
+    },
+    {
+      "provider_team_id": "151166",
+      "team_name": "Boxing Featherweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/wam6ib1740299976.png"
+    },
+    {
+      "provider_team_id": "151151",
+      "team_name": "Boxing Flyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1de4cg1740230194.png"
+    },
+    {
+      "provider_team_id": "151165",
+      "team_name": "Boxing Flyweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/rwk6121740299825.png"
+    },
+    {
+      "provider_team_id": "151144",
+      "team_name": "Boxing Heavyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/5grqyt1740230199.png"
+    },
+    {
+      "provider_team_id": "151173",
+      "team_name": "Boxing Heavyweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/styhab1740300781.png"
+    },
+    {
+      "provider_team_id": "151160",
+      "team_name": "Boxing Light Flyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/prx7e71740230205.png"
+    },
+    {
+      "provider_team_id": "151407",
+      "team_name": "Boxing Light Flyweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/y1s8op1740760378.png"
+    },
+    {
+      "provider_team_id": "151145",
+      "team_name": "Boxing Light Heavyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/23x2yi1740230210.png"
+    },
+    {
+      "provider_team_id": "151176",
+      "team_name": "Boxing Light Heavyweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/k8nvlx1740301416.png"
+    },
+    {
+      "provider_team_id": "151148",
+      "team_name": "Boxing Lightweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2unofk1740230225.png"
+    },
+    {
+      "provider_team_id": "151172",
+      "team_name": "Boxing Lightweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/zozs371740300523.png"
+    },
+    {
+      "provider_team_id": "151146",
+      "team_name": "Boxing Middleweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/b54vda1740230233.png"
+    },
+    {
+      "provider_team_id": "151174",
+      "team_name": "Boxing Middleweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/cag5kz1740300947.png"
+    },
+    {
+      "provider_team_id": "151161",
+      "team_name": "Boxing Mini Flyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/jfeeh41740230239.png"
+    },
+    {
+      "provider_team_id": "151177",
+      "team_name": "Boxing Mini Flyweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/r6gqi81740303619.png"
+    },
+    {
+      "provider_team_id": "151158",
+      "team_name": "Boxing Super Bantamweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/4200bo1740230244.png"
+    },
+    {
+      "provider_team_id": "151157",
+      "team_name": "Boxing Super Featherweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/xgfnqp1740230250.png"
+    },
+    {
+      "provider_team_id": "151169",
+      "team_name": "Boxing Super Featherweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2vshnp1740300275.png"
+    },
+    {
+      "provider_team_id": "151159",
+      "team_name": "Boxing Super Flyweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2i9owv1740230255.png"
+    },
+    {
+      "provider_team_id": "151156",
+      "team_name": "Boxing Super Lightweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/spsqq11740230220.png"
+    },
+    {
+      "provider_team_id": "151175",
+      "team_name": "Boxing Super Lightweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/22rtrn1740301260.png"
+    },
+    {
+      "provider_team_id": "151154",
+      "team_name": "Boxing Super Middleweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ij9b1p1740230262.png"
+    },
+    {
+      "provider_team_id": "151170",
+      "team_name": "Boxing Super Middleweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1isefv1740300361.png"
+    },
+    {
+      "provider_team_id": "151155",
+      "team_name": "Boxing Super Welterweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/nfeyws1740230215.png"
+    },
+    {
+      "provider_team_id": "151168",
+      "team_name": "Boxing Super Welterweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ebja7r1740300161.png"
+    },
+    {
+      "provider_team_id": "151147",
+      "team_name": "Boxing Welterweight",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/okh4n91740230267.png"
+    },
+    {
+      "provider_team_id": "151167",
+      "team_name": "Boxing Welterweight Women",
+      "team_abbrev": "",
+      "league": "boxing",
+      "sport": "Boxing",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/zn6l8i1740300112.png"
+    },
+    {
+      "provider_team_id": "135025",
+      "team_name": "Aprilia Racing",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/kiehr61679931342.png"
+    },
+    {
+      "provider_team_id": "135023",
+      "team_name": "Ducati Lenovo Team",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/w7wb7t1678706220.png"
+    },
+    {
+      "provider_team_id": "135528",
+      "team_name": "Gresini Racing MotoGP",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/71iawp1646241439.png"
+    },
+    {
+      "provider_team_id": "135021",
+      "team_name": "LCR Honda Idemitsu Castrol",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/8nsb4r1678706331.png"
+    },
+    {
+      "provider_team_id": "135027",
+      "team_name": "Monster Energy Yamaha MotoGP",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/u1481p1577637481.png"
+    },
+    {
+      "provider_team_id": "135019",
+      "team_name": "Pertamina Enduro VR46 Racing Team",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/7v66ez1710253576.png"
+    },
+    {
+      "provider_team_id": "135030",
+      "team_name": "Prima Pramac Racing",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/pyuqre1678705866.png"
+    },
+    {
+      "provider_team_id": "136176",
+      "team_name": "Red Bull KTM Factory Racing",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1gduq71733228370.png"
+    },
+    {
+      "provider_team_id": "137291",
+      "team_name": "Red Bull KTM Tech3",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/si5qxc1733228232.png"
+    },
+    {
+      "provider_team_id": "135031",
+      "team_name": "Repsol Honda Team",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vtwrxs1432310511.png"
+    },
+    {
+      "provider_team_id": "147071",
+      "team_name": "Trackhouse Racing",
+      "team_abbrev": "",
+      "league": "motogp",
+      "sport": "Motorsport",
+      "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/tda2xo1710254382.png"
+    }
+  ]
+}

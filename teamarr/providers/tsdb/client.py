@@ -225,7 +225,14 @@ class TSDBClient:
 
     @property
     def _api_key(self) -> str:
-        """Resolve API key from available sources."""
+        """Resolve API key from available sources.
+
+        Priority order:
+        1. Explicit parameter (passed to constructor)
+        2. Environment variable (TSDB_API_KEY)
+        3. Database settings (tsdb_api_key)
+        4. Free API key (123)
+        """
         # 1. Explicit parameter
         if self._explicit_key:
             return self._explicit_key
@@ -235,8 +242,28 @@ class TSDBClient:
         if env_key:
             return env_key
 
-        # 3. Fall back to free key
+        # 3. Database settings
+        db_key = self._get_db_api_key()
+        if db_key:
+            return db_key
+
+        # 4. Fall back to free key
         return self.FREE_API_KEY
+
+    def _get_db_api_key(self) -> str | None:
+        """Get API key from database settings."""
+        try:
+            from teamarr.database import get_db
+
+            with get_db() as conn:
+                cursor = conn.execute("SELECT tsdb_api_key FROM settings WHERE id = 1")
+                row = cursor.fetchone()
+                if row and row["tsdb_api_key"]:
+                    return row["tsdb_api_key"]
+        except Exception:
+            # Database not available or column doesn't exist yet
+            pass
+        return None
 
     @property
     def is_premium(self) -> bool:
@@ -458,18 +485,61 @@ class TSDBClient:
             self._cache.set(cache_key, result, TSDB_CACHE_TTL_SEARCH)
         return result
 
+    def get_season_events(self, league: str, season: str | None = None) -> dict | None:
+        """Get all events for a league season.
+
+        Uses eventsseason.php with league ID.
+        Free tier returns 15 events per request.
+
+        Args:
+            league: Canonical league code
+            season: Season string. Format varies by sport:
+                    - Hockey: "2024-2025" (fall-spring)
+                    - Cricket: "2024" (calendar year)
+                    - Boxing: "2024" (calendar year)
+
+        Returns:
+            Raw TSDB response or None
+        """
+        league_id = self.get_league_id(league)
+        if not league_id:
+            return None
+
+        if not season:
+            from datetime import date
+
+            year = date.today().year
+            month = date.today().month
+            sport = self.get_sport(league).lower()
+
+            # Different sports use different season formats
+            if sport in ("cricket", "boxing"):
+                # Calendar year seasons
+                season = str(year)
+            else:
+                # Fall-spring seasons (hockey, etc.)
+                # Use previous year if before August
+                if month < 8:
+                    season = f"{year - 1}-{year}"
+                else:
+                    season = f"{year}-{year + 1}"
+
+        return self._request("eventsseason.php", {"id": league_id, "s": season})
+
     def get_teams_in_league(self, league: str) -> dict | None:
         """Get all teams in a league.
 
-        Uses search_all_teams.php with league NAME (not lookup_all_teams.php
-        with league ID, which is broken on free tier).
-        Results cached for 24 hours.
+        Uses a two-phase approach to work around free tier 10-team limit:
+        1. search_all_teams.php - returns up to 10 teams with full details
+        2. eventsseason.php - extract additional teams from scheduled games
+
+        Results are merged and cached for 24 hours.
 
         Args:
             league: Canonical league code
 
         Returns:
-            Raw TSDB response or None
+            Dict with 'teams' list or None
         """
         cache_key = make_cache_key("tsdb", "teams", league)
         cached = self._cache.get(cache_key)
@@ -481,11 +551,62 @@ class TSDBClient:
         if not league_name:
             return None
 
-        # search_all_teams.php uses 'l' for league NAME (strLeague)
-        result = self._request("search_all_teams.php", {"l": league_name})
-        if result:
-            self._cache.set(cache_key, result, TSDB_CACHE_TTL_TEAMS)
+        # Phase 1: Get teams from search_all_teams (capped at 10 on free tier)
+        search_result = self._request("search_all_teams.php", {"l": league_name})
+        teams_by_id: dict[str, dict] = {}
+
+        if search_result and isinstance(search_result.get("teams"), list):
+            for team in search_result["teams"]:
+                team_id = str(team.get("idTeam", ""))
+                if team_id:
+                    teams_by_id[team_id] = team
+
+        logger.debug(f"TSDB search_all_teams for {league}: {len(teams_by_id)} teams")
+
+        # Phase 2: Extract additional teams from season events
+        # This works around the 10-team limit by finding teams in scheduled games
+        season_result = self.get_season_events(league)
+        if season_result and isinstance(season_result.get("events"), list):
+            for event in season_result["events"]:
+                # Extract home team
+                home_id = str(event.get("idHomeTeam", ""))
+                if home_id and home_id not in teams_by_id:
+                    teams_by_id[home_id] = self._team_from_event(event, "Home", league)
+
+                # Extract away team
+                away_id = str(event.get("idAwayTeam", ""))
+                if away_id and away_id not in teams_by_id:
+                    teams_by_id[away_id] = self._team_from_event(event, "Away", league)
+
+        logger.info(
+            f"TSDB teams for {league}: {len(teams_by_id)} total "
+            f"(search: {len(search_result.get('teams', [])) if search_result else 0}, "
+            f"events: {len(season_result.get('events', [])) if season_result else 0})"
+        )
+
+        result = {"teams": list(teams_by_id.values())}
+        self._cache.set(cache_key, result, TSDB_CACHE_TTL_TEAMS)
         return result
+
+    def _team_from_event(self, event: dict, prefix: str, league: str) -> dict:
+        """Build minimal team dict from event data.
+
+        Args:
+            event: TSDB event dict
+            prefix: "Home" or "Away"
+            league: Canonical league code
+
+        Returns:
+            Team dict compatible with search_all_teams format
+        """
+        return {
+            "idTeam": event.get(f"id{prefix}Team"),
+            "strTeam": event.get(f"str{prefix}Team"),
+            "strTeamShort": None,  # Not available in events
+            "strLeague": league,
+            "strSport": self.get_sport(league),
+            "strBadge": event.get(f"str{prefix}TeamBadge"),
+        }
 
     def cache_stats(self) -> dict:
         """Get cache statistics."""

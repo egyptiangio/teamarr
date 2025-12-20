@@ -36,6 +36,7 @@ from teamarr.database.groups import (
 )
 from teamarr.database.stats import create_run, save_run
 from teamarr.services import SportsDataService, create_default_service
+from teamarr.services.stream_filter import FilterResult, create_filter_from_group
 from teamarr.utilities.xmltv import merge_xmltv_content, programmes_to_xmltv
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,13 @@ class ProcessingResult:
     started_at: datetime = field(default_factory=datetime.now)
     completed_at: datetime | None = None
 
-    # Stream matching
+    # Stream fetching and filtering
     streams_fetched: int = 0
+    streams_after_filter: int = 0  # After include/exclude regex filtering
+    filtered_include_regex: int = 0  # Didn't match include pattern
+    filtered_exclude_regex: int = 0  # Matched exclude pattern
+
+    # Stream matching
     streams_matched: int = 0
     streams_unmatched: int = 0
 
@@ -78,6 +84,9 @@ class ProcessingResult:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "streams": {
                 "fetched": self.streams_fetched,
+                "after_filter": self.streams_after_filter,
+                "filtered_include": self.filtered_include_regex,
+                "filtered_exclude": self.filtered_exclude_regex,
                 "matched": self.streams_matched,
                 "unmatched": self.streams_unmatched,
             },
@@ -345,6 +354,27 @@ class EventGroupProcessor:
                 save_run(conn, stats_run)
                 return result
 
+            # Step 1.5: Apply stream filtering (include/exclude regex)
+            streams, filter_result = self._filter_streams(streams, group)
+            result.streams_after_filter = filter_result.passed_count
+            result.filtered_include_regex = filter_result.filtered_include
+            result.filtered_exclude_regex = filter_result.filtered_exclude
+
+            if not streams:
+                result.errors.append("All streams filtered out by regex patterns")
+                result.completed_at = datetime.now()
+                stats_run.complete(status="completed", error="All streams filtered")
+                save_run(conn, stats_run)
+                update_group_stats(
+                    conn,
+                    group.id,
+                    stream_count=0,
+                    matched_count=0,
+                    filtered_include_regex=filter_result.filtered_include,
+                    filtered_exclude_regex=filter_result.filtered_exclude,
+                )
+                return result
+
             # Step 2: Fetch events (use parent's leagues if child has none)
             leagues = group.leagues
             if not leagues:
@@ -404,8 +434,11 @@ class EventGroupProcessor:
             update_group_stats(
                 conn,
                 group.id,
-                stream_count=result.streams_fetched,
+                stream_count=result.streams_after_filter,
                 matched_count=result.streams_matched,
+                filtered_include_regex=result.filtered_include_regex,
+                filtered_exclude_regex=result.filtered_exclude_regex,
+                filtered_no_match=result.streams_unmatched,
             )
 
         except Exception as e:
@@ -490,6 +523,28 @@ class EventGroupProcessor:
                 save_run(conn, stats_run)
                 return result
 
+            # Step 1.5: Apply stream filtering (include/exclude regex)
+            streams, filter_result = self._filter_streams(streams, group)
+            result.streams_after_filter = filter_result.passed_count
+            result.filtered_include_regex = filter_result.filtered_include
+            result.filtered_exclude_regex = filter_result.filtered_exclude
+
+            if not streams:
+                result.errors.append("All streams filtered out by regex patterns")
+                result.completed_at = datetime.now()
+                stats_run.complete(status="completed", error="All streams filtered")
+                save_run(conn, stats_run)
+                # Still update stats even if all filtered
+                update_group_stats(
+                    conn,
+                    group.id,
+                    stream_count=0,
+                    matched_count=0,
+                    filtered_include_regex=filter_result.filtered_include,
+                    filtered_exclude_regex=filter_result.filtered_exclude,
+                )
+                return result
+
             # Step 2: Fetch events from data providers
             events = self._fetch_events(group.leagues, target_date)
 
@@ -548,8 +603,11 @@ class EventGroupProcessor:
             update_group_stats(
                 conn,
                 group.id,
-                stream_count=result.streams_fetched,
+                stream_count=result.streams_after_filter,
                 matched_count=result.streams_matched,
+                filtered_include_regex=result.filtered_include_regex,
+                filtered_exclude_regex=result.filtered_exclude_regex,
+                filtered_no_match=result.streams_unmatched,
             )
 
         except Exception as e:
@@ -601,6 +659,32 @@ class EventGroupProcessor:
         except Exception as e:
             logger.error(f"Failed to fetch streams: {e}")
             return []
+
+    def _filter_streams(
+        self,
+        streams: list[dict],
+        group: EventEPGGroup,
+    ) -> tuple[list[dict], FilterResult]:
+        """Filter streams using group's regex configuration.
+
+        Args:
+            streams: List of stream dicts from Dispatcharr
+            group: Event group with filter configuration
+
+        Returns:
+            Tuple of (filtered_streams, filter_result)
+        """
+        stream_filter = create_filter_from_group(group)
+        result = stream_filter.filter(streams)
+
+        if result.filtered_include > 0 or result.filtered_exclude > 0:
+            logger.info(
+                f"Filtered streams for group '{group.name}': "
+                f"{result.total_input} input → {result.passed_count} passed "
+                f"(include: -{result.filtered_include}, exclude: -{result.filtered_exclude})"
+            )
+
+        return result.passed, result
 
     def _fetch_events(self, leagues: list[str], target_date: date) -> list[Event]:
         """Fetch events from data providers for leagues."""

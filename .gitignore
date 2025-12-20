@@ -40,3 +40,4 @@ Thumbs.db
 *.db
 *.sqlite
 *.log
+.env

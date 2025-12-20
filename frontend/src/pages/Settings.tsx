@@ -1046,6 +1046,31 @@ export function Settings() {
             )}
             {cacheStatus?.refresh_in_progress ? "Refreshing..." : "Refresh Cache"}
           </Button>
+
+          {/* TSDB API Key */}
+          <div className="space-y-2 pt-4 border-t">
+            <Label htmlFor="tsdb-api-key">TheSportsDB API Key (Optional)</Label>
+            <Input
+              id="tsdb-api-key"
+              type="password"
+              value={display?.tsdb_api_key ?? ""}
+              onChange={(e) => display && setDisplay({ ...display, tsdb_api_key: e.target.value })}
+              placeholder="Leave blank to use free tier"
+            />
+            <p className="text-xs text-muted-foreground">
+              Premium key ($9/mo) gives higher rate limits. Free tier works for most users.
+              Get a key at <a href="https://www.thesportsdb.com/pricing" target="_blank" rel="noopener noreferrer" className="underline">thesportsdb.com/pricing</a>
+            </p>
+          </div>
+
+          <Button onClick={handleSaveDisplay} disabled={updateDisplay.isPending}>
+            {updateDisplay.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save API Key
+          </Button>
         </CardContent>
       </Card>
 

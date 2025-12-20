@@ -270,6 +270,7 @@ def update_display_settings(conn: Connection, **kwargs) -> bool:
         "channel_id_format": "channel_id_format",
         "xmltv_generator_name": "xmltv_generator_name",
         "xmltv_generator_url": "xmltv_generator_url",
+        "tsdb_api_key": "tsdb_api_key",
     }
 
     updates = []

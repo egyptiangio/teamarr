@@ -164,12 +164,19 @@ def get_display_settings():
     with get_db() as conn:
         settings = get_all_settings(conn)
 
+    # Get tsdb_api_key directly from DB (not in display dataclass)
+    with get_db() as conn:
+        cursor = conn.execute("SELECT tsdb_api_key FROM settings WHERE id = 1")
+        row = cursor.fetchone()
+        tsdb_api_key = row["tsdb_api_key"] if row else None
+
     return DisplaySettingsModel(
         time_format=settings.display.time_format,
         show_timezone=settings.display.show_timezone,
         channel_id_format=settings.display.channel_id_format,
         xmltv_generator_name=settings.display.xmltv_generator_name,
         xmltv_generator_url=settings.display.xmltv_generator_url,
+        tsdb_api_key=tsdb_api_key,
     )
 
 
@@ -194,6 +201,7 @@ def update_display_settings_endpoint(update: DisplaySettingsModel):
             channel_id_format=update.channel_id_format,
             xmltv_generator_name=update.xmltv_generator_name,
             xmltv_generator_url=update.xmltv_generator_url,
+            tsdb_api_key=update.tsdb_api_key,
         )
 
     # Update cached display settings so new values are used immediately
@@ -207,6 +215,10 @@ def update_display_settings_endpoint(update: DisplaySettingsModel):
 
     with get_db() as conn:
         settings = get_all_settings(conn)
+        # Get tsdb_api_key directly
+        cursor = conn.execute("SELECT tsdb_api_key FROM settings WHERE id = 1")
+        row = cursor.fetchone()
+        tsdb_api_key = row["tsdb_api_key"] if row else None
 
     return DisplaySettingsModel(
         time_format=settings.display.time_format,
@@ -214,4 +226,5 @@ def update_display_settings_endpoint(update: DisplaySettingsModel):
         channel_id_format=settings.display.channel_id_format,
         xmltv_generator_name=settings.display.xmltv_generator_name,
         xmltv_generator_url=settings.display.xmltv_generator_url,
+        tsdb_api_key=tsdb_api_key,
     )
