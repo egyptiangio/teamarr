@@ -99,43 +99,6 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     # Migration: Add tsdb_api_key to settings table
     _add_column_if_not_exists(conn, "settings", "tsdb_api_key", "TEXT")
 
-    # Migration: Add Phase 2 stream filtering columns to event_epg_groups
-    _add_column_if_not_exists(conn, "event_epg_groups", "stream_include_regex", "TEXT")
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "stream_include_regex_enabled", "BOOLEAN DEFAULT 0"
-    )
-    _add_column_if_not_exists(conn, "event_epg_groups", "stream_exclude_regex", "TEXT")
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "stream_exclude_regex_enabled", "BOOLEAN DEFAULT 0"
-    )
-    _add_column_if_not_exists(conn, "event_epg_groups", "custom_regex_teams", "TEXT")
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "custom_regex_teams_enabled", "BOOLEAN DEFAULT 0"
-    )
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "skip_builtin_filter", "BOOLEAN DEFAULT 0"
-    )
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "filtered_include_regex", "INTEGER DEFAULT 0"
-    )
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "filtered_exclude_regex", "INTEGER DEFAULT 0"
-    )
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "filtered_no_match", "INTEGER DEFAULT 0"
-    )
-
-    # Migration: Add Phase 3 multi-sport columns to event_epg_groups
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "channel_sort_order", "TEXT DEFAULT 'time'"
-    )
-    _add_column_if_not_exists(
-        conn, "event_epg_groups", "overlap_handling", "TEXT DEFAULT 'add_stream'"
-    )
-
-    # Migration: Add enabled column to event_epg_groups (if missing)
-    _add_column_if_not_exists(conn, "event_epg_groups", "enabled", "BOOLEAN DEFAULT 1")
-
 
 def _add_column_if_not_exists(
     conn: sqlite3.Connection, table: str, column: str, column_def: str
