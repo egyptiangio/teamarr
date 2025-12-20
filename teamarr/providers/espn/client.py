@@ -14,49 +14,6 @@ logger = logging.getLogger(__name__)
 ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 ESPN_CORE_URL = "http://sports.core.api.espn.com/v2/sports"
 
-SPORT_MAPPING = {
-    # US Major Leagues
-    "nfl": ("football", "nfl"),
-    "nba": ("basketball", "nba"),
-    "mlb": ("baseball", "mlb"),
-    "nhl": ("hockey", "nhl"),
-    "wnba": ("basketball", "wnba"),
-    "mls": ("soccer", "usa.1"),
-    # Combat Sports
-    "ufc": ("mma", "ufc"),
-    # College Sports
-    "mens-college-basketball": ("basketball", "mens-college-basketball"),
-    "womens-college-basketball": ("basketball", "womens-college-basketball"),
-    "college-football": ("football", "college-football"),
-    "mens-college-hockey": ("hockey", "mens-college-hockey"),
-    "womens-college-hockey": ("hockey", "womens-college-hockey"),
-    # Rugby Union
-    "six-nations": ("rugby", "180659"),
-    "rugby-championship": ("rugby", "244293"),
-    "premiership-rugby": ("rugby", "267979"),
-    "united-rugby-championship": ("rugby", "270557"),
-    "super-rugby": ("rugby", "242041"),
-    "mlr": ("rugby", "289262"),
-    "rugby-world-cup": ("rugby", "164205"),
-    # Rugby League
-    "nrl": ("rugby-league", "3"),
-    # Tennis
-    "atp": ("tennis", "atp"),
-    "wta": ("tennis", "wta"),
-    # Golf
-    "pga": ("golf", "pga"),
-    "lpga": ("golf", "lpga"),
-    "liv": ("golf", "liv"),
-    "dp-world": ("golf", "eur"),
-    "champions-tour": ("golf", "champions-tour"),
-    # Motorsport / Racing
-    "f1": ("racing", "f1"),
-    "indycar": ("racing", "irl"),
-    "nascar": ("racing", "nascar-premier"),
-    "nascar-xfinity": ("racing", "nascar-secondary"),
-    "nascar-truck": ("racing", "nascar-truck"),
-}
-
 # UFC uses different API endpoints
 ESPN_UFC_EVENTS_URL = "https://api-app.espn.com/v1/sports/mma/ufc/events"
 ESPN_UFC_ATHLETE_URL = "https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/athletes"
@@ -115,13 +72,27 @@ class ESPNClient:
 
         return None
 
-    def get_sport_league(self, league: str) -> tuple[str, str]:
-        """Convert canonical league to ESPN sport/league pair."""
-        if league in SPORT_MAPPING:
-            return SPORT_MAPPING[league]
+    def get_sport_league(
+        self, league: str, override: tuple[str, str] | None = None
+    ) -> tuple[str, str]:
+        """Convert canonical league to ESPN sport/league pair.
+
+        Args:
+            league: Canonical league code (e.g., 'nfl', 'nba')
+            override: (sport, league) tuple from database config (required for non-soccer)
+
+        Returns:
+            (sport, espn_league) tuple for API path construction
+        """
+        # Database config is the source of truth
+        if override:
+            return override
+        # Soccer leagues use dot notation - can infer sport
         if "." in league:
             return ("soccer", league)
-        return ("football", league)
+        # No config provided - log warning and return league as-is
+        logger.warning(f"No database config for league '{league}' - add to leagues table")
+        return ("unknown", league)
 
     def get_scoreboard(self, league: str, date_str: str) -> dict | None:
         """Fetch scoreboard for a league on a given date.
@@ -184,18 +155,21 @@ class ESPNClient:
         url = f"{ESPN_BASE_URL}/{sport}/{espn_league}/summary"
         return self._request(url, {"event": event_id})
 
-    def get_teams(self, league: str) -> dict | None:
+    def get_teams(
+        self, league: str, sport_league: tuple[str, str] | None = None
+    ) -> dict | None:
         """Fetch all teams for a league.
 
         Args:
             league: Canonical league code
+            sport_league: Optional (sport, league) tuple from database config
 
         Returns:
             Raw ESPN response with teams list or None on error
         """
-        sport, espn_league = self.get_sport_league(league)
+        sport, espn_league = self.get_sport_league(league, sport_league)
         url = f"{ESPN_BASE_URL}/{sport}/{espn_league}/teams"
-        return self._request(url, {"limit": 500})
+        return self._request(url, {"limit": 1000})
 
     # UFC-specific endpoints
 

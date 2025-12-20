@@ -12,7 +12,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Query
 
-from teamarr.consumers.team_league_cache import (
+from teamarr.consumers.cache import (
     CacheRefresher,
     get_cache,
 )
@@ -80,19 +80,25 @@ def trigger_refresh(background_tasks: BackgroundTasks) -> dict:
 @router.get("/leagues")
 def list_leagues(
     sport: str | None = Query(None, description="Filter by sport (e.g., 'soccer')"),
-    provider: str | None = Query(None, description="Filter by provider ('espn', 'tsdb')"),
+    provider: str | None = Query(None, description="Filter by provider"),
+    import_only: bool = Query(False, description="Only import-enabled leagues"),
 ) -> dict:
-    """List all cached leagues.
+    """List all available leagues.
+
+    By default, returns all leagues (configured + discovered).
+    Use import_only=True for Team Importer to get only explicitly configured
+    leagues with import_enabled=1.
 
     Args:
         sport: Optional sport filter
         provider: Optional provider filter
+        import_only: If True, only return import-enabled configured leagues
 
     Returns:
-        List of cached leagues
+        List of leagues
     """
     cache = get_cache()
-    leagues = cache.get_all_leagues(sport=sport, provider=provider)
+    leagues = cache.get_all_leagues(sport=sport, provider=provider, import_enabled_only=import_only)
 
     return {
         "count": len(leagues),
@@ -103,6 +109,8 @@ def list_leagues(
                 "name": league.league_name,
                 "sport": league.sport,
                 "team_count": league.team_count,
+                "logo_url": league.logo_url,
+                "import_enabled": league.import_enabled,
             }
             for league in leagues
         ],
@@ -199,6 +207,96 @@ def find_candidate_leagues(
         "team2": team2,
         "candidates": [{"league": league, "provider": provider} for league, provider in candidates],
         "count": len(candidates),
+    }
+
+
+@router.get("/leagues/{league_slug}/teams")
+def get_league_teams(league_slug: str) -> list[dict]:
+    """Get all teams for a specific league.
+
+    Args:
+        league_slug: League identifier (e.g., 'nfl', 'eng.1')
+
+    Returns:
+        List of teams in the league
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, team_name, team_abbrev, team_short_name, provider,
+                   provider_team_id, league, sport, logo_url
+            FROM team_cache
+            WHERE league = ?
+            ORDER BY team_name
+            """,
+            (league_slug,),
+        )
+
+        return [
+            {
+                "id": row["id"],
+                "team_name": row["team_name"],
+                "team_abbrev": row["team_abbrev"],
+                "team_short_name": row["team_short_name"],
+                "provider": row["provider"],
+                "provider_team_id": row["provider_team_id"],
+                "league": row["league"],
+                "sport": row["sport"],
+                "logo_url": row["logo_url"],
+            }
+            for row in cursor.fetchall()
+        ]
+
+
+@router.get("/team-leagues/{provider}/{provider_team_id}")
+def get_team_leagues(provider: str, provider_team_id: str) -> dict:
+    """Get all leagues a team plays in.
+
+    Used for multi-league display (e.g., soccer teams playing in
+    domestic league, Champions League, cup competitions, etc.)
+
+    Args:
+        provider: Provider name ('espn' or 'tsdb')
+        provider_team_id: Team ID from the provider
+
+    Returns:
+        Dict with team info and list of leagues
+    """
+    cache = get_cache()
+    leagues = cache.get_team_leagues(provider_team_id, provider)
+
+    # Get league details for each
+    league_details = []
+    for league_slug in leagues:
+        league_entries = cache.get_all_leagues()
+        for entry in league_entries:
+            if entry.league_slug == league_slug:
+                league_details.append(
+                    {
+                        "slug": entry.league_slug,
+                        "name": entry.league_name,
+                        "sport": entry.sport,
+                        "logo_url": entry.logo_url,
+                    }
+                )
+                break
+        else:
+            # League not found in cache, add basic info
+            league_details.append(
+                {
+                    "slug": league_slug,
+                    "name": league_slug.upper(),
+                    "sport": None,
+                    "logo_url": None,
+                }
+            )
+
+    return {
+        "provider": provider,
+        "provider_team_id": provider_team_id,
+        "leagues": league_details,
+        "count": len(league_details),
     }
 
 

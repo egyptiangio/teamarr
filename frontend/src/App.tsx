@@ -4,8 +4,12 @@ import { MainLayout } from "@/layouts/MainLayout"
 import {
   Dashboard,
   Templates,
+  TemplateForm,
   Teams,
-  Events,
+  TeamImport,
+  EventGroups,
+  EventGroupForm,
+  EventGroupImport,
   EPG,
   Channels,
   Settings,
@@ -28,8 +32,14 @@ function App() {
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="templates" element={<Templates />} />
+            <Route path="templates/new" element={<TemplateForm />} />
+            <Route path="templates/:templateId" element={<TemplateForm />} />
             <Route path="teams" element={<Teams />} />
-            <Route path="events" element={<Events />} />
+            <Route path="teams/import" element={<TeamImport />} />
+            <Route path="event-groups" element={<EventGroups />} />
+            <Route path="event-groups/new" element={<EventGroupForm />} />
+            <Route path="event-groups/:groupId" element={<EventGroupForm />} />
+            <Route path="event-groups/import" element={<EventGroupImport />} />
             <Route path="epg" element={<EPG />} />
             <Route path="channels" element={<Channels />} />
             <Route path="settings" element={<Settings />} />

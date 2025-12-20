@@ -19,7 +19,7 @@ from teamarr.templates.conditions import (
 from teamarr.templates.context import (
     GameContext,
     Odds,
-    TeamConfig,
+    TeamChannelContext,
     TemplateContext,
 )
 from teamarr.templates.context_builder import (
@@ -46,7 +46,7 @@ __all__ = [
     # Context types
     "GameContext",
     "Odds",
-    "TeamConfig",
+    "TeamChannelContext",
     "TemplateContext",
     # Resolver
     "TemplateResolver",

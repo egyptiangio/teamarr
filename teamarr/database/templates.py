@@ -13,6 +13,7 @@ from sqlite3 import Connection, Row
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from teamarr.core import TemplateConfig
     from teamarr.core.filler_types import FillerConfig
 
 
@@ -40,6 +41,7 @@ class Template:
     # Programme formatting
     title_format: str = "{team_name} {sport}"
     subtitle_template: str = "{venue_full}"
+    description_template: str = "{matchup} | {venue_full}"
     program_art_url: str | None = None
 
     # Game duration
@@ -141,6 +143,7 @@ def _row_to_template(row: Row) -> Template:
         league=row["league"],
         title_format=row["title_format"] or "{team_name} {sport}",
         subtitle_template=row["subtitle_template"] or "{venue_full}",
+        description_template=row["description_template"] or "{matchup} | {venue_full}",
         program_art_url=row["program_art_url"],
         game_duration_mode=row["game_duration_mode"] or "sport",
         game_duration_override=row["game_duration_override"],
@@ -313,9 +316,7 @@ def create_template(
     placeholders = ", ".join("?" * len(values))
     column_str = ", ".join(columns)
 
-    cursor = conn.execute(
-        f"INSERT INTO templates ({column_str}) VALUES ({placeholders})", values
-    )
+    cursor = conn.execute(f"INSERT INTO templates ({column_str}) VALUES ({placeholders})", values)
     conn.commit()
     return cursor.lastrowid
 
@@ -487,6 +488,32 @@ def template_to_filler_config(template: Template) -> FillerConfig:
     )
 
 
+def template_to_programme_config(template: Template) -> TemplateConfig:
+    """Convert Template to TemplateConfig for main programme formatting.
+
+    Used by TeamEPGGenerator for the main game programmes (not fillers).
+
+    Args:
+        template: Template from database
+
+    Returns:
+        TemplateConfig ready for TeamEPGGenerator
+    """
+    from teamarr.core import TemplateConfig
+
+    # Get category from xmltv_categories
+    categories = template.xmltv_categories or ["Sports"]
+    category = categories[0] if categories else "Sports"
+
+    return TemplateConfig(
+        title_format=template.title_format or "{team_name} {sport}",
+        description_format=template.description_template or "{matchup} | {venue_full}",
+        subtitle_format=template.subtitle_template or "{venue_full}",
+        category=category,
+        conditional_descriptions=template.conditional_descriptions or [],
+    )
+
+
 def template_to_event_config(template: Template) -> EventTemplateConfig:
     """Convert Template to EventTemplateConfig for event-based EPG.
 
@@ -508,8 +535,8 @@ def template_to_event_config(template: Template) -> EventTemplateConfig:
     return EventTemplateConfig(
         title_format=template.title_format or "{away_team} @ {home_team}",
         channel_name_format=template.event_channel_name or channel_name_default,
-        description_format=template.subtitle_template or "{matchup} | {venue_full}",
-        subtitle_format="{venue_city}",
+        description_format=template.description_template or "{matchup} | {venue_full}",
+        subtitle_format=template.subtitle_template or "{venue_city}",
         category=categories[0] if categories else "Sports",
         program_art_url=template.program_art_url,
         xmltv_flags=template.xmltv_flags or {"new": True, "live": False, "date": False},

@@ -86,9 +86,16 @@ def _add_programme(root: Element, programme: Programme) -> None:
 
 
 def _prettify(xml_str: str) -> str:
-    """Return pretty-printed XML string."""
+    """Return pretty-printed XML string.
+
+    Uses minidom for formatting, then removes extra blank lines
+    that toprettyxml adds between elements.
+    """
     dom = minidom.parseString(xml_str)
-    return dom.toprettyxml(indent="  ")
+    pretty = dom.toprettyxml(indent="  ")
+    # Remove blank lines (minidom adds whitespace-only text nodes)
+    lines = [line for line in pretty.split("\n") if line.strip()]
+    return "\n".join(lines)
 
 
 def merge_xmltv_content(xmltv_contents: list[str]) -> str:

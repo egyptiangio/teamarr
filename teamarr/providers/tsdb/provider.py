@@ -5,12 +5,17 @@ Used as fallback for leagues not supported by ESPN.
 """
 
 import logging
-from collections.abc import Callable, Generator
 from datetime import UTC, date, datetime, timedelta
-from sqlite3 import Connection
 
-from teamarr.core import Event, EventStatus, SportsProvider, Team, TeamStats, Venue
-from teamarr.database import get_db, get_leagues_for_provider
+from teamarr.core import (
+    Event,
+    EventStatus,
+    LeagueMappingSource,
+    SportsProvider,
+    Team,
+    TeamStats,
+    Venue,
+)
 from teamarr.providers.tsdb.client import TSDBClient
 
 logger = logging.getLogger(__name__)
@@ -24,11 +29,11 @@ class TSDBProvider(SportsProvider):
 
     def __init__(
         self,
-        db_getter: Callable[[], Generator[Connection, None, None]] | None = None,
+        league_mapping_source: LeagueMappingSource | None = None,
         client: TSDBClient | None = None,
     ):
-        self._db_getter = db_getter or get_db
-        self._client = client or TSDBClient(self._db_getter)
+        self._league_mapping_source = league_mapping_source
+        self._client = client or TSDBClient(league_mapping_source)
 
     @property
     def name(self) -> str:
@@ -238,11 +243,12 @@ class TSDBProvider(SportsProvider):
     def get_supported_leagues(self) -> list[str]:
         """Get all leagues this provider supports.
 
-        Queries database for all enabled TSDB league mappings.
+        Uses the league mapping source for all enabled TSDB league mappings.
         """
-        with self._db_getter() as conn:
-            mappings = get_leagues_for_provider(conn, "tsdb")
-            return [m.league_code for m in mappings]
+        if not self._league_mapping_source:
+            return []
+        mappings = self._league_mapping_source.get_leagues_for_provider("tsdb")
+        return [m.league_code for m in mappings]
 
     def _parse_event(self, data: dict, league: str) -> Event | None:
         """Parse TSDB event data into Event dataclass."""

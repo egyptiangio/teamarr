@@ -12,6 +12,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,  // Expose to network
     proxy: {
       '/api': 'http://localhost:9198',
       '/health': 'http://localhost:9198',
@@ -20,5 +21,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Cache busting with content hashes
+    rollupOptions: {
+      output: {
+        // Use content hash in filenames for cache busting
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
+      },
+    },
   },
 })

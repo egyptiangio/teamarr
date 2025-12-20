@@ -1,24 +1,16 @@
-"""League provider mapping queries.
+"""League configuration queries.
 
 Single source of truth for league → provider routing.
-All league config lives in the league_provider_mappings table.
+The `leagues` table contains both API config and display data for explicitly
+configured leagues (~30). Discovered leagues (~300) live in `league_cache`.
+
+Note: LeagueMapping is defined in core.interfaces for layer separation.
+This module uses it for database operations.
 """
 
 import sqlite3
-from dataclasses import dataclass
 
-
-@dataclass
-class LeagueMapping:
-    """League mapping from database."""
-
-    league_code: str
-    provider: str
-    provider_league_id: str
-    provider_league_name: str | None  # TSDB's strLeague for eventsday.php
-    sport: str
-    display_name: str
-    logo_url: str | None
+from teamarr.core import LeagueMapping
 
 
 def get_league_mapping(
@@ -36,9 +28,9 @@ def get_league_mapping(
     """
     cursor = conn.execute(
         """
-        SELECT league_code, provider, provider_league_id, provider_league_name,
-               sport, display_name, logo_url
-        FROM league_provider_mappings
+        SELECT league_code, provider, provider_league_id,
+               provider_league_name, sport, display_name, logo_url
+        FROM leagues
         WHERE league_code = ? AND provider = ? AND enabled = 1
         """,
         (league_code.lower(), provider),
@@ -71,7 +63,7 @@ def provider_supports_league(conn: sqlite3.Connection, league_code: str, provide
     """
     cursor = conn.execute(
         """
-        SELECT 1 FROM league_provider_mappings
+        SELECT 1 FROM leagues
         WHERE league_code = ? AND provider = ? AND enabled = 1
         """,
         (league_code.lower(), provider),
@@ -91,9 +83,9 @@ def get_leagues_for_provider(conn: sqlite3.Connection, provider: str) -> list[Le
     """
     cursor = conn.execute(
         """
-        SELECT league_code, provider, provider_league_id, provider_league_name,
-               sport, display_name, logo_url
-        FROM league_provider_mappings
+        SELECT league_code, provider, provider_league_id,
+               provider_league_name, sport, display_name, logo_url
+        FROM leagues
         WHERE provider = ? AND enabled = 1
         ORDER BY league_code
         """,

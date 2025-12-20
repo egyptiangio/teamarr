@@ -25,9 +25,12 @@ class EventEPGGroup:
     delete_timing: str = "same_day"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
+    sort_order: int = 0
+    total_stream_count: int = 0
+    parent_group_id: int | None = None
     m3u_group_id: int | None = None
     m3u_group_name: str | None = None
-    active: bool = True
+    enabled: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -69,9 +72,12 @@ def _row_to_group(row) -> EventEPGGroup:
         delete_timing=row["delete_timing"] or "same_day",
         duplicate_event_handling=row["duplicate_event_handling"] or "consolidate",
         channel_assignment_mode=row["channel_assignment_mode"] or "auto",
+        sort_order=row["sort_order"] or 0,
+        total_stream_count=row["total_stream_count"] or 0,
+        parent_group_id=row["parent_group_id"],
         m3u_group_id=row["m3u_group_id"],
         m3u_group_name=row["m3u_group_name"],
-        active=bool(row["active"]),
+        enabled=bool(row["enabled"]),
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -82,20 +88,22 @@ def _row_to_group(row) -> EventEPGGroup:
 # =============================================================================
 
 
-def get_all_groups(conn: Connection, include_inactive: bool = False) -> list[EventEPGGroup]:
+def get_all_groups(conn: Connection, include_disabled: bool = False) -> list[EventEPGGroup]:
     """Get all event EPG groups.
 
     Args:
         conn: Database connection
-        include_inactive: Include inactive groups
+        include_disabled: Include disabled groups
 
     Returns:
         List of EventEPGGroup objects
     """
-    if include_inactive:
-        cursor = conn.execute("SELECT * FROM event_epg_groups ORDER BY name")
+    if include_disabled:
+        cursor = conn.execute("SELECT * FROM event_epg_groups ORDER BY sort_order, name")
     else:
-        cursor = conn.execute("SELECT * FROM event_epg_groups WHERE active = 1 ORDER BY name")
+        cursor = conn.execute(
+            "SELECT * FROM event_epg_groups WHERE enabled = 1 ORDER BY sort_order, name"
+        )
 
     return [_row_to_group(row) for row in cursor.fetchall()]
 
@@ -131,7 +139,7 @@ def get_group_by_name(conn: Connection, name: str) -> EventEPGGroup | None:
 
 
 def get_groups_for_league(conn: Connection, league: str) -> list[EventEPGGroup]:
-    """Get all active groups that include a specific league.
+    """Get all enabled groups that include a specific league.
 
     Args:
         conn: Database connection
@@ -140,7 +148,9 @@ def get_groups_for_league(conn: Connection, league: str) -> list[EventEPGGroup]:
     Returns:
         List of EventEPGGroup objects that include the league
     """
-    cursor = conn.execute("SELECT * FROM event_epg_groups WHERE active = 1 ORDER BY name")
+    cursor = conn.execute(
+        "SELECT * FROM event_epg_groups WHERE enabled = 1 ORDER BY sort_order, name"
+    )
 
     groups = []
     for row in cursor.fetchall():
@@ -169,9 +179,12 @@ def create_group(
     delete_timing: str = "same_day",
     duplicate_event_handling: str = "consolidate",
     channel_assignment_mode: str = "auto",
+    sort_order: int = 0,
+    total_stream_count: int = 0,
+    parent_group_id: int | None = None,
     m3u_group_id: int | None = None,
     m3u_group_name: str | None = None,
-    active: bool = True,
+    enabled: bool = True,
 ) -> int:
     """Create a new event EPG group.
 
@@ -180,7 +193,7 @@ def create_group(
         name: Unique group name
         leagues: List of league codes to scan
         template_id: Optional template ID
-        channel_start_number: Starting channel number
+        channel_start_number: Starting channel number (for MANUAL mode)
         channel_group_id: Dispatcharr channel group ID
         stream_profile_id: Dispatcharr stream profile ID
         channel_profile_ids: List of channel profile IDs
@@ -188,9 +201,12 @@ def create_group(
         delete_timing: When to delete channels
         duplicate_event_handling: How to handle duplicate events
         channel_assignment_mode: 'auto' or 'manual'
+        sort_order: Ordering for AUTO channel allocation
+        total_stream_count: Expected streams for range reservation
+        parent_group_id: Parent group for child relationships
         m3u_group_id: M3U group ID to scan
         m3u_group_name: M3U group name
-        active: Whether group is active
+        enabled: Whether group is enabled
 
     Returns:
         New group ID
@@ -200,8 +216,9 @@ def create_group(
             name, leagues, template_id, channel_start_number,
             channel_group_id, stream_profile_id, channel_profile_ids,
             create_timing, delete_timing, duplicate_event_handling,
-            channel_assignment_mode, m3u_group_id, m3u_group_name, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            channel_assignment_mode, sort_order, total_stream_count,
+            parent_group_id, m3u_group_id, m3u_group_name, enabled
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             name,
             json.dumps(leagues),
@@ -214,9 +231,12 @@ def create_group(
             delete_timing,
             duplicate_event_handling,
             channel_assignment_mode,
+            sort_order,
+            total_stream_count,
+            parent_group_id,
             m3u_group_id,
             m3u_group_name,
-            int(active),
+            int(enabled),
         ),
     )
     return cursor.lastrowid
@@ -241,14 +261,18 @@ def update_group(
     delete_timing: str | None = None,
     duplicate_event_handling: str | None = None,
     channel_assignment_mode: str | None = None,
+    sort_order: int | None = None,
+    total_stream_count: int | None = None,
+    parent_group_id: int | None = None,
     m3u_group_id: int | None = None,
     m3u_group_name: str | None = None,
-    active: bool | None = None,
+    enabled: bool | None = None,
     clear_template: bool = False,
     clear_channel_start_number: bool = False,
     clear_channel_group_id: bool = False,
     clear_stream_profile_id: bool = False,
     clear_channel_profile_ids: bool = False,
+    clear_parent_group_id: bool = False,
     clear_m3u_group_id: bool = False,
     clear_m3u_group_name: bool = False,
 ) -> bool:
@@ -323,6 +347,20 @@ def update_group(
         updates.append("channel_assignment_mode = ?")
         values.append(channel_assignment_mode)
 
+    if sort_order is not None:
+        updates.append("sort_order = ?")
+        values.append(sort_order)
+
+    if total_stream_count is not None:
+        updates.append("total_stream_count = ?")
+        values.append(total_stream_count)
+
+    if parent_group_id is not None:
+        updates.append("parent_group_id = ?")
+        values.append(parent_group_id)
+    elif clear_parent_group_id:
+        updates.append("parent_group_id = NULL")
+
     if m3u_group_id is not None:
         updates.append("m3u_group_id = ?")
         values.append(m3u_group_id)
@@ -335,9 +373,9 @@ def update_group(
     elif clear_m3u_group_name:
         updates.append("m3u_group_name = NULL")
 
-    if active is not None:
-        updates.append("active = ?")
-        values.append(int(active))
+    if enabled is not None:
+        updates.append("enabled = ?")
+        values.append(int(enabled))
 
     if not updates:
         return False
@@ -348,19 +386,19 @@ def update_group(
     return cursor.rowcount > 0
 
 
-def set_group_active(conn: Connection, group_id: int, active: bool) -> bool:
-    """Set group active status.
+def set_group_enabled(conn: Connection, group_id: int, enabled: bool) -> bool:
+    """Set group enabled status.
 
     Args:
         conn: Database connection
         group_id: Group ID
-        active: New active status
+        enabled: New enabled status
 
     Returns:
         True if updated
     """
     cursor = conn.execute(
-        "UPDATE event_epg_groups SET active = ? WHERE id = ?", (int(active), group_id)
+        "UPDATE event_epg_groups SET enabled = ? WHERE id = ?", (int(enabled), group_id)
     )
     return cursor.rowcount > 0
 
@@ -525,11 +563,11 @@ def get_all_group_xmltv(conn: Connection, group_ids: list[int] | None = None) ->
             group_ids,
         )
     else:
-        # Get XMLTV for all active groups
+        # Get XMLTV for all enabled groups
         cursor = conn.execute(
             """SELECT x.xmltv_content FROM event_epg_xmltv x
                JOIN event_epg_groups g ON x.group_id = g.id
-               WHERE g.active = 1
+               WHERE g.enabled = 1
                AND x.xmltv_content IS NOT NULL AND x.xmltv_content != ''"""
         )
 
@@ -565,8 +603,6 @@ def delete_group_xmltv(conn: Connection, group_id: int) -> bool:
     Returns:
         True if deleted
     """
-    cursor = conn.execute(
-        "DELETE FROM event_epg_xmltv WHERE group_id = ?", (group_id,)
-    )
+    cursor = conn.execute("DELETE FROM event_epg_xmltv WHERE group_id = ?", (group_id,))
     conn.commit()
     return cursor.rowcount > 0

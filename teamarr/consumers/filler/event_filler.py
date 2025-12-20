@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from teamarr.core import Event, Programme
-from teamarr.templates.context import GameContext, TeamConfig, TemplateContext
+from teamarr.templates.context import GameContext, TeamChannelContext, TemplateContext
 from teamarr.templates.resolver import TemplateResolver
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import create_filler_chunks
@@ -212,7 +212,7 @@ class EventFillerGenerator:
         not perspective-based (team_name, opponent). No .next/.last support.
         """
         # Build minimal team config for context
-        team_config = TeamConfig(
+        team_config = TeamChannelContext(
             team_id=event.home_team.id,
             league=event.league,
             sport=event.sport,
@@ -237,9 +237,7 @@ class EventFillerGenerator:
             last_game=None,  # No .last for event filler
         )
 
-    def _select_postgame_template(
-        self, event: Event, config: EventFillerConfig
-    ) -> FillerTemplate:
+    def _select_postgame_template(self, event: Event, config: EventFillerConfig) -> FillerTemplate:
         """Select appropriate postgame template based on game status.
 
         Supports conditional descriptions (final vs in-progress).

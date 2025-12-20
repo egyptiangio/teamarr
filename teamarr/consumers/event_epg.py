@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from teamarr.core import Event, Programme
+from teamarr.database.templates import EventTemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
@@ -29,18 +30,6 @@ class EventChannelInfo:
     channel_id: str
     name: str
     icon: str | None = None
-
-
-@dataclass
-class EventTemplateConfig:
-    """Template configuration for event-based EPG."""
-
-    # Event EPG uses home team perspective by default
-    title_format: str = "{away_team} @ {home_team}"
-    channel_name_format: str = "{away_team_abbrev} @ {home_team_abbrev}"
-    description_format: str = "{matchup} | {venue_full} | {broadcast_simple}"
-    subtitle_format: str = "{venue_city}"
-    category: str = "Sports"
 
 
 @dataclass
@@ -178,8 +167,25 @@ class EventEPGGenerator:
 
         # Resolve templates
         title = self._resolver.resolve(options.template.title_format, context)
-        description = self._resolver.resolve(options.template.description_format, context)
         subtitle = self._resolver.resolve(options.template.subtitle_format, context)
+
+        # Use conditional description selector if conditions are defined
+        description = None
+        if options.template.conditional_descriptions:
+            from teamarr.templates.conditions import get_condition_selector
+
+            selector = get_condition_selector()
+            selected_template = selector.select(
+                options.template.conditional_descriptions,
+                context,
+                context.current,  # GameContext for the event
+            )
+            if selected_template:
+                description = self._resolver.resolve(selected_template, context)
+
+        # Fallback to default description format
+        if not description:
+            description = self._resolver.resolve(options.template.description_format, context)
 
         return Programme(
             channel_id=channel_id,
@@ -271,9 +277,7 @@ class EventEPGGenerator:
             )
 
             # Generate channel name from template
-            channel_name = self._resolver.resolve(
-                options.template.channel_name_format, context
-            )
+            channel_name = self._resolver.resolve(options.template.channel_name_format, context)
 
             channel_info = EventChannelInfo(
                 channel_id=tvg_id,

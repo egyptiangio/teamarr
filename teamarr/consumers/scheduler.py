@@ -201,24 +201,29 @@ class LifecycleScheduler:
         return results
 
     def _task_generate_epg(self) -> dict:
-        """Generate EPG for all groups and write to output file.
+        """Generate EPG for all teams and groups, write to output file.
 
         Flow:
-        1. Process all active event groups (generates XMLTV per group)
-        2. Get all stored XMLTV from database
-        3. Merge into single XMLTV document
-        4. Write to output file path
+        1. Process all active teams (generates XMLTV per team)
+        2. Process all active event groups (generates XMLTV per group)
+        3. Get all stored XMLTV from database (teams + groups)
+        4. Merge into single XMLTV document
+        5. Write to output file path
 
         Returns:
             Dict with generation stats
         """
-        from teamarr.consumers import process_all_event_groups
+        from teamarr.consumers import process_all_event_groups, process_all_teams
+        from teamarr.consumers.team_processor import get_all_team_xmltv
         from teamarr.database.groups import get_all_group_xmltv
         from teamarr.database.settings import get_epg_settings
         from teamarr.utilities.xmltv import merge_xmltv_content
 
         result = {
+            "teams_processed": 0,
+            "teams_programmes": 0,
             "groups_processed": 0,
+            "groups_programmes": 0,
             "programmes_generated": 0,
             "file_written": False,
             "file_path": None,
@@ -234,22 +239,51 @@ class LifecycleScheduler:
             logger.debug("EPG output path not configured, skipping file write")
             return result
 
+        # Process all active teams
+        team_result = process_all_teams(db_factory=self._db_factory)
+        result["teams_processed"] = team_result.teams_processed
+        result["teams_programmes"] = team_result.total_programmes
+
+        if team_result.teams_processed > 0:
+            logger.info(
+                f"Processed {team_result.teams_processed} teams, "
+                f"{team_result.total_programmes} programmes"
+            )
+
         # Process all event groups
-        batch_result = process_all_event_groups(
+        group_result = process_all_event_groups(
             db_factory=self._db_factory,
             dispatcharr_client=self._dispatcharr_client,
         )
+        result["groups_processed"] = group_result.groups_processed
+        result["groups_programmes"] = group_result.total_programmes
 
-        result["groups_processed"] = batch_result.groups_processed
-        result["programmes_generated"] = batch_result.total_programmes
+        if group_result.groups_processed > 0:
+            logger.info(
+                f"Processed {group_result.groups_processed} event groups, "
+                f"{group_result.total_programmes} programmes"
+            )
 
-        if batch_result.groups_processed == 0:
-            logger.debug("No event groups processed, skipping EPG file write")
+        # Calculate total
+        result["programmes_generated"] = (
+            team_result.total_programmes + group_result.total_programmes
+        )
+
+        # Check if anything was processed
+        if team_result.teams_processed == 0 and group_result.groups_processed == 0:
+            logger.debug("No teams or event groups processed, skipping EPG file write")
             return result
 
-        # Get all stored XMLTV content
+        # Get all stored XMLTV content (teams + groups)
+        xmltv_contents: list[str] = []
         with self._db_factory() as conn:
-            xmltv_contents = get_all_group_xmltv(conn)
+            # Get team XMLTV
+            team_xmltv = get_all_team_xmltv(conn)
+            xmltv_contents.extend(team_xmltv)
+
+            # Get group XMLTV
+            group_xmltv = get_all_group_xmltv(conn)
+            xmltv_contents.extend(group_xmltv)
 
         if not xmltv_contents:
             logger.debug("No XMLTV content available, skipping file write")
@@ -281,7 +315,7 @@ class LifecycleScheduler:
 
             logger.info(
                 f"EPG written to {output_path} "
-                f"({len(merged_xmltv):,} bytes, {batch_result.total_programmes} programmes)"
+                f"({len(merged_xmltv):,} bytes, {result['programmes_generated']} programmes)"
             )
 
         except Exception as e:

@@ -53,9 +53,7 @@ def _row_to_keyword(row) -> ExceptionKeyword:
 # =============================================================================
 
 
-def get_all_keywords(
-    conn: Connection, include_disabled: bool = False
-) -> list[ExceptionKeyword]:
+def get_all_keywords(conn: Connection, include_disabled: bool = False) -> list[ExceptionKeyword]:
     """Get all exception keywords.
 
     Args:

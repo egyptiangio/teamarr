@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from teamarr.consumers.event_epg import EventEPGGenerator, EventEPGOptions
-from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions, TemplateConfig
-from teamarr.core import Programme
+from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions
+from teamarr.core import Programme, TemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.utilities.xmltv import programmes_to_xmltv
 
@@ -135,19 +135,23 @@ class Orchestrator:
     def _build_team_options(
         self, config: TeamChannelConfig, base: TeamEPGOptions
     ) -> TeamEPGOptions:
-        """Build per-team options, merging config template with base options."""
-        # Start with default template
-        template = TemplateConfig()
+        """Build per-team options, merging config template with base options.
 
-        # Override with config values if set
-        if config.title_format:
-            template.title_format = config.title_format
-        if config.description_format:
-            template.description_format = config.description_format
-        if config.subtitle_format:
-            template.subtitle_format = config.subtitle_format
-        if config.category:
-            template.category = config.category
+        Template is loaded from database via template_id. Direct template format
+        values (title_format, etc.) are only used if ALL values are provided.
+        Otherwise, template_id must be set for proper template loading.
+        """
+        # Build template only if ALL format values are provided
+        # Otherwise, rely on template_id for database loading
+        template = None
+        if all([config.title_format, config.description_format, config.subtitle_format]):
+            template = TemplateConfig(
+                title_format=config.title_format,
+                description_format=config.description_format,
+                subtitle_format=config.subtitle_format,
+                category=config.category or "Sports",
+                conditional_descriptions=[],  # Direct API calls don't use conditionals
+            )
 
         return TeamEPGOptions(
             schedule_days_ahead=base.schedule_days_ahead,

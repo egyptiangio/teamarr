@@ -211,7 +211,7 @@ MASCOT_WORDS = {
 
 
 @dataclass
-class MatchResult:
+class FuzzyMatchResult:
     """Result of a fuzzy match."""
 
     matched: bool
@@ -320,7 +320,7 @@ class FuzzyMatcher:
         self,
         patterns: list[str],
         text: str,
-    ) -> MatchResult:
+    ) -> FuzzyMatchResult:
         """Check if any pattern matches within text.
 
         Uses multiple strategies:
@@ -335,7 +335,7 @@ class FuzzyMatcher:
             text: Text to search within
 
         Returns:
-            MatchResult with match status and score
+            FuzzyMatchResult with match status and score
         """
         # Expand abbreviations before matching
         text_lower = self._expand_abbreviations(text)
@@ -343,23 +343,23 @@ class FuzzyMatcher:
         # Strategy 1: Exact substring match (fastest)
         for pattern in patterns:
             if pattern in text_lower:
-                return MatchResult(matched=True, score=100.0, pattern_used=pattern)
+                return FuzzyMatchResult(matched=True, score=100.0, pattern_used=pattern)
 
         # Strategy 2: Token set ratio (handles word order, extra words)
         # Good for "Atlanta Falcons" matching "Falcons @ Atlanta"
         for pattern in patterns:
             score = fuzz.token_set_ratio(pattern, text_lower)
             if score >= self.partial_threshold:
-                return MatchResult(matched=True, score=score, pattern_used=pattern)
+                return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
 
         # Strategy 3: Partial ratio (handles substrings)
         # Good for "Florida Atlantic" matching "Florida Atlantic Owls"
         for pattern in patterns:
             score = fuzz.partial_ratio(pattern, text_lower)
             if score >= self.partial_threshold:
-                return MatchResult(matched=True, score=score, pattern_used=pattern)
+                return FuzzyMatchResult(matched=True, score=score, pattern_used=pattern)
 
-        return MatchResult(matched=False, score=0.0)
+        return FuzzyMatchResult(matched=False, score=0.0)
 
     def best_match(
         self,

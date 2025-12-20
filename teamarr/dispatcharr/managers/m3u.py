@@ -67,8 +67,11 @@ class M3UManager:
         self._client = client
         self._groups_cache: list[DispatcharrChannelGroup] | None = None
 
-    def list_accounts(self) -> list[DispatcharrM3UAccount]:
+    def list_accounts(self, include_custom: bool = False) -> list[DispatcharrM3UAccount]:
         """List all M3U accounts.
+
+        Args:
+            include_custom: If False (default), excludes the "custom" account
 
         Returns:
             List of DispatcharrM3UAccount objects
@@ -78,7 +81,10 @@ class M3UManager:
             status = response.status_code if response else "No response"
             logger.error(f"Failed to list M3U accounts: {status}")
             return []
-        return [DispatcharrM3UAccount.from_api(a) for a in response.json()]
+        accounts = [DispatcharrM3UAccount.from_api(a) for a in response.json()]
+        if not include_custom:
+            accounts = [a for a in accounts if a.name.lower() != "custom"]
+        return accounts
 
     def get_account(self, account_id: int) -> DispatcharrM3UAccount | None:
         """Get a specific M3U account by ID.

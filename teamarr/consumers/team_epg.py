@@ -10,22 +10,12 @@ Two-phase data flow:
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from teamarr.core import Event, Programme
+from teamarr.core import Event, Programme, TemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.tz import now_user
-
-
-@dataclass
-class TemplateConfig:
-    """Template configuration for EPG generation."""
-
-    title_format: str = "{away_team} @ {home_team}"
-    description_format: str = "{matchup} | {venue_full} | {broadcast_simple}"
-    subtitle_format: str = "{venue_full}"
-    category: str = "Sports"
 
 
 @dataclass
@@ -36,7 +26,7 @@ class TeamEPGOptions:
     output_days_ahead: int = 14  # How many days to include in XMLTV
     pregame_minutes: int = 30
     default_duration_hours: float = 3.0
-    template: TemplateConfig = field(default_factory=TemplateConfig)
+    template: TemplateConfig | None = None  # REQUIRED - must be loaded from database
 
     # Filler generation options
     filler_enabled: bool = True  # Enable filler generation
@@ -80,10 +70,17 @@ class TeamEPGGenerator:
         logo_url: str | None = None,
         options: TeamEPGOptions | None = None,
         provider: str = "espn",
+        sport: str | None = None,
     ) -> list[Programme]:
         """Generate EPG with automatic multi-league discovery.
 
         Uses the team/league cache to find all leagues the team plays in.
+
+        NOTE: Multi-league discovery is ONLY enabled for soccer. In soccer,
+        teams play in multiple competitions (domestic league, Champions League,
+        cups) with the same team ID. In US sports (NBA, MLB, NFL, NHL), team IDs
+        are NOT correlated across leagues - NBA team_id 8 (Pistons) is unrelated
+        to NCAAM team_id 8 (Razorbacks).
 
         Args:
             team_id: Provider team ID
@@ -94,18 +91,25 @@ class TeamEPGGenerator:
             logo_url: Team/channel logo URL
             options: Generation options
             provider: Data provider ('espn' or 'tsdb')
+            sport: Sport type (baseball, basketball, etc.) - REQUIRED to avoid
+                   cross-sport ID collisions in ESPN
 
         Returns:
             List of Programme entries from all discovered leagues
         """
-        from teamarr.consumers.team_league_cache import get_cache
+        additional_leagues: list[str] = []
 
-        # Look up additional leagues from cache
-        cache = get_cache()
-        additional_leagues = cache.get_team_leagues(team_id, provider)
+        # Multi-league discovery ONLY for soccer
+        # Soccer teams play same competitions across leagues (EPL + Champions League + FA Cup)
+        # US sports have unrelated team IDs across leagues (NBA vs NCAAM vs WNBA)
+        if sport == "soccer":
+            from teamarr.consumers.cache import get_cache
 
-        # Remove primary league from additional (will be added back in generate)
-        additional_leagues = [lg for lg in additional_leagues if lg != primary_league]
+            cache = get_cache()
+            additional_leagues = cache.get_team_leagues(team_id, provider, sport=sport)
+
+            # Remove primary league from additional (will be added back in generate)
+            additional_leagues = [lg for lg in additional_leagues if lg != primary_league]
 
         return self.generate(
             team_id=team_id,
@@ -146,6 +150,24 @@ class TeamEPGGenerator:
         """
         options = options or TeamEPGOptions()
 
+        # Load template from database if template_id is set
+        if options.template_id:
+            loaded_template = self._load_programme_template(options.template_id)
+            if loaded_template:
+                options.template = loaded_template
+
+        # CRITICAL: Template is REQUIRED - no hardcoded defaults
+        # If no template is available, return empty list
+        if options.template is None:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"No template configured for team {team_id} in league {league}. "
+                "EPG generation requires a template. Skipping."
+            )
+            return []
+
         # Collect all leagues to fetch from
         leagues_to_fetch = [league]
         if additional_leagues:
@@ -177,8 +199,9 @@ class TeamEPGGenerator:
         # Sort events by time to determine next/last relationships
         sorted_events = sorted(all_events, key=lambda e: e.start_time)
 
-        # Calculate output cutoff date
-        output_cutoff = now_user() + timedelta(days=options.output_days_ahead)
+        # Calculate output window
+        now = now_user()
+        output_cutoff = now + timedelta(days=options.output_days_ahead)
 
         programmes = []
         for i, event in enumerate(sorted_events):
@@ -197,7 +220,18 @@ class TeamEPGGenerator:
                 last_event=last_event,
             )
 
-            # Only include in output if within output_days_ahead
+            # Calculate when this event's programme would end
+            duration = get_sport_duration(
+                event.sport, options.sport_durations, options.default_duration_hours
+            )
+            event_end = event.start_time + timedelta(hours=duration)
+
+            # Skip events that are FINAL (completed games)
+            # Include in-progress games even if past estimated end time
+            if event.status.state == "final" and event_end < now:
+                continue
+
+            # Skip events beyond the output window
             if event.start_time > output_cutoff:
                 continue
 
@@ -249,8 +283,25 @@ class TeamEPGGenerator:
 
         # Resolve templates
         title = self._resolver.resolve(options.template.title_format, context)
-        description = self._resolver.resolve(options.template.description_format, context)
         subtitle = self._resolver.resolve(options.template.subtitle_format, context)
+
+        # Use conditional description selector if conditions are defined
+        description = None
+        if options.template.conditional_descriptions:
+            from teamarr.templates.conditions import get_condition_selector
+
+            selector = get_condition_selector()
+            selected_template = selector.select(
+                options.template.conditional_descriptions,
+                context,
+                context.current,  # GameContext for current event
+            )
+            if selected_template:
+                description = self._resolver.resolve(selected_template, context)
+
+        # Fallback to default description format
+        if not description:
+            description = self._resolver.resolve(options.template.description_format, context)
 
         return Programme(
             channel_id=channel_id,
@@ -361,3 +412,26 @@ class TeamEPGGenerator:
         return FillerConfig(
             category=options.template.category,
         )
+
+    def _load_programme_template(self, template_id: int) -> TemplateConfig | None:
+        """Load main programme template from database.
+
+        Args:
+            template_id: Template ID to load
+
+        Returns:
+            TemplateConfig or None if not found/error
+        """
+        try:
+            from teamarr.database import get_db
+            from teamarr.database.templates import get_template, template_to_programme_config
+
+            with get_db() as conn:
+                template = get_template(conn, template_id)
+                if template:
+                    return template_to_programme_config(template)
+        except Exception:
+            # Fall through to None (will use default)
+            pass
+
+        return None

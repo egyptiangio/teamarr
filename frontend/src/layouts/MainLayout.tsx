@@ -2,22 +2,36 @@ import { Link, NavLink, Outlet } from "react-router-dom"
 import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Toaster } from "sonner"
+import { useQuery } from "@tanstack/react-query"
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard" },
   { to: "/templates", label: "Templates" },
   { to: "/teams", label: "Teams" },
-  { to: "/events", label: "Events" },
+  { to: "/event-groups", label: "Event Groups" },
   { to: "/epg", label: "EPG" },
   { to: "/channels", label: "Channels" },
   { to: "/settings", label: "Settings" },
 ]
+
+async function fetchHealth(): Promise<{ status: string; version: string }> {
+  const resp = await fetch("/health")
+  return resp.json()
+}
 
 export function MainLayout() {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem("theme")
     return (saved as "dark" | "light") || "dark"
   })
+
+  const healthQuery = useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    staleTime: Infinity, // Version won't change during session
+  })
+
+  const version = healthQuery.data?.version || "v2.0.0"
 
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark")
@@ -33,7 +47,7 @@ export function MainLayout() {
     <div className="min-h-screen bg-background text-foreground">
       {/* Navbar */}
       <nav className="border-b border-border bg-secondary/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="max-w-[96rem] mx-auto px-4">
           <div className="flex items-center justify-between h-14">
             {/* Brand */}
             <Link to="/" className="flex items-center gap-3">
@@ -50,7 +64,7 @@ export function MainLayout() {
                   Teamarr
                 </span>
                 <span className="text-xs text-muted-foreground leading-tight hidden sm:block">
-                  Dynamic EPG Generator
+                  Dynamic Sports EPG Generator for Dispatcharr
                 </span>
               </div>
             </Link>
@@ -77,7 +91,7 @@ export function MainLayout() {
             {/* Right side */}
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                v2.0.0
+                {version}
               </span>
               <button
                 onClick={toggleTheme}
@@ -112,7 +126,7 @@ export function MainLayout() {
                 e.currentTarget.style.display = "none"
               }}
             />
-            <span>Teamarr - Dynamic EPG Generator for Sports Channels</span>
+            <span>Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version} | Port 9198</span>
           </div>
         </div>
       </footer>
@@ -120,8 +134,15 @@ export function MainLayout() {
       {/* Toast notifications */}
       <Toaster
         position="top-right"
+        expand={true}
+        richColors
         toastOptions={{
-          className: "bg-card border border-border text-foreground",
+          className: "bg-card border border-border text-foreground text-sm",
+          style: {
+            padding: "16px 20px",
+            fontSize: "14px",
+            minWidth: "320px",
+          },
         }}
       />
     </div>

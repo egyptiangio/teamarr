@@ -44,7 +44,7 @@ class GameContext:
 
 
 @dataclass
-class TeamConfig:
+class TeamChannelContext:
     """Team channel configuration from database."""
 
     team_id: str
@@ -73,7 +73,7 @@ class TemplateContext:
     game_context: GameContext | None
 
     # Team identity and season stats
-    team_config: TeamConfig
+    team_config: TeamChannelContext
     team_stats: TeamStats | None
 
     # Team object (convenience field)

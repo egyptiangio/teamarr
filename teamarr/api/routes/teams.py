@@ -1,11 +1,46 @@
 """Teams API endpoints."""
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from teamarr.api.models import TeamCreate, TeamResponse, TeamUpdate
 from teamarr.database import get_db
 
 router = APIRouter()
+
+
+def generate_channel_id(team_name: str, league: str) -> str:
+    """Generate channel ID from team name and league."""
+    name = "".join(
+        word.capitalize()
+        for word in "".join(c if c.isalnum() or c.isspace() else "" for c in team_name).split()
+    )
+    return f"{name}.{league}"
+
+
+class BulkImportTeam(BaseModel):
+    """Team data from cache for bulk import."""
+
+    team_name: str
+    team_abbrev: str | None = None
+    provider: str
+    provider_team_id: str
+    league: str
+    sport: str
+    logo_url: str | None = None
+
+
+class BulkImportRequest(BaseModel):
+    """Bulk import request body."""
+
+    teams: list[BulkImportTeam]
+
+
+class BulkImportResponse(BaseModel):
+    """Bulk import result."""
+
+    imported: int
+    skipped: int
 
 
 @router.get("/teams", response_model=list[TeamResponse])
@@ -96,3 +131,50 @@ def delete_team(team_id: int):
         cursor = conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+
+@router.post("/teams/bulk-import", response_model=BulkImportResponse)
+def bulk_import_teams(request: BulkImportRequest):
+    """Bulk import teams from cache.
+
+    Skips teams that already exist (same provider_team_id + league).
+    """
+    imported = 0
+    skipped = 0
+
+    with get_db() as conn:
+        # Get existing teams to check for duplicates
+        cursor = conn.execute("SELECT provider_team_id, league FROM teams")
+        existing = {(row["provider_team_id"], row["league"]) for row in cursor.fetchall()}
+
+        for team in request.teams:
+            key = (team.provider_team_id, team.league)
+            if key in existing:
+                skipped += 1
+                continue
+
+            channel_id = generate_channel_id(team.team_name, team.league)
+
+            conn.execute(
+                """
+                INSERT INTO teams (
+                    provider, provider_team_id, league, sport,
+                    team_name, team_abbrev, team_logo_url,
+                    channel_id, active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    team.provider,
+                    team.provider_team_id,
+                    team.league,
+                    team.sport,
+                    team.team_name,
+                    team.team_abbrev,
+                    team.logo_url,
+                    channel_id,
+                ),
+            )
+            imported += 1
+            existing.add(key)
+
+    return BulkImportResponse(imported=imported, skipped=skipped)

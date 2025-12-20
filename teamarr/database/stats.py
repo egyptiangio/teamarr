@@ -262,9 +262,7 @@ def save_run(conn: Connection, run: ProcessingRun) -> None:
 
 def get_run(conn: Connection, run_id: int) -> ProcessingRun | None:
     """Get a processing run by ID."""
-    row = conn.execute(
-        "SELECT * FROM processing_runs WHERE id = ?", (run_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM processing_runs WHERE id = ?", (run_id,)).fetchone()
 
     if not row:
         return None
@@ -310,9 +308,7 @@ def _row_to_run(row: dict) -> ProcessingRun:
         run_id=row.get("run_id"),
         group_id=row.get("group_id"),
         team_id=row.get("team_id"),
-        started_at=(
-            datetime.fromisoformat(row["started_at"]) if row.get("started_at") else None
-        ),
+        started_at=(datetime.fromisoformat(row["started_at"]) if row.get("started_at") else None),
         completed_at=(
             datetime.fromisoformat(row["completed_at"]) if row.get("completed_at") else None
         ),
@@ -501,8 +497,6 @@ def get_stats_history(
 def cleanup_old_runs(conn: Connection, days: int = 30) -> int:
     """Delete processing runs older than specified days."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-    cursor = conn.execute(
-        "DELETE FROM processing_runs WHERE created_at < ?", (cutoff,)
-    )
+    cursor = conn.execute("DELETE FROM processing_runs WHERE created_at < ?", (cutoff,))
     conn.commit()
     return cursor.rowcount

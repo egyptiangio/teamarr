@@ -3,10 +3,14 @@
 All provider configuration happens here. Adding a new provider:
 1. Create provider module (providers/newprovider/)
 2. Register it in providers/__init__.py using ProviderRegistry.register()
-3. Add league mappings to database (league_provider_mappings table)
+3. Add league config to database (leagues table)
 
 The rest of the system (SportsDataService, CacheRefresher, etc.)
 automatically discovers and uses registered providers.
+
+Dependency Injection:
+Providers receive dependencies (like LeagueMappingSource) via
+ProviderRegistry.initialize() called during app startup.
 """
 
 import logging
@@ -15,9 +19,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from teamarr.core import SportsProvider
+    from teamarr.core import LeagueMappingSource, SportsProvider
 
 logger = logging.getLogger(__name__)
+
+# Module-level dependency storage (set during initialize)
+_league_mapping_source: "LeagueMappingSource | None" = None
 
 
 @dataclass
@@ -169,3 +176,31 @@ class ProviderRegistry:
     def enabled_provider_names(cls) -> list[str]:
         """Get list of enabled provider names."""
         return [name for name, config in cls._providers.items() if config.enabled]
+
+    @classmethod
+    def initialize(cls, league_mapping_source: "LeagueMappingSource") -> None:
+        """Initialize providers with dependencies.
+
+        Must be called during app startup after database is ready.
+        Sets up the league mapping source that providers need.
+
+        Args:
+            league_mapping_source: Source for league mapping lookups
+        """
+        global _league_mapping_source
+        _league_mapping_source = league_mapping_source
+
+        # Reset cached instances so they get recreated with dependencies
+        cls.reset_instances()
+        cls._initialized = True
+        logger.info("Provider registry initialized with dependencies")
+
+    @classmethod
+    def is_initialized(cls) -> bool:
+        """Check if registry has been initialized with dependencies."""
+        return cls._initialized
+
+    @classmethod
+    def get_league_mapping_source(cls) -> "LeagueMappingSource | None":
+        """Get the league mapping source (for factory functions)."""
+        return _league_mapping_source

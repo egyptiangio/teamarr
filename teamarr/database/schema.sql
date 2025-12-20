@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS templates (
     -- Programme Formatting
     title_format TEXT DEFAULT '{team_name} {sport}',
     subtitle_template TEXT DEFAULT '{venue_full}',
+    description_template TEXT DEFAULT '{matchup} | {venue_full}',
     program_art_url TEXT,
 
     -- Game Duration
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS templates (
     idle_enabled BOOLEAN DEFAULT 1,
     idle_content JSON DEFAULT '{"title": "{team_name} Programming", "subtitle": null, "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}", "art_url": null}',
     idle_conditional JSON DEFAULT '{"enabled": false, "description_final": null, "description_not_final": null}',
-    idle_offseason JSON DEFAULT '{"enabled": false, "subtitle": null, "description": "No upcoming {team_name} games scheduled."}',
+    idle_offseason JSON DEFAULT '{"title_enabled": false, "title": null, "subtitle_enabled": false, "subtitle": null, "description_enabled": false, "description": "No upcoming {team_name} games scheduled."}',
 
     -- Conditional Descriptions (advanced)
     conditional_descriptions JSON DEFAULT '[]',
@@ -142,7 +143,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
     -- Look Ahead Settings
     team_schedule_days_ahead INTEGER DEFAULT 30,    -- How far to fetch team schedules (for .next vars, conditionals)
-    event_match_days_ahead INTEGER DEFAULT 7,       -- Event-stream matching window
+    event_match_days_ahead INTEGER DEFAULT 3,       -- Event-stream matching window (Event Groups only)
     epg_output_days_ahead INTEGER DEFAULT 14,       -- Days to include in final XMLTV
     epg_lookback_hours INTEGER DEFAULT 6,           -- Check for in-progress games
 
@@ -282,12 +283,17 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     channel_assignment_mode TEXT DEFAULT 'auto'
         CHECK(channel_assignment_mode IN ('auto', 'manual')),
 
+    -- Channel Numbering (for AUTO mode)
+    sort_order INTEGER DEFAULT 0,            -- Ordering for AUTO channel allocation
+    total_stream_count INTEGER DEFAULT 0,    -- Expected streams (for range reservation)
+    parent_group_id INTEGER,                 -- Parent group for child group relationships
+
     -- M3U Group Binding (for stream discovery)
     m3u_group_id INTEGER,                    -- Dispatcharr M3U group to scan
     m3u_group_name TEXT,
 
     -- Status
-    active BOOLEAN DEFAULT 1,
+    enabled BOOLEAN DEFAULT 1,
 
     FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
 );
@@ -298,7 +304,8 @@ BEGIN
     UPDATE event_epg_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE INDEX IF NOT EXISTS idx_event_epg_groups_active ON event_epg_groups(active);
+CREATE INDEX IF NOT EXISTS idx_event_epg_groups_enabled ON event_epg_groups(enabled);
+CREATE INDEX IF NOT EXISTS idx_event_epg_groups_sort_order ON event_epg_groups(sort_order);
 CREATE INDEX IF NOT EXISTS idx_event_epg_groups_name ON event_epg_groups(name);
 
 
@@ -391,106 +398,95 @@ END;
 
 
 -- =============================================================================
--- LEAGUE_PROVIDER_MAPPINGS TABLE
--- Single source of truth for league → provider routing
--- No hardcoded fallbacks - all league config lives here
+-- LEAGUES TABLE
+-- Single source of truth for configured leagues
+-- Combines API config + display config in one table
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS league_provider_mappings (
-    -- Identity
-    league_code TEXT NOT NULL,               -- Canonical code: 'nfl', 'ohl', 'eng.1'
+CREATE TABLE IF NOT EXISTS leagues (
+    league_code TEXT PRIMARY KEY,            -- 'nfl', 'ohl', 'eng.1'
+
+    -- Provider/API Configuration
     provider TEXT NOT NULL,                  -- 'espn' or 'tsdb'
-
-    -- Provider-specific identifiers
     provider_league_id TEXT NOT NULL,        -- ESPN: 'football/nfl', TSDB: '5159'
-    provider_league_name TEXT,               -- TSDB only: 'Canadian OHL' (for eventsday.php)
+    provider_league_name TEXT,               -- TSDB only: exact strLeague for API calls
+    enabled INTEGER DEFAULT 1,               -- Is this league active?
 
-    -- Metadata
-    sport TEXT NOT NULL,                     -- 'Football', 'Hockey', 'Soccer'
+    -- Display Configuration
     display_name TEXT NOT NULL,              -- 'NFL', 'Ontario Hockey League'
+    sport TEXT NOT NULL,                     -- 'Football', 'Hockey', 'Soccer'
     logo_url TEXT,                           -- League logo URL
+    import_enabled INTEGER DEFAULT 0,        -- Show in Team Importer?
 
-    -- Status
-    enabled INTEGER DEFAULT 1,
-
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (league_code, provider)
+    -- Cache Metadata (updated by cache refresh)
+    cached_team_count INTEGER DEFAULT 0,
+    last_cache_refresh TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_lpm_provider ON league_provider_mappings(provider);
-CREATE INDEX IF NOT EXISTS idx_lpm_enabled ON league_provider_mappings(enabled);
-CREATE INDEX IF NOT EXISTS idx_lpm_sport ON league_provider_mappings(sport);
+CREATE INDEX IF NOT EXISTS idx_leagues_provider ON leagues(provider);
+CREATE INDEX IF NOT EXISTS idx_leagues_sport ON leagues(sport);
+CREATE INDEX IF NOT EXISTS idx_leagues_import ON leagues(import_enabled);
 
-CREATE TRIGGER IF NOT EXISTS update_lpm_timestamp
-AFTER UPDATE ON league_provider_mappings
-BEGIN
-    UPDATE league_provider_mappings SET updated_at = CURRENT_TIMESTAMP
-    WHERE league_code = NEW.league_code AND provider = NEW.provider;
-END;
 
 -- =============================================================================
--- SEED: ESPN Leagues (primary provider for US sports)
+-- SEED: Configured Leagues
+-- All explicitly configured leagues with API + display config
 -- =============================================================================
 
-INSERT OR IGNORE INTO league_provider_mappings (league_code, provider, provider_league_id, sport, display_name, logo_url) VALUES
-    -- NFL/Football
-    ('nfl', 'espn', 'football/nfl', 'Football', 'NFL', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png'),
-    ('college-football', 'espn', 'football/college-football', 'Football', 'NCAA Football', 'https://a.espncdn.com/i/teamlogos/ncaa/500/ncaa.png'),
+INSERT OR IGNORE INTO leagues (league_code, provider, provider_league_id, provider_league_name, display_name, sport, logo_url, import_enabled) VALUES
+    -- Football (ESPN)
+    ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', 1),
+    ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', 1),
 
-    -- NBA/Basketball
-    ('nba', 'espn', 'basketball/nba', 'Basketball', 'NBA', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png'),
-    ('wnba', 'espn', 'basketball/wnba', 'Basketball', 'WNBA', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png'),
-    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', 'Basketball', 'NCAA Men''s Basketball', NULL),
-    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', 'Basketball', 'NCAA Women''s Basketball', NULL),
+    -- Basketball (ESPN)
+    ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', 1),
+    ('nba-development', 'espn', 'basketball/nba-development', NULL, 'NBA G League', 'Basketball', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba_gleague.png', 1),
+    ('wnba', 'espn', 'basketball/wnba', NULL, 'WNBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png', 1),
+    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', NULL, 'NCAA Men''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1),
+    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', NULL, 'NCAA Women''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', 1),
 
-    -- NHL/Hockey
-    ('nhl', 'espn', 'hockey/nhl', 'Hockey', 'NHL', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png'),
+    -- Hockey (ESPN)
+    ('nhl', 'espn', 'hockey/nhl', NULL, 'NHL', 'Hockey', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png', 1),
+    ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1),
+    ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', 1),
 
-    -- MLB/Baseball
-    ('mlb', 'espn', 'baseball/mlb', 'Baseball', 'MLB', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png'),
+    -- Hockey - Canadian Junior (TSDB)
+    ('ohl', 'tsdb', '5159', 'Canadian OHL', 'Ontario Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/y4z5ks1644535179.png', 1),
+    ('whl', 'tsdb', '5160', 'Canadian WHL', 'Western Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/94w3kx1644535361.png', 1),
+    ('qmjhl', 'tsdb', '5161', 'Canadian QMJHL', 'Quebec Major Junior Hockey League', 'Hockey', 'https://r2.thesportsdb.com/images/media/league/badge/3nofen1644535248.png', 1),
 
-    -- MLS/Soccer
-    ('mls', 'espn', 'soccer/usa.1', 'Soccer', 'MLS', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
-    ('usa.1', 'espn', 'soccer/usa.1', 'Soccer', 'MLS', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png'),
+    -- Baseball (ESPN)
+    ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', 1),
 
-    -- UFC/MMA
-    ('ufc', 'espn', 'mma/ufc', 'MMA', 'UFC', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png'),
+    -- Soccer (ESPN)
+    ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', 1),
+    ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1),
+    ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', 1),
+    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', 1),
+    ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', 1),
+    ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', 1),
+    ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', 1),
+    ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', 1),
+    ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', 1),
 
-    -- European Soccer (ESPN supported)
-    ('eng.1', 'espn', 'soccer/eng.1', 'Soccer', 'English Premier League', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png'),
-    ('esp.1', 'espn', 'soccer/esp.1', 'Soccer', 'La Liga', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png'),
-    ('ger.1', 'espn', 'soccer/ger.1', 'Soccer', 'Bundesliga', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png'),
-    ('ita.1', 'espn', 'soccer/ita.1', 'Soccer', 'Serie A', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png'),
-    ('fra.1', 'espn', 'soccer/fra.1', 'Soccer', 'Ligue 1', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png'),
-    ('uefa.champions', 'espn', 'soccer/uefa.champions', 'Soccer', 'UEFA Champions League', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png');
+    -- MMA (ESPN) - Non-team sport, import_enabled = 0
+    ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', 0),
 
--- =============================================================================
--- SEED: TSDB Leagues (for leagues ESPN doesn't cover)
--- =============================================================================
+    -- Volleyball (ESPN)
+    ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1),
+    ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', 1),
 
-INSERT OR IGNORE INTO league_provider_mappings (league_code, provider, provider_league_id, provider_league_name, sport, display_name) VALUES
-    -- Canadian Junior Hockey (CHL)
-    -- provider_league_name is TSDB's strLeague (for eventsday.php)
-    ('ohl', 'tsdb', '5159', 'Canadian OHL', 'Hockey', 'Ontario Hockey League'),
-    ('whl', 'tsdb', '5160', 'Canadian WHL', 'Hockey', 'Western Hockey League'),
-    ('qmjhl', 'tsdb', '5161', 'Canadian QMJHL', 'Hockey', 'Quebec Major Junior Hockey League'),
+    -- Lacrosse (TSDB)
+    ('nll', 'tsdb', '4424', 'National Lacrosse League', 'National Lacrosse League', 'Lacrosse', 'https://r2.thesportsdb.com/images/media/league/badge/c5r83j1521893739.png', 1),
+    ('pll', 'tsdb', '5149', 'Premier Lacrosse League', 'Premier Lacrosse League', 'Lacrosse', 'https://r2.thesportsdb.com/images/media/league/badge/a1r2yw1734950969.png', 1),
 
-    -- Lacrosse
-    ('nll', 'tsdb', '4424', 'NLL', 'Lacrosse', 'National Lacrosse League'),
-    ('pll', 'tsdb', '5149', 'PLL', 'Lacrosse', 'Premier Lacrosse League'),
+    -- Cricket (TSDB)
+    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', NULL, 1),
+    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Caribbean Premier League', 'Cricket', NULL, 1),
+    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', NULL, 1),
 
-    -- Cricket (T20 leagues)
-    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Cricket', 'Indian Premier League'),
-    ('bbl', 'tsdb', '4461', 'Big Bash League', 'Cricket', 'Australian Big Bash League'),
-    ('cpl', 'tsdb', '5176', 'Caribbean Premier League', 'Cricket', 'Caribbean Premier League'),
-    ('t20-blast', 'tsdb', '4463', 'T20 Blast', 'Cricket', 'English T20 Blast'),
-    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Cricket', 'Bangladesh Premier League'),
-
-    -- Boxing (fighters parsed from event name)
-    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing');
+    -- Boxing (TSDB) - Non-team sport, import_enabled = 0
+    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, 0);
 
 
 -- =============================================================================
@@ -784,6 +780,21 @@ CREATE TABLE IF NOT EXISTS event_epg_xmltv (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (group_id) REFERENCES event_epg_groups(id) ON DELETE CASCADE
+);
+
+
+-- =============================================================================
+-- TEAM_EPG_XMLTV TABLE
+-- Stores generated XMLTV content per team
+-- Allows XMLTV to be served and merged with event group XMLTV
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS team_epg_xmltv (
+    team_id INTEGER PRIMARY KEY,
+    xmltv_content TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
 );
 
 

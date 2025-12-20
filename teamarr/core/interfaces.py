@@ -4,9 +4,57 @@ Defines the contracts that providers must implement.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date
+from typing import Protocol
 
 from teamarr.core.types import Event, Team, TeamStats
+
+# =============================================================================
+# LEAGUE MAPPING - Used by providers to look up league configuration
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class LeagueMapping:
+    """League mapping configuration.
+
+    Maps canonical league codes to provider-specific identifiers.
+    Immutable dataclass for thread safety.
+    """
+
+    league_code: str  # Canonical code: 'nfl', 'ohl', 'eng.1'
+    provider: str  # 'espn' or 'tsdb'
+    provider_league_id: str  # ESPN: 'football/nfl', TSDB: '5159'
+    provider_league_name: str | None  # TSDB only: 'Canadian OHL'
+    sport: str  # 'Football', 'Hockey', 'Soccer'
+    display_name: str  # 'NFL', 'Ontario Hockey League'
+    logo_url: str | None = None
+
+
+class LeagueMappingSource(Protocol):
+    """Protocol for league mapping lookup.
+
+    Providers depend on this protocol, not the database directly.
+    Implementations can be database-backed, cached, or mocked for testing.
+    """
+
+    def get_mapping(self, league_code: str, provider: str) -> LeagueMapping | None:
+        """Get mapping for a specific league and provider."""
+        ...
+
+    def supports_league(self, league_code: str, provider: str) -> bool:
+        """Check if provider supports the given league."""
+        ...
+
+    def get_leagues_for_provider(self, provider: str) -> list[LeagueMapping]:
+        """Get all leagues supported by a provider."""
+        ...
+
+
+# =============================================================================
+# SPORTS PROVIDER - Main provider interface
+# =============================================================================
 
 
 class SportsProvider(ABC):

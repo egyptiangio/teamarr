@@ -141,9 +141,7 @@ def get_keyword(keyword_id: int):
     )
 
 
-@router.post(
-    "", response_model=ExceptionKeywordResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("", response_model=ExceptionKeywordResponse, status_code=status.HTTP_201_CREATED)
 def create_keyword(request: ExceptionKeywordCreate):
     """Create a new exception keyword."""
     import sqlite3

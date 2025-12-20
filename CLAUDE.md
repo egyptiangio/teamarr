@@ -75,11 +75,12 @@ teamarr/
 ├── api/                    # FastAPI REST API
 │   ├── app.py              # Application factory
 │   ├── models.py           # Pydantic models
-│   └── routes/             # API endpoints
+│   └── routes/             # API endpoints (teams, templates, epg, channels, etc.)
 │
-├── core/                   # Type definitions
-│   ├── types.py            # Team, Event, Programme, TeamStats, Venue
-│   └── interfaces.py       # SportsProvider ABC
+├── core/                   # Type definitions (lowest layer)
+│   ├── types.py            # Team, Event, Programme, TemplateConfig, etc.
+│   ├── interfaces.py       # SportsProvider ABC
+│   └── filler_types.py     # FillerConfig, FillerTemplate
 │
 ├── providers/              # Data providers
 │   ├── registry.py         # ProviderRegistry
@@ -87,35 +88,44 @@ teamarr/
 │   └── tsdb/               # TheSportsDB (fallback)
 │
 ├── services/               # Business logic
-│   └── sports_data.py      # SportsDataService
+│   └── sports_data.py      # SportsDataService with TTL caching
 │
-├── consumers/              # EPG generation
+├── consumers/              # EPG generation (highest layer)
 │   ├── orchestrator.py     # Generation coordinator
 │   ├── team_epg.py         # Team-based EPG
 │   ├── event_epg.py        # Event-based EPG
-│   ├── event_matcher.py    # Stream matching
-│   ├── channel_lifecycle.py
+│   ├── child_processor.py  # Child group stream processing
+│   ├── lifecycle/          # Channel lifecycle service
+│   ├── enforcement/        # Post-processing enforcers
+│   │   ├── keywords.py     # Keyword-based stream placement
+│   │   └── cross_group.py  # Cross-group consolidation
+│   ├── reconciliation.py   # Channel reconciler
+│   ├── scheduler.py        # Background scheduler
+│   ├── cache/              # Team/league cache
 │   └── filler/             # Pregame/postgame content
 │
 ├── templates/              # Template engine (141 variables)
 │   ├── resolver.py         # Variable substitution
-│   ├── context.py          # TemplateContext
+│   ├── context.py          # TemplateContext, TeamChannelContext
 │   ├── conditions.py       # Conditional description selection
-│   └── variables/          # Variable extractors
+│   └── variables/          # Variable extractors by category
 │
 ├── dispatcharr/            # Dispatcharr integration
-│   ├── client.py           # HTTP client
-│   ├── auth.py             # JWT auth
-│   └── managers/           # Channel, EPG, M3U managers
+│   ├── client.py           # HTTP client with retry
+│   ├── auth.py             # JWT token management
+│   ├── factory.py          # Connection factory
+│   └── managers/           # Channel, EPG, Logo, M3U managers
 │
 ├── database/               # SQLite persistence
-│   ├── schema.sql          # Table definitions
+│   ├── schema.sql          # Table definitions (15 tables)
 │   ├── connection.py       # Connection management
-│   └── channels.py         # Managed channel CRUD
+│   ├── channels/           # Managed channel CRUD
+│   ├── settings/           # Settings CRUD
+│   └── templates.py        # Template CRUD
 │
 └── utilities/              # Shared utilities
     ├── cache.py            # TTLCache
-    ├── fuzzy_match.py      # String matching
+    ├── fuzzy_match.py      # FuzzyMatchResult, FuzzyMatcher
     └── xmltv.py            # XMLTV generation
 ```
 
@@ -123,7 +133,7 @@ teamarr/
 
 ## Core Types
 
-All data flows through typed dataclasses:
+All data flows through typed dataclasses in `core/types.py`:
 
 ```python
 @dataclass(frozen=True)
@@ -148,9 +158,6 @@ class Event:
     status: EventStatus
     league: str
     sport: str
-    home_score: int | None = None
-    away_score: int | None = None
-    venue: Venue | None = None
 
 @dataclass
 class Programme:
@@ -159,6 +166,13 @@ class Programme:
     start: datetime
     stop: datetime
     description: str | None = None
+
+@dataclass
+class TemplateConfig:
+    title_format: str = "{away_team} @ {home_team}"
+    description_format: str = "{matchup} | {venue_full}"
+    subtitle_format: str = "{venue_full}"
+    category: str = "Sports"
 ```
 
 ---
@@ -194,6 +208,7 @@ events = service.get_events('ohl', date.today())  # → TSDB
 
 ## What's Complete
 
+**Backend:**
 - Provider abstraction (ESPN + TSDB)
 - Service layer with TTL caching
 - Two-phase data pipeline (discovery → enrichment)
@@ -202,20 +217,63 @@ events = service.get_events('ohl', date.today())  # → TSDB
 - Template engine (141 variables, 15 conditionals)
 - Stream matching (single/multi-league)
 - Stream match fingerprint cache
-- Dispatcharr integration modules
+- Dispatcharr integration (channels, EPG, logos, M3U)
+- Channel lifecycle service (create/delete timing)
+- Channel reconciliation (orphan/duplicate detection)
 - Database schema and CRUD (15 tables)
-- FastAPI REST API (84 routes)
+- FastAPI REST API (102 routes)
 - Processing stats tracking
 - Exception keywords management
 - Condition presets management
 - SQL injection protection
+- Child/parent group stream handling
+- Cross-group stream consolidation
+- Keyword enforcement for stream placement
+
+**Code Quality (Dec 19, 2025):**
+- Layer isolation verified - no violations
+- Unified duplicate classes (`ExceptionKeyword`, `EventTemplateConfig`)
+- Renamed confusing duplicates (`FuzzyMatchResult`, `StreamCacheEntry`, `TeamChannelContext`)
+- Removed dead code directories
 
 ## What's Missing (To Build)
 
-- **UI**: No frontend (will build fresh)
-- **Full Dispatcharr integration**: Channel lifecycle not fully wired up
-- **Integration tests**: New API endpoints need test coverage
-- **E2E tests**: Full pipeline testing
+**UI Gaps (vs V1):**
+
+EPG Page missing features:
+- Last Generation Summary Bar with clickable matched/failed stats
+- Matched Streams Modal (shows all matched streams from last run)
+- Failed Matches Modal (shows all failed/unmatched streams)
+- EPG Analysis Section:
+  - Filler breakdown (pregame/postgame/idle counts)
+  - Date range display
+  - Detected Issues:
+    - Unreplaced template variables (clickable to highlight in XML)
+    - Coverage gaps (time gaps between programmes)
+- EPG Preview (XML viewer with search, line numbers, word wrap)
+
+Other pages may have similar gaps - need V1 comparison audit
+
+**V1 Features Not Ported (by design):**
+- Tiered League Detection (Tier 1-4) - V2 uses explicit league configuration instead
+- Soccer Multi-League Cache (team→leagues) - May add if needed for multi-competition soccer
+
+**Testing:**
+- Integration tests for newer API endpoints
+- E2E tests for full pipeline
+
+---
+
+## V1 vs V2 Architecture Differences
+
+| Feature | V1 Approach | V2 Approach |
+|---------|-------------|-------------|
+| Multi-Sport Groups | No assigned leagues; tiered detection at runtime | Explicit `leagues[]` array configured upfront |
+| Stream Matching | Parse stream → extract teams → find events | Fetch events → generate patterns → match streams |
+| League Detection | Tier 1-4 system (indicators, cache lookups) | Direct league configuration per group |
+| Soccer Multi-League | Dedicated cache: team → all competitions | Not implemented (explicit league config) |
+
+V2's approach is simpler and more explicit - users configure which leagues to search rather than relying on runtime detection.
 
 ---
 
@@ -276,49 +334,59 @@ Full docs: http://localhost:9198/docs
 
 ## Current Status
 
-### Session Summary (Dec 16, 2025)
+### UI Progress (Dec 19, 2025)
 
-**Completed this session:**
-1. Added processing stats system (`processing_runs` table, stats API)
-2. Added exception keywords CRUD (language variant handling)
-3. Added condition presets CRUD
-4. Added safe_sql module for SQL injection prevention
-5. Added XMLTV channel definition support
-6. Fixed test return value warnings (proper pytest assertions)
-7. Codebase audit and cleanup
+**Frontend Stack:** React + TypeScript + Vite + Tailwind CSS + TanStack Query
 
-**Previous session (Dec 15):**
-1. Simplified variable system (removed h2h, player_leaders, home/away streaks)
-2. Consolidated duplicate condition systems (deleted enum-based conditional.py)
-3. Fixed TSDB API key (was using old demo key `3`, now uses `123`)
-4. Implemented two-phase data pipeline
-5. Removed dead variables: `head_coach`, `odds_opponent_spread`
+**Pages Built (basic functionality):**
+- **Dashboard** - Stats tiles, EPG history, Getting Started guide
+- **Settings** - All sections functional
+- **Teams** - Search, filters, bulk actions, import
+- **Team Import** - League sidebar, team grid, bulk import
+- **Templates** - List, CRUD, import/export
+- **Template Form** - 5 tabs, variable picker, live preview
+- **Event Groups** - List, filters, stats
+- **Event Group Import** - M3U accounts, groups, stream preview
+- **Event Group Form** - 3-step wizard
+- **EPG Management** - Generate/Download/URL cards, run history
+- **Channels** - Managed channels list, sync, reconciliation
 
-**Variable count: 141**
+**UI Gaps vs V1 (needs work):**
 
-### Backend Validated
+| Page | Missing Features |
+|------|-----------------|
+| EPG | Matched/failed streams modals, EPG analysis (filler breakdown, coverage gaps, unreplaced variables) |
+| Dashboard | Rich tooltips with hover tables (partially done) |
+| Others | Need detailed V1 comparison |
 
-All core endpoints working:
-- `/health` - ✅
-- `/api/v1/teams` - ✅ CRUD
-- `/api/v1/templates` - ✅
-- `/api/v1/cache/status` - ✅
-- `/api/v1/cache/refresh` - ✅ (283 leagues, 7017 teams)
-- `/api/v1/cache/teams/search` - ✅
-- `/api/v1/epg/generate` - ✅
-- `/api/v1/epg/xmltv` - ✅
+**Components Built:**
+- `RichTooltip` - Hover cards
+- `Checkbox` - With onClick support
+- `VariablePicker` - Dropdown with search, categories
 
-### Next: Build UI
+### Backend Status
 
-React + TypeScript + Tailwind CSS, bundled and served by FastAPI.
+**All core endpoints working (102 routes):**
+- Teams, Templates, Groups, Channels - Full CRUD
+- EPG generation and XMLTV delivery
+- Dispatcharr integration (test, M3U, channels, EPG sources)
+- Stats and run history
+- Cache management (283 leagues, 7270 teams)
 
-Pages needed:
-- Dashboard (overview, cache status)
-- Teams (list, add, edit team channels)
-- Event Groups (event-based EPG)
-- Templates (title/description templates)
-- Channels (managed channels)
-- Settings (global config)
+### V1 Parity Status
+
+| Component | Backend | UI | Notes |
+|-----------|---------|-----|-------|
+| Teams | ✅ | ✅ | Full CRUD, bulk import |
+| Templates | ✅ | ✅ | 5 tabs, variable picker |
+| Event Groups | ✅ | 🟡 | Basic functionality |
+| EPG Management | ✅ | 🟡 | Missing analysis features |
+| Channels | ✅ | ✅ | Lifecycle, reconciliation |
+| Settings | ✅ | ✅ | All sections |
+| Dispatcharr | ✅ | ✅ | Integration complete |
+| Dashboard | ✅ | 🟡 | Missing rich tooltips |
+
+**Legend:** ✅ Complete | 🟡 Partial | ❌ Missing
 
 ---
 

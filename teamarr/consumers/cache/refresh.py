@@ -1,305 +1,21 @@
-"""Unified team and league cache.
+"""Cache refresh logic.
 
-Provides reverse-lookup for:
-1. Event matching: "Freiburg vs Stuttgart" → candidate leagues
-2. Team multi-league: Liverpool → [eng.1, uefa.champions, eng.fa, ...]
-3. League discovery: all soccer leagues for "soccer_all"
-
-Caches data from all registered providers (ESPN, TSDB, etc.).
-Refresh weekly to handle promotion/relegation.
+Refreshes team and league cache from all registered providers.
 """
 
 import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import datetime
 
 from teamarr.core import SportsProvider
 from teamarr.database import get_db
 
+from .constants import KNOWN_LEAGUE_LOGOS, KNOWN_LEAGUE_NAMES, SPORT_PATTERNS
+from .queries import TeamLeagueCache
+
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# DATA CLASSES
-# =============================================================================
-
-
-@dataclass
-class CacheStats:
-    """Cache refresh statistics."""
-
-    last_refresh: datetime | None
-    leagues_count: int
-    teams_count: int
-    refresh_duration_seconds: float
-    is_stale: bool
-    refresh_in_progress: bool
-    last_error: str | None
-
-
-@dataclass
-class TeamEntry:
-    """A team entry from the cache."""
-
-    team_name: str
-    team_abbrev: str | None
-    team_short_name: str | None
-    provider: str
-    provider_team_id: str
-    league: str
-    sport: str
-    logo_url: str | None
-
-
-@dataclass
-class LeagueEntry:
-    """A league entry from the cache."""
-
-    league_slug: str
-    provider: str
-    league_name: str | None
-    sport: str
-    logo_url: str | None
-    team_count: int
-
-
-# =============================================================================
-# CACHE QUERIES
-# =============================================================================
-
-
-class TeamLeagueCache:
-    """Query interface for team and league cache."""
-
-    def __init__(self, db_factory: Callable = get_db):
-        self._db = db_factory
-
-    def find_candidate_leagues(
-        self,
-        team1: str,
-        team2: str,
-        sport: str | None = None,
-    ) -> list[tuple[str, str]]:
-        """Find leagues where both teams exist.
-
-        Args:
-            team1: First team name
-            team2: Second team name
-            sport: Optional filter by sport
-
-        Returns:
-            List of (league, provider) tuples where both teams exist
-        """
-        leagues1 = self._get_leagues_for_team(team1, sport)
-        leagues2 = self._get_leagues_for_team(team2, sport)
-
-        # Intersection - leagues where both exist
-        return list(leagues1 & leagues2)
-
-    def get_team_leagues(
-        self,
-        provider_team_id: str,
-        provider: str,
-    ) -> list[str]:
-        """Get all leagues a team plays in.
-
-        Used for team-based multi-league schedule aggregation.
-
-        Args:
-            provider_team_id: Team ID from the provider
-            provider: Provider name ('espn' or 'tsdb')
-
-        Returns:
-            List of league slugs
-        """
-        with self._db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT DISTINCT league FROM team_cache
-                WHERE provider_team_id = ? AND provider = ?
-                """,
-                (provider_team_id, provider),
-            )
-            return [row[0] for row in cursor.fetchall()]
-
-    def get_all_leagues(
-        self,
-        sport: str | None = None,
-        provider: str | None = None,
-    ) -> list[LeagueEntry]:
-        """Get all cached leagues.
-
-        Args:
-            sport: Optional filter by sport (e.g., 'soccer')
-            provider: Optional filter by provider
-
-        Returns:
-            List of LeagueEntry objects
-        """
-        with self._db() as conn:
-            cursor = conn.cursor()
-
-            query = """SELECT league_slug, provider, league_name, sport, logo_url, team_count
-                FROM league_cache WHERE 1=1"""
-            params: list = []
-
-            if sport:
-                query += " AND sport = ?"
-                params.append(sport)
-            if provider:
-                query += " AND provider = ?"
-                params.append(provider)
-
-            cursor.execute(query, params)
-
-            return [
-                LeagueEntry(
-                    league_slug=row[0],
-                    provider=row[1],
-                    league_name=row[2],
-                    sport=row[3],
-                    logo_url=row[4],
-                    team_count=row[5] or 0,
-                )
-                for row in cursor.fetchall()
-            ]
-
-    def get_league_info(self, league_slug: str) -> LeagueEntry | None:
-        """Get metadata for a specific league."""
-        with self._db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT league_slug, provider, league_name, sport, logo_url, team_count
-                FROM league_cache WHERE league_slug = ?
-                """,
-                (league_slug,),
-            )
-            row = cursor.fetchone()
-            if not row:
-                return None
-
-            return LeagueEntry(
-                league_slug=row[0],
-                provider=row[1],
-                league_name=row[2],
-                sport=row[3],
-                logo_url=row[4],
-                team_count=row[5] or 0,
-            )
-
-    def get_team_id_for_league(
-        self,
-        team_name: str,
-        league: str,
-    ) -> tuple[str, str] | None:
-        """Get provider team ID for a team in a specific league.
-
-        Args:
-            team_name: Team name to search
-            league: League slug
-
-        Returns:
-            (provider_team_id, provider) tuple or None
-        """
-        with self._db() as conn:
-            cursor = conn.cursor()
-            team_lower = team_name.lower().strip()
-
-            cursor.execute(
-                """
-                SELECT provider_team_id, provider FROM team_cache
-                WHERE league = ?
-                  AND (LOWER(team_name) LIKE ?
-                       OR LOWER(team_abbrev) = ?
-                       OR LOWER(team_short_name) LIKE ?)
-                ORDER BY LENGTH(team_name) ASC
-                LIMIT 1
-                """,
-                (league, f"%{team_lower}%", team_lower, f"%{team_lower}%"),
-            )
-            row = cursor.fetchone()
-            return (row[0], row[1]) if row else None
-
-    def get_cache_stats(self) -> CacheStats:
-        """Get cache status and statistics."""
-        with self._db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM cache_meta WHERE id = 1")
-            row = cursor.fetchone()
-
-            last_refresh = None
-            is_stale = True
-
-            if row and row[1]:  # last_full_refresh
-                try:
-                    last_refresh = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
-                    days_old = (datetime.now(last_refresh.tzinfo) - last_refresh).days
-                    is_stale = days_old > 7
-                except (ValueError, TypeError):
-                    pass
-
-            return CacheStats(
-                last_refresh=last_refresh,
-                leagues_count=row[4] if row else 0,
-                teams_count=row[5] if row else 0,
-                refresh_duration_seconds=row[6] if row else 0,
-                is_stale=is_stale,
-                refresh_in_progress=bool(row[7]) if row else False,
-                last_error=row[8] if row else None,
-            )
-
-    def is_cache_empty(self) -> bool:
-        """Check if cache has any data."""
-        try:
-            with self._db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM team_cache")
-                row = cursor.fetchone()
-                return row[0] == 0 if row else True
-        except Exception:
-            return True
-
-    def _get_leagues_for_team(
-        self,
-        team_name: str,
-        sport: str | None = None,
-    ) -> set[tuple[str, str]]:
-        """Get all leagues a team name could belong to.
-
-        Returns set of (league, provider) tuples.
-        """
-        if not team_name:
-            return set()
-
-        team_lower = team_name.lower().strip()
-
-        with self._db() as conn:
-            cursor = conn.cursor()
-
-            query = """
-                SELECT DISTINCT league, provider FROM team_cache
-                WHERE (LOWER(team_name) LIKE ?
-                       OR LOWER(team_abbrev) = ?
-                       OR LOWER(team_short_name) LIKE ?)
-            """
-            params: list = [f"%{team_lower}%", team_lower, f"%{team_lower}%"]
-
-            if sport:
-                query += " AND sport = ?"
-                params.append(sport)
-
-            cursor.execute(query, params)
-            return {(row[0], row[1]) for row in cursor.fetchall()}
-
-
-# =============================================================================
-# CACHE REFRESH
-# =============================================================================
 
 
 class CacheRefresher:
@@ -308,7 +24,7 @@ class CacheRefresher:
     # Max parallel requests
     MAX_WORKERS = 50
 
-    def __init__(self, db_factory: Callable = get_db):
+    def __init__(self, db_factory: Callable = get_db) -> None:
         self._db = db_factory
 
     def refresh(
@@ -479,12 +195,16 @@ class CacheRefresher:
             try:
                 league_teams = provider.get_league_teams(league_slug)
 
+                # Use known mappings, fallback to slug for name
+                league_name = KNOWN_LEAGUE_NAMES.get(league_slug)
+                logo_url = KNOWN_LEAGUE_LOGOS.get(league_slug)
+
                 league_info = {
                     "league_slug": league_slug,
                     "provider": provider_name,
                     "sport": sport,
-                    "league_name": None,
-                    "logo_url": None,
+                    "league_name": league_name,
+                    "logo_url": logo_url,
                     "team_count": len(league_teams) if league_teams else 0,
                 }
 
@@ -510,8 +230,8 @@ class CacheRefresher:
                     "league_slug": league_slug,
                     "provider": provider_name,
                     "sport": sport,
-                    "league_name": None,
-                    "logo_url": None,
+                    "league_name": KNOWN_LEAGUE_NAMES.get(league_slug),
+                    "logo_url": KNOWN_LEAGUE_LOGOS.get(league_slug),
                     "team_count": 0,
                 }, []
 
@@ -545,34 +265,19 @@ class CacheRefresher:
         Uses common patterns and database mappings.
         """
         # Check common patterns
-        sport_patterns = {
-            "nfl": "football",
-            "nba": "basketball",
-            "nhl": "hockey",
-            "mlb": "baseball",
-            "wnba": "basketball",
-            "mls": "soccer",
-            "ufc": "mma",
-            "college-football": "football",
-            "mens-college-basketball": "basketball",
-            "womens-college-basketball": "basketball",
-            "mens-college-hockey": "hockey",
-            "womens-college-hockey": "hockey",
-        }
-
-        if league_slug in sport_patterns:
-            return sport_patterns[league_slug]
+        if league_slug in SPORT_PATTERNS:
+            return SPORT_PATTERNS[league_slug]
 
         # Soccer leagues use dot notation (e.g., eng.1, ger.1)
         if "." in league_slug:
             return "soccer"
 
-        # Check database for league mapping
+        # Check database for configured leagues
         with self._db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT sport FROM league_provider_mappings
+                SELECT sport FROM leagues
                 WHERE league_code = ? LIMIT 1
                 """,
                 (league_slug,),
@@ -704,7 +409,31 @@ class CacheRefresher:
                     ),
                 )
 
+            # Update cached_team_count in the leagues table for configured leagues
+            self._update_leagues_team_counts(cursor, leagues)
+
             logger.info(f"Saved {len(leagues)} leagues and {len(unique_teams)} teams to cache")
+
+    def _update_leagues_team_counts(self, cursor, leagues: list[dict]) -> None:
+        """Update cached_team_count in the leagues table.
+
+        Updates the cached team count for configured leagues based on
+        what we discovered during cache refresh.
+        """
+        now = datetime.utcnow().isoformat() + "Z"
+
+        for league in leagues:
+            league_slug = league["league_slug"]
+            team_count = league.get("team_count", 0)
+
+            cursor.execute(
+                """
+                UPDATE leagues
+                SET cached_team_count = ?, last_cache_refresh = ?
+                WHERE league_code = ?
+                """,
+                (team_count, now, league_slug),
+            )
 
     def _update_meta(
         self,
@@ -739,131 +468,3 @@ class CacheRefresher:
                 "UPDATE cache_meta SET refresh_in_progress = ? WHERE id = 1",
                 (1 if in_progress else 0,),
             )
-
-
-# =============================================================================
-# CONVENIENCE FUNCTIONS
-# =============================================================================
-
-
-def get_cache() -> TeamLeagueCache:
-    """Get default cache instance."""
-    return TeamLeagueCache()
-
-
-def refresh_cache(
-    progress_callback: Callable[[str, int], None] | None = None,
-) -> dict:
-    """Refresh cache from all providers."""
-    return CacheRefresher().refresh(progress_callback)
-
-
-def refresh_cache_if_needed(max_age_days: int = 7) -> bool:
-    """Refresh cache if stale."""
-    return CacheRefresher().refresh_if_needed(max_age_days)
-
-
-def expand_leagues(
-    leagues: list[str],
-    provider: str | None = None,
-) -> list[str]:
-    """Expand special league patterns to actual league slugs.
-
-    Handles patterns like:
-    - "soccer_all" → all cached soccer leagues
-    - "nfl" → ["nfl"]  (pass-through)
-
-    Args:
-        leagues: List of league patterns
-        provider: Optional provider filter ('espn', 'tsdb')
-
-    Returns:
-        Expanded list of league slugs
-    """
-    cache = get_cache()
-    result = []
-
-    for league in leagues:
-        if league == "soccer_all":
-            # Expand to all soccer leagues
-            soccer_leagues = cache.get_all_leagues(sport="soccer", provider=provider)
-            result.extend(lg.league_slug for lg in soccer_leagues)
-        elif league.endswith("_all"):
-            # General pattern: sport_all → all leagues for that sport
-            sport = league[:-4]  # Remove "_all" suffix
-            sport_leagues = cache.get_all_leagues(sport=sport, provider=provider)
-            result.extend(lg.league_slug for lg in sport_leagues)
-        else:
-            # Pass-through
-            result.append(league)
-
-    # Remove duplicates while preserving order
-    seen: set = set()
-    return [lg for lg in result if not (lg in seen or seen.add(lg))]  # type: ignore
-
-
-def find_leagues_for_stream(
-    stream_name: str,
-    sport: str | None = None,
-    provider: str | None = None,
-    max_results: int = 5,
-) -> list[str]:
-    """Find candidate leagues for a stream by searching team cache.
-
-    Scans the team cache for team names that appear in the stream,
-    then returns the leagues those teams play in.
-
-    This is useful for soccer matching where there are 300+ leagues -
-    we can narrow down to just a few based on team name matches.
-
-    Args:
-        stream_name: Stream name to search
-        sport: Optional sport filter
-        provider: Optional provider filter
-        max_results: Maximum leagues to return
-
-    Returns:
-        List of candidate league slugs
-    """
-    from teamarr.database import get_db
-
-    stream_lower = stream_name.lower()
-    candidate_leagues: set = set()
-
-    with get_db() as conn:
-        cursor = conn.cursor()
-
-        # Build query to find teams whose names appear in the stream
-        query = """
-            SELECT DISTINCT league, team_name, team_abbrev, team_short_name
-            FROM team_cache
-            WHERE 1=1
-        """
-        params: list = []
-
-        if sport:
-            query += " AND sport = ?"
-            params.append(sport)
-        if provider:
-            query += " AND provider = ?"
-            params.append(provider)
-
-        cursor.execute(query, params)
-
-        # Check each team against the stream name
-        for row in cursor.fetchall():
-            league = row["league"]
-
-            # Check if team name variants appear in stream
-            for name_field in ["team_name", "team_short_name", "team_abbrev"]:
-                name = row[name_field]
-                if name and len(name) >= 3:  # Skip very short names
-                    name_lower = name.lower()
-                    if name_lower in stream_lower:
-                        candidate_leagues.add(league)
-                        break  # Found a match for this team, move to next
-
-            if len(candidate_leagues) >= max_results:
-                break
-
-    return list(candidate_leagues)[:max_results]

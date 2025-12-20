@@ -1,5 +1,17 @@
 """Consumer layer - EPG generation, matching, channels."""
 
+from teamarr.consumers.cache import (
+    CacheRefresher,
+    CacheStats,
+    LeagueEntry,
+    TeamEntry,
+    TeamLeagueCache,
+    expand_leagues,
+    find_leagues_for_stream,
+    get_cache,
+    refresh_cache,
+    refresh_cache_if_needed,
+)
 from teamarr.consumers.cached_matcher import (
     CachedBatchResult,
     CachedMatcher,
@@ -22,7 +34,6 @@ from teamarr.consumers.event_epg import (
     EventChannelInfo,
     EventEPGGenerator,
     EventEPGOptions,
-    EventTemplateConfig,
 )
 from teamarr.consumers.event_group_processor import (
     BatchProcessingResult,
@@ -66,26 +77,24 @@ from teamarr.consumers.scheduler import (
 )
 from teamarr.consumers.single_league_matcher import MatchResult, SingleLeagueMatcher
 from teamarr.consumers.stream_match_cache import (
-    CacheEntry,
+    StreamCacheEntry,
     StreamMatchCache,
     compute_fingerprint,
     event_to_cache_data,
     get_generation_counter,
     increment_generation_counter,
 )
-from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions, TemplateConfig
-from teamarr.consumers.team_league_cache import (
-    CacheRefresher,
-    CacheStats,
-    LeagueEntry,
-    TeamEntry,
-    TeamLeagueCache,
-    expand_leagues,
-    find_leagues_for_stream,
-    get_cache,
-    refresh_cache,
-    refresh_cache_if_needed,
+from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions
+from teamarr.consumers.team_processor import (
+    BatchTeamResult,
+    TeamProcessingResult,
+    TeamProcessor,
+    get_all_team_xmltv,
+    process_all_teams,
+    process_team,
 )
+from teamarr.core import TemplateConfig
+from teamarr.database.templates import EventTemplateConfig
 
 __all__ = [
     # Channel lifecycle
@@ -111,7 +120,7 @@ __all__ = [
     "CachedMatcher",
     "CachedMatchResult",
     # Stream match cache
-    "CacheEntry",
+    "StreamCacheEntry",
     "StreamMatchCache",
     "compute_fingerprint",
     "event_to_cache_data",
@@ -166,4 +175,11 @@ __all__ = [
     "TeamEPGGenerator",
     "TeamEPGOptions",
     "TemplateConfig",
+    # Team processing
+    "BatchTeamResult",
+    "TeamProcessor",
+    "TeamProcessingResult",
+    "get_all_team_xmltv",
+    "process_all_teams",
+    "process_team",
 ]

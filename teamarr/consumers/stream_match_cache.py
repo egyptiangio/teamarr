@@ -51,7 +51,7 @@ def compute_fingerprint(group_id: int, stream_id: int, stream_name: str) -> str:
 
 
 @dataclass
-class CacheEntry:
+class StreamCacheEntry:
     """Cached match result."""
 
     event_id: str
@@ -88,7 +88,7 @@ class StreamMatchCache:
         group_id: int,
         stream_id: int,
         stream_name: str,
-    ) -> CacheEntry | None:
+    ) -> StreamCacheEntry | None:
         """Look up cached match for a stream.
 
         Args:
@@ -97,7 +97,7 @@ class StreamMatchCache:
             stream_name: Exact stream name
 
         Returns:
-            CacheEntry if found, None otherwise
+            StreamCacheEntry if found, None otherwise
         """
         fingerprint = compute_fingerprint(group_id, stream_id, stream_name)
 
@@ -115,7 +115,7 @@ class StreamMatchCache:
             if row:
                 self._stats["hits"] += 1
                 logger.debug(f"[CACHE HIT] stream_id={stream_id} -> event_id={row['event_id']}")
-                return CacheEntry(
+                return StreamCacheEntry(
                     event_id=row["event_id"],
                     league=row["league"],
                     cached_data=json.loads(row["cached_event_data"]),

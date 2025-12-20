@@ -203,7 +203,34 @@ class DispatcharrFactory:
                 )
 
             data = response.json()
-            channel_count = data.get("count") if isinstance(data, dict) else None
+            # Handle both paginated (dict with count) and list responses
+            if isinstance(data, dict):
+                channel_count = data.get("count")
+            elif isinstance(data, list):
+                channel_count = len(data)
+            else:
+                channel_count = None
+
+            # Get M3U accounts count (exclude "custom")
+            account_count = None
+            try:
+                acc_response = client.get("/api/m3u/accounts/")
+                if acc_response and acc_response.status_code == 200:
+                    accounts = acc_response.json()
+                    # Filter out "custom" account
+                    accounts = [a for a in accounts if a.get("name", "").lower() != "custom"]
+                    account_count = len(accounts)
+            except Exception:
+                pass
+
+            # Get channel groups count
+            group_count = None
+            try:
+                grp_response = client.get("/api/channels/groups/")
+                if grp_response and grp_response.status_code == 200:
+                    group_count = len(grp_response.json())
+            except Exception:
+                pass
 
             client.close()
 
@@ -212,6 +239,8 @@ class DispatcharrFactory:
                 url=test_url,
                 username=test_username,
                 channel_count=channel_count,
+                account_count=account_count,
+                group_count=group_count,
             )
 
         except Exception as e:
@@ -297,6 +326,8 @@ class ConnectionTestResult:
     url: str | None = None
     username: str | None = None
     version: str | None = None
+    account_count: int | None = None
+    group_count: int | None = None
     channel_count: int | None = None
     error: str | None = None
 
@@ -309,6 +340,10 @@ class ConnectionTestResult:
             result["username"] = self.username
         if self.version:
             result["version"] = self.version
+        if self.account_count is not None:
+            result["account_count"] = self.account_count
+        if self.group_count is not None:
+            result["group_count"] = self.group_count
         if self.channel_count is not None:
             result["channel_count"] = self.channel_count
         if self.error:

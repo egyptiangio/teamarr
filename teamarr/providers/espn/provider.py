@@ -5,58 +5,81 @@ Pure fetch + normalize - no caching (caching is in service layer).
 """
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from teamarr.core import Event, EventStatus, SportsProvider, Team, TeamStats, Venue
-from teamarr.database import get_db, get_leagues_for_provider
-from teamarr.providers.espn.client import SPORT_MAPPING, ESPNClient
-from teamarr.utilities.tz import to_user_tz
+from teamarr.core import (
+    Event,
+    EventStatus,
+    LeagueMappingSource,
+    SportsProvider,
+    Team,
+    TeamStats,
+    Venue,
+)
+from teamarr.providers.espn.client import ESPNClient
+from teamarr.providers.espn.constants import STATUS_MAP, TOURNAMENT_SPORTS
+from teamarr.providers.espn.tournament import TournamentParserMixin
+from teamarr.providers.espn.ufc import UFCParserMixin
 
 logger = logging.getLogger(__name__)
 
-STATUS_MAP = {
-    "STATUS_SCHEDULED": "scheduled",
-    "STATUS_IN_PROGRESS": "live",
-    "STATUS_HALFTIME": "live",
-    "STATUS_END_PERIOD": "live",
-    "STATUS_FINAL": "final",
-    "STATUS_FINAL_OT": "final",
-    "STATUS_POSTPONED": "postponed",
-    "STATUS_CANCELED": "cancelled",
-    "STATUS_DELAYED": "scheduled",
-}
 
-
-class ESPNProvider(SportsProvider):
+class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
     """ESPN implementation of SportsProvider.
 
     Pure fetch + normalize layer. No caching - that's handled by SportsDataService.
     """
 
-    def __init__(self, client: ESPNClient | None = None):
+    def __init__(
+        self,
+        client: ESPNClient | None = None,
+        league_mapping_source: LeagueMappingSource | None = None,
+    ):
         self._client = client or ESPNClient()
+        self._league_mapping_source = league_mapping_source
 
     @property
     def name(self) -> str:
         return "espn"
 
     def supports_league(self, league: str) -> bool:
-        if league in SPORT_MAPPING:
-            return True
+        # Database is the source of truth
+        if self._league_mapping_source:
+            if self._league_mapping_source.supports_league(league, "espn"):
+                return True
+        # Soccer leagues use dot notation - can be discovered dynamically
         if "." in league:
             return True
         return False
 
-    def _get_sport(self, league: str) -> str:
-        """Get sport name for a league from ESPN's own mapping.
+    def _get_sport_league_from_db(self, league: str) -> tuple[str, str] | None:
+        """Get sport/league pair from database config.
 
-        This is the authoritative source - ESPN knows what sport each league is.
+        Returns (sport, espn_league) tuple from provider_league_id (e.g., "basketball/nba").
+        Returns None if not found in database.
         """
+        if not self._league_mapping_source:
+            return None
+        mapping = self._league_mapping_source.get_mapping(league, "espn")
+        if mapping and mapping.provider_league_id:
+            # provider_league_id is "sport/league" format
+            parts = mapping.provider_league_id.split("/", 1)
+            if len(parts) == 2:
+                return (parts[0], parts[1])
+        return None
+
+    def _get_sport(self, league: str) -> str:
+        """Get sport name for a league.
+
+        Uses database config as source of truth, falls back to client mapping.
+        """
+        # Try database first
+        db_result = self._get_sport_league_from_db(league)
+        if db_result:
+            return db_result[0]
+        # Fallback to client mapping
         sport, _ = self._client.get_sport_league(league)
         return sport
-
-    # Sports that are tournament-based (no home/away teams)
-    TOURNAMENT_SPORTS = {"tennis", "golf", "racing"}
 
     def get_events(self, league: str, target_date: date) -> list[Event]:
         # UFC uses different API and parsing
@@ -65,7 +88,7 @@ class ESPNProvider(SportsProvider):
 
         # Check if this is a tournament sport
         sport = self._get_sport(league)
-        if sport in self.TOURNAMENT_SPORTS:
+        if sport in TOURNAMENT_SPORTS:
             return self._get_tournament_events(league, target_date, sport)
 
         date_str = target_date.strftime("%Y%m%d")
@@ -81,132 +104,90 @@ class ESPNProvider(SportsProvider):
 
         return events
 
-    def _get_tournament_events(self, league: str, target_date: date, sport: str) -> list[Event]:
-        """Get events for tournament sports (tennis, golf, racing).
-
-        These sports have tournaments/races as events with many competitors,
-        not head-to-head matchups with home/away.
-        """
-        date_str = target_date.strftime("%Y%m%d")
-        data = self._client.get_scoreboard(league, date_str)
-        if not data:
-            return []
-
-        events = []
-        for event_data in data.get("events", []):
-            event = self._parse_tournament_event(event_data, league, sport)
-            if event:
-                events.append(event)
-
-        return events
-
-    def _parse_tournament_event(self, data: dict, league: str, sport: str) -> Event | None:
-        """Parse a tournament-style event (tennis, golf, racing).
-
-        Creates placeholder 'teams' representing the tournament/event itself.
-        """
-        try:
-            event_id = data.get("id", "")
-            if not event_id:
-                return None
-
-            # Parse start time
-            date_str = data.get("date")
-            if not date_str:
-                return None
-
-            start_time = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-
-            event_name = data.get("name", "")
-            short_name = data.get("shortName", event_name)
-
-            # For tournaments, create placeholder "teams"
-            # This allows the event to work with existing matching logic
-            tournament_team = Team(
-                id=f"tournament_{event_id}",
-                provider=self.name,
-                name=event_name,
-                short_name=short_name[:20] if short_name else "",
-                abbreviation=self._make_tournament_abbrev(event_name),
-                league=league,
-                sport=sport,
-                logo_url=None,
-                color=None,
-            )
-
-            # Parse status
-            status_data = data.get("status", {})
-            type_data = status_data.get("type", {}) if status_data else {}
-            state = type_data.get("state", "pre")
-
-            if state == "in":
-                status = EventStatus(state="live", detail=type_data.get("detail"))
-            elif state == "post":
-                status = EventStatus(state="final", detail=type_data.get("detail"))
-            else:
-                status = EventStatus(state="scheduled")
-
-            # Parse venue if available
-            venue = None
-            competitions = data.get("competitions", [])
-            if competitions:
-                venue_data = competitions[0].get("venue")
-                if venue_data:
-                    venue = Venue(
-                        name=venue_data.get("fullName", ""),
-                        city=venue_data.get("address", {}).get("city", ""),
-                        state=venue_data.get("address", {}).get("state", ""),
-                        country=venue_data.get("address", {}).get("country", ""),
-                    )
-
-            return Event(
-                id=str(event_id),
-                provider=self.name,
-                name=event_name,
-                short_name=short_name,
-                start_time=start_time,
-                home_team=tournament_team,
-                away_team=tournament_team,  # Same team for tournaments
-                status=status,
-                league=league,
-                sport=sport,
-                venue=venue,
-                broadcasts=[],
-            )
-
-        except Exception as e:
-            logger.warning(f"Failed to parse tournament event: {e}")
-            return None
-
-    def _make_tournament_abbrev(self, name: str) -> str:
-        """Make abbreviation for tournament name."""
-        # Take first letters of significant words
-        words = [w for w in name.split() if len(w) > 2]
-        if len(words) >= 2:
-            return "".join(w[0].upper() for w in words[:4])
-        return name[:6].upper()
-
     def get_team_schedule(
         self,
         team_id: str,
         league: str,
         days_ahead: int = 14,
     ) -> list[Event]:
+        """Fetch team schedule.
+
+        NOTE: ESPN's schedule endpoint returns only PAST games for soccer leagues.
+        For soccer, we scan the scoreboard endpoint for upcoming days and filter
+        by team ID to find their games.
+        """
+        sport = self._get_sport(league)
+        now = datetime.now(UTC)
+        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # For soccer, the schedule endpoint only returns past games.
+        # Use scoreboard scanning instead.
+        if sport == "soccer":
+            return self._get_soccer_team_schedule(team_id, league, days_ahead)
+
+        # Standard behavior for US sports
+        # ESPN schedule endpoint returns full season - filter by days_ahead
         data = self._client.get_team_schedule(league, team_id)
         if not data:
             return []
 
-        now = datetime.now(UTC)
-        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        max_date = now + timedelta(days=days_ahead)
 
         events = []
         for event_data in data.get("events", []):
             event = self._parse_event(event_data, league)
-            if event and event.start_time >= cutoff:
+            if event and cutoff <= event.start_time <= max_date:
                 events.append(event)
 
         events.sort(key=lambda e: e.start_time)
         return events
+
+    def _get_soccer_team_schedule(
+        self,
+        team_id: str,
+        league: str,
+        days_ahead: int,
+    ) -> list[Event]:
+        """Get soccer team schedule by scanning scoreboard.
+
+        ESPN's schedule endpoint for soccer only returns past games.
+        We scan the scoreboard for the next N days and filter for games
+        involving the specified team.
+        """
+        from datetime import timedelta
+
+        events = []
+        today = date.today()
+
+        for day_offset in range(days_ahead):
+            target_date = today + timedelta(days=day_offset)
+            date_str = target_date.strftime("%Y%m%d")
+
+            data = self._client.get_scoreboard(league, date_str)
+            if not data:
+                continue
+
+            for event_data in data.get("events", []):
+                # Check if this team is playing
+                if self._team_in_event(team_id, event_data):
+                    event = self._parse_event(event_data, league)
+                    if event:
+                        events.append(event)
+
+        events.sort(key=lambda e: e.start_time)
+        return events
+
+    def _team_in_event(self, team_id: str, event_data: dict) -> bool:
+        """Check if a team is playing in this event."""
+        competitions = event_data.get("competitions", [])
+        if not competitions:
+            return False
+
+        for competitor in competitions[0].get("competitors", []):
+            comp_team = competitor.get("team", {})
+            if str(comp_team.get("id")) == str(team_id):
+                return True
+        return False
 
     def get_team(self, team_id: str, league: str) -> Team | None:
         data = self._client.get_team(league, team_id)
@@ -537,11 +518,13 @@ class ESPNProvider(SportsProvider):
         Returns:
             List of Team objects for this league
         """
-        data = self._client.get_teams(league)
+        # Get sport/league from database (source of truth)
+        sport_league = self._get_sport_league_from_db(league)
+        data = self._client.get_teams(league, sport_league)
         if not data:
             return []
 
-        sport = self._get_sport(league)
+        sport = sport_league[0] if sport_league else self._get_sport(league)
         teams = []
 
         # ESPN teams endpoint returns {"sports": [{"leagues": [{"teams": [...]}]}]}
@@ -590,19 +573,13 @@ class ESPNProvider(SportsProvider):
     def get_supported_leagues(self) -> list[str]:
         """Get all leagues this provider supports.
 
-        Returns SPORT_MAPPING keys (core leagues) plus any additional
-        leagues configured in the database.
+        Returns only leagues explicitly configured in the database.
         """
-        # Start with core leagues from SPORT_MAPPING
-        leagues = set(SPORT_MAPPING.keys())
+        if not self._league_mapping_source:
+            return []
 
-        # Add any additional leagues from database
-        with get_db() as conn:
-            db_mappings = get_leagues_for_provider(conn, "espn")
-            for mapping in db_mappings:
-                leagues.add(mapping.league_code)
-
-        return sorted(leagues)
+        mappings = self._league_mapping_source.get_leagues_for_provider("espn")
+        return sorted(m.league_code for m in mappings)
 
     def get_team_stats(self, team_id: str, league: str) -> TeamStats | None:
         """Fetch detailed team statistics from ESPN.
@@ -739,152 +716,3 @@ class ESPNProvider(SportsProvider):
         division = f"Division {group_id}" if group_id else None
 
         return conference, None, division
-
-    # UFC-specific parsing
-
-    def _get_ufc_events(self, target_date: date) -> list[Event]:
-        """Fetch and parse UFC events for a specific date.
-
-        UFC API returns all upcoming events, so we filter to target_date.
-        """
-        data = self._client.get_ufc_events()
-        if not data:
-            return []
-
-        try:
-            ufc_events = data["sports"][0]["leagues"][0]["events"]
-        except (KeyError, IndexError):
-            logger.warning("Unexpected UFC events response structure")
-            return []
-
-        events = []
-        for event_data in ufc_events:
-            event = self._parse_ufc_event(event_data)
-            if event:
-                # Compare dates in user timezone (late night UTC = same day locally)
-                local_date = to_user_tz(event.start_time).date()
-                if local_date == target_date:
-                    events.append(event)
-
-        return events
-
-    def _parse_ufc_event(self, data: dict) -> Event | None:
-        """Parse UFC fight card into Event.
-
-        Maps the main event fighters as home_team/away_team for compatibility.
-        Extracts prelims vs main card start times.
-        """
-        try:
-            event_id = str(data.get("id", ""))
-            if not event_id:
-                return None
-
-            competitions = data.get("competitions", [])
-            if not competitions:
-                return None
-
-            # Group bouts by start time to find prelims vs main card
-            bout_times = set()
-            for comp in competitions:
-                if "date" in comp:
-                    bout_times.add(comp["date"])
-
-            if not bout_times:
-                return None
-
-            prelims_start = min(bout_times)
-            main_card_start_str = max(bout_times) if len(bout_times) > 1 else None
-
-            # Find the main event (first bout at main card time)
-            main_event = None
-            if main_card_start_str:
-                main_event = next(
-                    (c for c in competitions if c.get("date") == main_card_start_str),
-                    None,
-                )
-            if not main_event:
-                main_event = competitions[0]
-
-            # Extract fighters as "teams"
-            competitors = main_event.get("competitors", [])
-            if len(competitors) < 2:
-                return None
-
-            fighter1 = self._parse_fighter_as_team(competitors[0])
-            fighter2 = self._parse_fighter_as_team(competitors[1])
-
-            # Parse times
-            start_time = self._parse_datetime(prelims_start)
-            if not start_time:
-                return None
-
-            main_card_start = None
-            if main_card_start_str and main_card_start_str != prelims_start:
-                main_card_start = self._parse_datetime(main_card_start_str)
-
-            # Parse status from main event
-            status = self._parse_ufc_status(main_event.get("status", {}))
-
-            return Event(
-                id=event_id,
-                provider=self.name,
-                name=data.get("name", ""),
-                short_name=f"{fighter1.short_name} vs {fighter2.short_name}",
-                start_time=start_time,
-                home_team=fighter1,
-                away_team=fighter2,
-                status=status,
-                league="ufc",
-                sport="mma",
-                main_card_start=main_card_start,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to parse UFC event {data.get('id', 'unknown')}: {e}")
-            return None
-
-    def _parse_fighter_as_team(self, competitor: dict) -> Team:
-        """Convert UFC fighter to Team dataclass for compatibility."""
-        athlete = competitor.get("athlete", {})
-
-        # Get headshot URL
-        headshots = athlete.get("headshots", {})
-        logo_url = None
-        if headshots:
-            # Prefer full size, fallback to any available
-            logo_url = headshots.get("full", {}).get("href")
-            if not logo_url:
-                for size in ["xlarge", "large", "medium"]:
-                    if size in headshots:
-                        logo_url = headshots[size].get("href")
-                        break
-
-        short_name = athlete.get("shortName", "")
-
-        return Team(
-            id=str(athlete.get("id", "")),
-            provider=self.name,
-            name=athlete.get("displayName", ""),
-            short_name=short_name,
-            abbreviation=short_name.replace(".", "").replace(" ", ""),
-            league="ufc",
-            sport="mma",
-            logo_url=logo_url,
-            color=None,
-        )
-
-    def _parse_ufc_status(self, status_data: dict) -> EventStatus:
-        """Parse UFC event status."""
-        state_map = {
-            "pre": "scheduled",
-            "in": "live",
-            "post": "final",
-        }
-        state = status_data.get("state", "pre")
-        mapped_state = state_map.get(state, "scheduled")
-
-        return EventStatus(
-            state=mapped_state,
-            detail=status_data.get("description"),
-            period=None,
-            clock=None,
-        )

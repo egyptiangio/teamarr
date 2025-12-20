@@ -2,11 +2,18 @@
 
 Single source of truth for all timezone operations.
 All datetime display, formatting, and conversion should use these functions.
+
+Display settings (time_format, show_timezone) are read from user configuration.
 """
 
 from datetime import UTC, datetime
 
-from teamarr.config import get_user_timezone, get_user_timezone_str
+from teamarr.config import (
+    get_show_timezone,
+    get_time_format,
+    get_user_timezone,
+    get_user_timezone_str,
+)
 
 __all__ = [
     "get_user_timezone",
@@ -61,20 +68,33 @@ def to_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-def format_time(dt: datetime, include_tz: bool = True) -> str:
-    """Format time for display (e.g., '7:30 PM EST').
+def format_time(dt: datetime, include_tz: bool | None = None) -> str:
+    """Format time for display using user's display settings.
+
+    Uses user's configured time format (12h/24h) and show_timezone setting.
 
     Args:
         dt: Datetime to format (will be converted to user tz)
-        include_tz: Whether to include timezone abbreviation
+        include_tz: Override for timezone display (None = use user setting)
 
     Returns:
-        Formatted time string
+        Formatted time string (e.g., '7:30 PM EST' or '19:30')
     """
     local_dt = to_user_tz(dt)
-    time_str = local_dt.strftime("%-I:%M %p")
 
-    if include_tz:
+    # Get user's time format preference
+    time_format = get_time_format()
+
+    if time_format == "24h":
+        time_str = local_dt.strftime("%H:%M")
+    else:
+        # 12-hour format
+        time_str = local_dt.strftime("%-I:%M %p")
+
+    # Determine if we should show timezone
+    show_tz = include_tz if include_tz is not None else get_show_timezone()
+
+    if show_tz:
         tz_abbrev = get_timezone_abbrev(local_dt)
         return f"{time_str} {tz_abbrev}"
     return time_str

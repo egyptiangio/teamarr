@@ -42,9 +42,17 @@ def _parse_json_fields(row: dict) -> dict:
 
 @router.get("/templates", response_model=list[TemplateResponse])
 def list_templates():
-    """List all templates."""
+    """List all templates with usage counts."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM templates ORDER BY name")
+        cursor = conn.execute(
+            """
+            SELECT t.*,
+                   COALESCE((SELECT COUNT(*) FROM teams WHERE template_id = t.id), 0) as team_count,
+                   COALESCE((SELECT COUNT(*) FROM event_epg_groups WHERE template_id = t.id), 0) as group_count
+            FROM templates t
+            ORDER BY t.name
+            """
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -57,14 +65,19 @@ def create_template(template: TemplateCreate):
                 """
                 INSERT INTO templates (
                     name, template_type, sport, league,
-                    title_format, subtitle_template, program_art_url,
+                    title_format, subtitle_template, description_template, program_art_url,
                     game_duration_mode, game_duration_override,
                     xmltv_flags, xmltv_categories, categories_apply_to,
                     pregame_enabled, pregame_periods, pregame_fallback,
                     postgame_enabled, postgame_periods, postgame_fallback, postgame_conditional,
-                    idle_enabled, idle_content, idle_conditional,
+                    idle_enabled, idle_content, idle_conditional, idle_offseason,
+                    conditional_descriptions,
                     event_channel_name, event_channel_logo_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     template.name,
@@ -73,6 +86,7 @@ def create_template(template: TemplateCreate):
                     template.league,
                     template.title_format,
                     template.subtitle_template,
+                    template.description_template,
                     template.program_art_url,
                     template.game_duration_mode,
                     template.game_duration_override,
@@ -103,6 +117,12 @@ def create_template(template: TemplateCreate):
                     json.dumps(template.idle_conditional.model_dump())
                     if template.idle_conditional
                     else None,
+                    json.dumps(template.idle_offseason.model_dump())
+                    if template.idle_offseason
+                    else None,
+                    json.dumps([c.model_dump() for c in template.conditional_descriptions])
+                    if template.conditional_descriptions
+                    else None,
                     template.event_channel_name,
                     template.event_channel_logo_url,
                 ),
@@ -130,6 +150,31 @@ def get_template(template_id: int):
         return _parse_json_fields(dict(row))
 
 
+def _serialize_for_db(key: str, value):
+    """Serialize value for database storage."""
+    json_fields = {
+        "xmltv_flags",
+        "xmltv_categories",
+        "pregame_periods",
+        "pregame_fallback",
+        "postgame_periods",
+        "postgame_fallback",
+        "postgame_conditional",
+        "idle_content",
+        "idle_conditional",
+        "idle_offseason",
+        "conditional_descriptions",
+    }
+    if key in json_fields and value is not None:
+        if hasattr(value, "model_dump"):
+            return json.dumps(value.model_dump())
+        elif isinstance(value, list):
+            return json.dumps([v.model_dump() if hasattr(v, "model_dump") else v for v in value])
+        elif isinstance(value, dict):
+            return json.dumps(value)
+    return value
+
+
 @router.put("/templates/{template_id}", response_model=TemplateResponse)
 def update_template(template_id: int, template: TemplateUpdate):
     """Update a template."""
@@ -137,8 +182,11 @@ def update_template(template_id: int, template: TemplateUpdate):
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
-    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-    values = list(updates.values()) + [template_id]
+    # Serialize JSON fields
+    serialized = {k: _serialize_for_db(k, v) for k, v in updates.items()}
+
+    set_clause = ", ".join(f"{k} = ?" for k in serialized.keys())
+    values = list(serialized.values()) + [template_id]
 
     with get_db() as conn:
         cursor = conn.execute(f"UPDATE templates SET {set_clause} WHERE id = ?", values)

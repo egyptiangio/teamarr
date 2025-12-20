@@ -63,6 +63,37 @@ def init_db(db_path: Path | str | None = None) -> None:
 
     with get_db(db_path) as conn:
         conn.executescript(schema_sql)
+        # Run migrations for existing databases
+        _run_migrations(conn)
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Run database migrations for existing databases.
+
+    Adds new columns that may not exist in older database versions.
+    Safe to call multiple times - checks for column existence first.
+    """
+    # Migration: Add description_template to templates table
+    _add_column_if_not_exists(
+        conn, "templates", "description_template", "TEXT DEFAULT '{matchup} | {venue_full}'"
+    )
+
+
+def _add_column_if_not_exists(
+    conn: sqlite3.Connection, table: str, column: str, column_def: str
+) -> None:
+    """Add a column to a table if it doesn't exist.
+
+    Args:
+        conn: Database connection
+        table: Table name
+        column: Column name to add
+        column_def: Column definition (type and default)
+    """
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    columns = {row["name"] for row in cursor.fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
 
 
 def reset_db(db_path: Path | str | None = None) -> None:

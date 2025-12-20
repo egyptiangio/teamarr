@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 from teamarr.core import Event, Programme, TeamStats
 from teamarr.services import SportsDataService
-from teamarr.templates.context import GameContext, TeamConfig, TemplateContext
+from teamarr.templates.context import GameContext, TeamChannelContext, TemplateContext
 from teamarr.templates.resolver import TemplateResolver
 from teamarr.utilities.sports import get_sport_duration, get_sport_from_league
 from teamarr.utilities.time_blocks import create_filler_chunks, crosses_midnight
@@ -102,7 +102,7 @@ class FillerGenerator:
         sport = sorted_events[0].sport if sorted_events else self._get_sport(league)
 
         # Build team config for template context
-        team_config = TeamConfig(
+        team_config = TeamChannelContext(
             team_id=team_id,
             league=league,
             sport=sport,
@@ -136,7 +136,7 @@ class FillerGenerator:
         self,
         date,  # date object
         events: list[Event],
-        team_config: TeamConfig,
+        team_config: TeamChannelContext,
         team_stats: TeamStats | None,
         channel_id: str,
         logo_url: str | None,
@@ -172,8 +172,10 @@ class FillerGenerator:
         future_events = [e for e in events if event_date(e) > date]
         next_future_event = future_events[0] if future_events else None
 
-        # Find last completed event (for .last context)
-        past_events = [e for e in events if e.start_time < epg_start]
+        # Find last completed event relative to THIS DAY (for .last context)
+        # Important: use day_start (the EPG date) not epg_start (actual now)
+        # This ensures .last refers to the most recent game before the programme being generated
+        past_events = [e for e in events if e.start_time < day_start]
         last_past_event = past_events[-1] if past_events else None
 
         fillers: list[Programme] = []
@@ -222,7 +224,7 @@ class FillerGenerator:
         day_events: list[Event],
         prev_day_last_event: Event | None,
         last_past_event: Event | None,
-        team_config: TeamConfig,
+        team_config: TeamChannelContext,
         team_stats: TeamStats | None,
         channel_id: str,
         logo_url: str | None,
@@ -240,10 +242,13 @@ class FillerGenerator:
                 skip_pregame_until = prev_game_end
 
         # PREGAME: From day start to first game
+        # Note: pregame filler ends when the game PROGRAMME starts, not the event
+        # The game programme includes a pregame buffer (starts early)
         if config.pregame_enabled:
             first_game = day_events[0]
             pregame_start = skip_pregame_until
-            pregame_end = first_game.start_time
+            # End filler when game programme starts (event - buffer)
+            pregame_end = first_game.start_time - timedelta(minutes=options.pregame_buffer_minutes)
 
             if pregame_start < pregame_end:
                 # Build context for pregame
@@ -312,7 +317,7 @@ class FillerGenerator:
         prev_day_last_event: Event | None,
         next_future_event: Event | None,
         last_past_event: Event | None,
-        team_config: TeamConfig,
+        team_config: TeamChannelContext,
         team_stats: TeamStats | None,
         channel_id: str,
         logo_url: str | None,
@@ -495,7 +500,7 @@ class FillerGenerator:
 
     def _build_filler_context(
         self,
-        team_config: TeamConfig,
+        team_config: TeamChannelContext,
         team_stats: TeamStats | None,
         next_event: Event | None = None,
         last_event: Event | None = None,

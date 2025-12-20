@@ -58,7 +58,7 @@ class FillerConfig:
     pregame_template: FillerTemplate = field(
         default_factory=lambda: FillerTemplate(
             title="Pregame Coverage",
-            description="{team_name} vs {opponent} starts at {game_time.next}",
+            description="{team_name} vs {opponent.next} starts at {game_time.next}",
         )
     )
 
@@ -111,3 +111,8 @@ class FillerOptions:
 
     # Default duration if sport not found
     default_duration: float = 3.0
+
+    # Pregame buffer (minutes) - must match the value used in TeamEPGOptions
+    # The actual game programme starts this many minutes before event.start_time
+    # Filler should end when the game PROGRAMME starts, not the event
+    pregame_buffer_minutes: int = 30

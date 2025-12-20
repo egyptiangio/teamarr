@@ -23,6 +23,8 @@ from teamarr.consumers.channel_lifecycle import (
     StreamProcessResult,
     create_lifecycle_service,
 )
+from teamarr.consumers.child_processor import ChildStreamProcessor
+from teamarr.consumers.enforcement import CrossGroupEnforcer, KeywordEnforcer
 from teamarr.consumers.event_epg import EventEPGGenerator, EventEPGOptions
 from teamarr.core import Event
 from teamarr.database.groups import (
@@ -197,11 +199,20 @@ class EventGroupProcessor:
     def process_all_groups(
         self,
         target_date: date | None = None,
+        run_enforcement: bool = True,
     ) -> BatchProcessingResult:
         """Process all active event groups.
 
+        Groups are processed in order:
+        1. Parent groups (single-league, no parent_group_id) - create channels
+        2. Child groups (have parent_group_id) - add streams to parent channels
+        3. Multi-league groups (multiple leagues) - may consolidate with single-league
+
+        After all groups, enforcement runs to fix any misplaced streams.
+
         Args:
             target_date: Target date (defaults to today)
+            run_enforcement: Whether to run post-processing enforcement
 
         Returns:
             BatchProcessingResult with all group results and combined XMLTV
@@ -211,14 +222,36 @@ class EventGroupProcessor:
 
         with self._db_factory() as conn:
             groups = get_all_groups(conn, include_inactive=False)
-            processed_group_ids = []
 
-            for group in groups:
+            # Sort groups: parents first, then children, then multi-league
+            parent_groups, child_groups, multi_league_groups = self._sort_groups(groups)
+
+            processed_group_ids = []
+            multi_league_ids = [g.id for g in multi_league_groups]
+
+            # Phase 1: Process parent groups (create channels, generate EPG)
+            for group in parent_groups:
                 result = self._process_group_internal(conn, group, target_date)
                 batch_result.results.append(result)
                 processed_group_ids.append(group.id)
 
-            # Aggregate XMLTV from all processed groups
+            # Phase 2: Process child groups (add streams to parent channels)
+            for group in child_groups:
+                result = self._process_child_group_internal(conn, group, target_date)
+                batch_result.results.append(result)
+                # Child groups don't generate their own XMLTV
+
+            # Phase 3: Process multi-league groups
+            for group in multi_league_groups:
+                result = self._process_group_internal(conn, group, target_date)
+                batch_result.results.append(result)
+                processed_group_ids.append(group.id)
+
+            # Phase 4: Run enforcement (keyword placement + cross-group consolidation)
+            if run_enforcement:
+                self._run_enforcement(conn, multi_league_ids)
+
+            # Aggregate XMLTV from all processed groups (parents + multi-league)
             if processed_group_ids:
                 xmltv_contents = get_all_group_xmltv(conn, processed_group_ids)
                 if xmltv_contents:
@@ -230,6 +263,198 @@ class EventGroupProcessor:
 
         batch_result.completed_at = datetime.now()
         return batch_result
+
+    def _sort_groups(
+        self, groups: list[EventEPGGroup]
+    ) -> tuple[list[EventEPGGroup], list[EventEPGGroup], list[EventEPGGroup]]:
+        """Sort groups into parent, child, and multi-league categories.
+
+        Processing order:
+        1. Parent groups (single-league, no parent_group_id)
+        2. Child groups (have parent_group_id)
+        3. Multi-league groups (multiple leagues in leagues array)
+
+        Args:
+            groups: List of all groups
+
+        Returns:
+            Tuple of (parent_groups, child_groups, multi_league_groups)
+        """
+        parent_groups = []
+        child_groups = []
+        multi_league_groups = []
+
+        for group in groups:
+            if group.parent_group_id is not None:
+                # Child group - always processed after parents
+                child_groups.append(group)
+            elif len(group.leagues) > 1:
+                # Multi-league group - processed last
+                multi_league_groups.append(group)
+            else:
+                # Single-league parent group - processed first
+                parent_groups.append(group)
+
+        logger.debug(
+            f"Group sort: {len(parent_groups)} parents, "
+            f"{len(child_groups)} children, {len(multi_league_groups)} multi-league"
+        )
+
+        return parent_groups, child_groups, multi_league_groups
+
+    def _process_child_group_internal(
+        self,
+        conn: Connection,
+        group: EventEPGGroup,
+        target_date: date,
+    ) -> ProcessingResult:
+        """Process a child group - adds streams to parent's channels.
+
+        Child groups don't create their own channels or generate XMLTV.
+        They match streams and add them to their parent's existing channels.
+
+        Args:
+            conn: Database connection
+            group: Child group to process
+            target_date: Target date
+
+        Returns:
+            ProcessingResult with stream add details
+        """
+        result = ProcessingResult(group_id=group.id, group_name=group.name)
+
+        if not group.parent_group_id:
+            result.errors.append("Group is not a child group (no parent_group_id)")
+            result.completed_at = datetime.now()
+            return result
+
+        # Create stats run
+        stats_run = create_run(conn, run_type="event_group", group_id=group.id)
+
+        try:
+            # Step 1: Fetch M3U streams
+            streams = self._fetch_streams(group)
+            result.streams_fetched = len(streams)
+            stats_run.streams_fetched = len(streams)
+
+            if not streams:
+                result.errors.append("No streams found for child group")
+                result.completed_at = datetime.now()
+                stats_run.complete(status="completed", error="No streams found")
+                save_run(conn, stats_run)
+                return result
+
+            # Step 2: Fetch events (use parent's leagues if child has none)
+            leagues = group.leagues
+            if not leagues:
+                # Inherit from parent - need to look up parent
+                from teamarr.database.groups import get_group
+                parent = get_group(conn, group.parent_group_id)
+                if parent:
+                    leagues = parent.leagues
+
+            events = self._fetch_events(leagues, target_date)
+
+            if not events:
+                result.errors.append(f"No events found for leagues: {leagues}")
+                result.completed_at = datetime.now()
+                stats_run.complete(status="completed", error="No events found")
+                save_run(conn, stats_run)
+                return result
+
+            # Step 3: Match streams to events
+            match_result = self._match_streams(streams, leagues, target_date, group.id)
+            result.streams_matched = match_result.matched_count
+            result.streams_unmatched = match_result.unmatched_count
+            stats_run.streams_matched = match_result.matched_count
+            stats_run.streams_unmatched = match_result.unmatched_count
+            stats_run.streams_cached = match_result.cache_hits
+
+            # Step 4: Add matched streams to parent's channels
+            matched_streams = self._build_matched_stream_list(streams, match_result)
+            if matched_streams:
+                child_processor = self._get_child_processor()
+                child_result = child_processor.process_child_streams(
+                    child_group={"id": group.id, "name": group.name},
+                    parent_group_id=group.parent_group_id,
+                    matched_streams=matched_streams,
+                )
+
+                # Map child result to processing result
+                result.channels_created = 0  # Child groups don't create channels
+                result.channels_existing = child_result.added_count
+                result.channels_skipped = child_result.skipped_count
+                result.channel_errors = child_result.error_count
+
+                stats_run.channels_created = 0
+                stats_run.channels_updated = child_result.added_count
+                stats_run.channels_skipped = child_result.skipped_count
+                stats_run.channels_errors = child_result.error_count
+
+                for error in child_result.errors:
+                    result.errors.append(f"Child stream error: {error}")
+
+            # No XMLTV generation for child groups
+            result.programmes_generated = 0
+
+            stats_run.complete(status="completed")
+
+        except Exception as e:
+            logger.exception(f"Error processing child group {group.name}")
+            result.errors.append(str(e))
+            stats_run.complete(status="failed", error=str(e))
+
+        save_run(conn, stats_run)
+        result.completed_at = datetime.now()
+        return result
+
+    def _get_child_processor(self) -> ChildStreamProcessor:
+        """Get or create ChildStreamProcessor instance."""
+        channel_manager = None
+        if self._dispatcharr_client:
+            from teamarr.dispatcharr import ChannelManager
+            channel_manager = ChannelManager(self._dispatcharr_client)
+
+        return ChildStreamProcessor(
+            db_factory=self._db_factory,
+            channel_manager=channel_manager,
+        )
+
+    def _run_enforcement(self, conn: Connection, multi_league_ids: list[int]) -> None:
+        """Run post-processing enforcement.
+
+        1. Keyword enforcement: ensure streams are on correct keyword channels
+        2. Cross-group consolidation: merge multi-league into single-league
+
+        Args:
+            conn: Database connection
+            multi_league_ids: IDs of multi-league groups for cross-group check
+        """
+        channel_manager = None
+        if self._dispatcharr_client:
+            from teamarr.dispatcharr import ChannelManager
+            channel_manager = ChannelManager(self._dispatcharr_client)
+
+        # Keyword enforcement
+        try:
+            keyword_enforcer = KeywordEnforcer(self._db_factory, channel_manager)
+            keyword_result = keyword_enforcer.enforce()
+            if keyword_result.moved_count > 0:
+                logger.info(f"Keyword enforcement moved {keyword_result.moved_count} streams")
+        except Exception as e:
+            logger.warning(f"Keyword enforcement failed: {e}")
+
+        # Cross-group consolidation (only if multi-league groups exist)
+        if multi_league_ids:
+            try:
+                cross_group_enforcer = CrossGroupEnforcer(self._db_factory, channel_manager)
+                cross_result = cross_group_enforcer.enforce(multi_league_ids)
+                if cross_result.deleted_count > 0:
+                    logger.info(
+                        f"Cross-group consolidation: {cross_result.deleted_count} channels merged"
+                    )
+            except Exception as e:
+                logger.warning(f"Cross-group consolidation failed: {e}")
 
     def _process_group_internal(
         self,
@@ -292,9 +517,7 @@ class EventGroupProcessor:
                     result.errors.append(f"Channel error: {error}")
 
                 # Step 5: Generate XMLTV from matched streams
-                xmltv_content, programmes_count = self._generate_xmltv(
-                    matched_streams, group, conn
-                )
+                xmltv_content, programmes_count = self._generate_xmltv(matched_streams, group, conn)
                 result.programmes_generated = programmes_count
                 result.xmltv_size = len(xmltv_content.encode("utf-8")) if xmltv_content else 0
 
@@ -517,10 +740,7 @@ class EventGroupProcessor:
             return "", 0
 
         # Convert to XMLTV
-        channel_dicts = [
-            {"id": ch.channel_id, "name": ch.name, "icon": ch.icon}
-            for ch in channels
-        ]
+        channel_dicts = [{"id": ch.channel_id, "name": ch.name, "icon": ch.icon} for ch in channels]
         xmltv_content = programmes_to_xmltv(programmes, channel_dicts)
 
         logger.info(

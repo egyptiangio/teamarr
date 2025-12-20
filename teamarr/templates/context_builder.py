@@ -11,7 +11,7 @@ from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import (
     GameContext,
     Odds,
-    TeamConfig,
+    TeamChannelContext,
     TemplateContext,
 )
 from teamarr.utilities.sports import get_sport_from_league
@@ -64,7 +64,7 @@ class ContextBuilder:
         team = event.home_team if is_home else event.away_team
 
         # Build team config - use event.sport (provider is authoritative)
-        team_config = TeamConfig(
+        team_config = TeamChannelContext(
             team_id=team_id,
             league=league,
             sport=event.sport,
@@ -120,7 +120,7 @@ class ContextBuilder:
 
         Useful for non-game content or when event data isn't available.
         """
-        team_config = TeamConfig(
+        team_config = TeamChannelContext(
             team_id=team_id,
             league=league,
             sport=self._get_sport(league),

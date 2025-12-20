@@ -82,12 +82,13 @@ def extract_game_day_short(ctx: TemplateContext, game_ctx: GameContext | None) -
     name="game_time",
     category=Category.DATETIME,
     suffix_rules=SuffixRules.ALL,
-    description="Game time with timezone (e.g., '7:30 PM EST')",
+    description="Game time formatted per user settings (e.g., '7:30 PM EST' or '19:30')",
 )
 def extract_game_time(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     if not game_ctx or not game_ctx.event:
         return ""
-    return format_time(game_ctx.event.start_time, include_tz=True)
+    # Uses user's time_format (12h/24h) and show_timezone settings
+    return format_time(game_ctx.event.start_time)
 
 
 @register_variable(

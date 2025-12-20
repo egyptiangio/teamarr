@@ -122,3 +122,19 @@ class Programme:
     category: str | None = None
     icon: str | None = None
     episode_num: str | None = None
+
+
+@dataclass
+class TemplateConfig:
+    """Template configuration for EPG generation.
+
+    Used by TeamEPGGenerator for formatting main game programmes.
+    All fields are required - templates MUST be loaded from the database.
+    There are no hardcoded defaults to prevent silent fallback behavior.
+    """
+
+    title_format: str
+    description_format: str
+    subtitle_format: str
+    category: str
+    conditional_descriptions: list[dict] = field(default_factory=list)

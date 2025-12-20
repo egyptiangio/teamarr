@@ -34,9 +34,11 @@ class GroupCreate(BaseModel):
     delete_timing: str = "same_day"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
+    sort_order: int = 0
+    total_stream_count: int = 0
     m3u_group_id: int | None = None
     m3u_group_name: str | None = None
-    active: bool = True
+    enabled: bool = True
 
 
 class GroupUpdate(BaseModel):
@@ -53,9 +55,11 @@ class GroupUpdate(BaseModel):
     delete_timing: str | None = None
     duplicate_event_handling: str | None = None
     channel_assignment_mode: str | None = None
+    sort_order: int | None = None
+    total_stream_count: int | None = None
     m3u_group_id: int | None = None
     m3u_group_name: str | None = None
-    active: bool | None = None
+    enabled: bool | None = None
 
     # Clear flags for nullable fields
     clear_template: bool = False
@@ -82,9 +86,11 @@ class GroupResponse(BaseModel):
     delete_timing: str = "same_day"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
+    sort_order: int = 0
+    total_stream_count: int = 0
     m3u_group_id: int | None = None
     m3u_group_name: str | None = None
-    active: bool = True
+    enabled: bool = True
     created_at: str | None = None
     updated_at: str | None = None
     channel_count: int | None = None
@@ -186,14 +192,14 @@ def validate_group_fields(
 
 @router.get("", response_model=GroupListResponse)
 def list_groups(
-    include_inactive: bool = Query(False, description="Include inactive groups"),
+    include_disabled: bool = Query(False, description="Include disabled groups"),
     include_stats: bool = Query(False, description="Include channel counts"),
 ):
     """List all event EPG groups."""
     from teamarr.database.groups import get_all_group_stats, get_all_groups
 
     with get_db() as conn:
-        groups = get_all_groups(conn, include_inactive=include_inactive)
+        groups = get_all_groups(conn, include_disabled=include_disabled)
 
         stats = {}
         if include_stats:
@@ -214,9 +220,11 @@ def list_groups(
                 delete_timing=g.delete_timing,
                 duplicate_event_handling=g.duplicate_event_handling,
                 channel_assignment_mode=g.channel_assignment_mode,
+                sort_order=g.sort_order,
+                total_stream_count=g.total_stream_count,
                 m3u_group_id=g.m3u_group_id,
                 m3u_group_name=g.m3u_group_name,
-                active=g.active,
+                enabled=g.enabled,
                 created_at=g.created_at.isoformat() if g.created_at else None,
                 updated_at=g.updated_at.isoformat() if g.updated_at else None,
                 channel_count=stats.get(g.id, {}).get("active"),
@@ -261,9 +269,11 @@ def create_group(request: GroupCreate):
             delete_timing=request.delete_timing,
             duplicate_event_handling=request.duplicate_event_handling,
             channel_assignment_mode=request.channel_assignment_mode,
+            sort_order=request.sort_order,
+            total_stream_count=request.total_stream_count,
             m3u_group_id=request.m3u_group_id,
             m3u_group_name=request.m3u_group_name,
-            active=request.active,
+            enabled=request.enabled,
         )
 
         group = get_group(conn, group_id)
@@ -281,9 +291,11 @@ def create_group(request: GroupCreate):
         delete_timing=group.delete_timing,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
+        sort_order=group.sort_order,
+        total_stream_count=group.total_stream_count,
         m3u_group_id=group.m3u_group_id,
         m3u_group_name=group.m3u_group_name,
-        active=group.active,
+        enabled=group.enabled,
         created_at=group.created_at.isoformat() if group.created_at else None,
         updated_at=group.updated_at.isoformat() if group.updated_at else None,
     )
@@ -317,9 +329,11 @@ def get_group_by_id(group_id: int):
         delete_timing=group.delete_timing,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
+        sort_order=group.sort_order,
+        total_stream_count=group.total_stream_count,
         m3u_group_id=group.m3u_group_id,
         m3u_group_name=group.m3u_group_name,
-        active=group.active,
+        enabled=group.enabled,
         created_at=group.created_at.isoformat() if group.created_at else None,
         updated_at=group.updated_at.isoformat() if group.updated_at else None,
         channel_count=channel_count,
@@ -374,9 +388,11 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             delete_timing=request.delete_timing,
             duplicate_event_handling=request.duplicate_event_handling,
             channel_assignment_mode=request.channel_assignment_mode,
+            sort_order=request.sort_order,
+            total_stream_count=request.total_stream_count,
             m3u_group_id=request.m3u_group_id,
             m3u_group_name=request.m3u_group_name,
-            active=request.active,
+            enabled=request.enabled,
             clear_template=request.clear_template,
             clear_channel_start_number=request.clear_channel_start_number,
             clear_channel_group_id=request.clear_channel_group_id,
@@ -402,9 +418,11 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         delete_timing=group.delete_timing,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
+        sort_order=group.sort_order,
+        total_stream_count=group.total_stream_count,
         m3u_group_id=group.m3u_group_id,
         m3u_group_name=group.m3u_group_name,
-        active=group.active,
+        enabled=group.enabled,
         created_at=group.created_at.isoformat() if group.created_at else None,
         updated_at=group.updated_at.isoformat() if group.updated_at else None,
         channel_count=channel_count,
@@ -458,10 +476,10 @@ def get_group_stats(group_id: int):
     )
 
 
-@router.post("/{group_id}/activate")
-def activate_group(group_id: int) -> dict:
-    """Activate an event EPG group."""
-    from teamarr.database.groups import get_group, set_group_active
+@router.post("/{group_id}/enable")
+def enable_group(group_id: int) -> dict:
+    """Enable an event EPG group."""
+    from teamarr.database.groups import get_group, set_group_enabled
 
     with get_db() as conn:
         group = get_group(conn, group_id)
@@ -471,15 +489,15 @@ def activate_group(group_id: int) -> dict:
                 detail=f"Group {group_id} not found",
             )
 
-        set_group_active(conn, group_id, True)
+        set_group_enabled(conn, group_id, True)
 
-    return {"success": True, "message": f"Group '{group.name}' activated"}
+    return {"success": True, "message": f"Group '{group.name}' enabled"}
 
 
-@router.post("/{group_id}/deactivate")
-def deactivate_group(group_id: int) -> dict:
-    """Deactivate an event EPG group."""
-    from teamarr.database.groups import get_group, set_group_active
+@router.post("/{group_id}/disable")
+def disable_group(group_id: int) -> dict:
+    """Disable an event EPG group."""
+    from teamarr.database.groups import get_group, set_group_enabled
 
     with get_db() as conn:
         group = get_group(conn, group_id)
@@ -489,9 +507,9 @@ def deactivate_group(group_id: int) -> dict:
                 detail=f"Group {group_id} not found",
             )
 
-        set_group_active(conn, group_id, False)
+        set_group_enabled(conn, group_id, False)
 
-    return {"success": True, "message": f"Group '{group.name}' deactivated"}
+    return {"success": True, "message": f"Group '{group.name}' disabled"}
 
 
 # =============================================================================
@@ -752,7 +770,7 @@ def get_group_xmltv(group_id: int) -> Response:
 
 @router.get("/xmltv/combined")
 def get_combined_xmltv() -> Response:
-    """Get combined XMLTV from all active event groups.
+    """Get combined XMLTV from all enabled event groups.
 
     Merges XMLTV content from all groups that have been processed.
     This is useful for having a single EPG source in Dispatcharr.
@@ -760,8 +778,8 @@ def get_combined_xmltv() -> Response:
     from teamarr.database.groups import get_all_groups
 
     with get_db() as conn:
-        # Get all active groups
-        groups = get_all_groups(conn, include_inactive=False)
+        # Get all enabled groups
+        groups = get_all_groups(conn, include_disabled=False)
         group_ids = [g.id for g in groups]
 
         if not group_ids:

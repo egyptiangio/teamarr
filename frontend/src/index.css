@@ -21,7 +21,7 @@
   --color-accent-foreground: #f1f5f9;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
-  --color-border: #334155;
+  --color-border: #1e293b;
   --color-input: #334155;
   --color-ring: #3b82f6;
 
@@ -73,6 +73,13 @@ body {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Set default border color to match V1 (subtle, dark) */
+*,
+*::before,
+*::after {
+  border-color: var(--color-border);
 }
 
 /* Custom scrollbar */

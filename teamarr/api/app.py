@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from teamarr.api.routes import (
     cache,
     channels,
+    dispatcharr,
     epg,
     groups,
     health,
@@ -21,6 +22,7 @@ from teamarr.api.routes import (
     stats,
     teams,
     templates,
+    variables,
 )
 from teamarr.utilities.logging import setup_logging
 
@@ -34,6 +36,8 @@ async def lifespan(app: FastAPI):
     from teamarr.database import get_db, init_db
     from teamarr.database.settings import get_scheduler_settings
     from teamarr.dispatcharr import close_dispatcharr, get_factory
+    from teamarr.providers import ProviderRegistry
+    from teamarr.services import init_league_mapping_service
 
     # Startup
     setup_logging()
@@ -41,6 +45,38 @@ async def lifespan(app: FastAPI):
 
     # Initialize database
     init_db()
+
+    # Initialize services and providers with dependencies
+    league_mapping_service = init_league_mapping_service(get_db)
+    ProviderRegistry.initialize(league_mapping_service)
+    logger.info("League mapping service and providers initialized")
+
+    # Auto-refresh team/league cache if empty or stale
+    from teamarr.consumers.cache import CacheRefresher
+
+    cache_refresher = CacheRefresher(get_db)
+    if cache_refresher.refresh_if_needed(max_age_days=7):
+        logger.info("Team/league cache refreshed on startup")
+
+    # Load display settings from database into config cache
+    from teamarr.config import set_display_settings, set_timezone
+    from teamarr.database.settings import get_display_settings, get_epg_settings
+
+    with get_db() as conn:
+        # Load timezone
+        epg_settings = get_epg_settings(conn)
+        set_timezone(epg_settings.epg_timezone)
+
+        # Load display settings
+        display = get_display_settings(conn)
+        set_display_settings(
+            time_format=display.time_format,
+            show_timezone=display.show_timezone,
+            channel_id_format=display.channel_id_format,
+            xmltv_generator_name=display.xmltv_generator_name,
+            xmltv_generator_url=display.xmltv_generator_url,
+        )
+    logger.info("Display settings loaded into config cache")
 
     # Initialize Dispatcharr factory (lazy connection)
     try:
@@ -120,6 +156,8 @@ def create_app() -> FastAPI:
     app.include_router(channels.router, prefix="/api/v1/channels", tags=["Channels"])
     app.include_router(settings.router, prefix="/api/v1", tags=["Settings"])
     app.include_router(stats.router, prefix="/api/v1/stats", tags=["Stats"])
+    app.include_router(variables.router, prefix="/api/v1", tags=["Variables"])
+    app.include_router(dispatcharr.router, prefix="/api/v1", tags=["Dispatcharr"])
 
     # Serve React UI static files
     frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
@@ -128,13 +166,10 @@ def create_app() -> FastAPI:
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
 
         # Serve index.html for all non-API routes (SPA routing)
-        @app.get("/{path:path}")
+        # Note: This catch-all route has lowest priority since it's added last
+        @app.get("/{path:path}", include_in_schema=False)
         async def serve_spa(path: str):
-            # Don't intercept API routes
-            if path.startswith("api/") or path.startswith("docs") or path.startswith("redoc") or path.startswith("openapi"):
-                return None
-
-            # Serve static files if they exist
+            # Serve static files if they exist (favicon, etc.)
             file_path = frontend_dist / path
             if file_path.exists() and file_path.is_file():
                 return FileResponse(file_path)

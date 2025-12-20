@@ -18,7 +18,7 @@ Rate limit handling:
 - Reactive: If we get 429, wait and retry (tracks statistics)
 - All waits are tracked for UI feedback
 
-League mappings are stored in the database (league_provider_mappings table).
+League mappings are provided via LeagueMappingSource (no direct database access).
 """
 
 import logging
@@ -26,14 +26,12 @@ import os
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from sqlite3 import Connection
 
 import httpx
 
-from teamarr.database import get_league_mapping, provider_supports_league
+from teamarr.core import LeagueMappingSource
 from teamarr.utilities.cache import TTLCache, make_cache_key
 
 logger = logging.getLogger(__name__)
@@ -201,7 +199,7 @@ class TSDBClient:
     - Team schedule (eventsnext.php) only shows HOME events
     - No livescores or highlights
 
-    League mappings come from the database (league_provider_mappings table).
+    League mappings provided via LeagueMappingSource (no direct database access).
     """
 
     # Free test key
@@ -209,14 +207,14 @@ class TSDBClient:
 
     def __init__(
         self,
-        db_getter: Callable[[], Generator[Connection, None, None]],
+        league_mapping_source: LeagueMappingSource | None = None,
         api_key: str | None = None,
         timeout: float = 10.0,
         retry_count: int = 3,
         retry_delay: float = 1.0,
         requests_per_minute: int = 25,  # Leave headroom below 30 limit
     ):
-        self._db_getter = db_getter
+        self._league_mapping_source = league_mapping_source
         self._explicit_key = api_key
         self._timeout = timeout
         self._retry_count = retry_count
@@ -296,33 +294,37 @@ class TSDBClient:
         return None
 
     def supports_league(self, league: str) -> bool:
-        """Check if we have mapping for this league in DB."""
-        with self._db_getter() as conn:
-            return provider_supports_league(conn, league, "tsdb")
+        """Check if we have mapping for this league."""
+        if not self._league_mapping_source:
+            return False
+        return self._league_mapping_source.supports_league(league, "tsdb")
 
     def get_league_id(self, league: str) -> str | None:
         """Get TSDB league ID (idLeague) for canonical league code.
 
         Used by: eventsnextleague.php, eventspastleague.php, eventsseason.php
         """
-        with self._db_getter() as conn:
-            mapping = get_league_mapping(conn, league, "tsdb")
-            return mapping.provider_league_id if mapping else None
+        if not self._league_mapping_source:
+            return None
+        mapping = self._league_mapping_source.get_mapping(league, "tsdb")
+        return mapping.provider_league_id if mapping else None
 
     def get_league_name(self, league: str) -> str | None:
         """Get TSDB league name (strLeague) for canonical league code.
 
         Used by: eventsday.php (which takes league name, not ID)
         """
-        with self._db_getter() as conn:
-            mapping = get_league_mapping(conn, league, "tsdb")
-            return mapping.provider_league_name if mapping else None
+        if not self._league_mapping_source:
+            return None
+        mapping = self._league_mapping_source.get_mapping(league, "tsdb")
+        return mapping.provider_league_name if mapping else None
 
     def get_sport(self, league: str) -> str:
-        """Get sport name for a league from DB."""
-        with self._db_getter() as conn:
-            mapping = get_league_mapping(conn, league, "tsdb")
-            return mapping.sport if mapping else "Sports"
+        """Get sport name for a league."""
+        if not self._league_mapping_source:
+            return "Sports"
+        mapping = self._league_mapping_source.get_mapping(league, "tsdb")
+        return mapping.sport if mapping else "Sports"
 
     def get_events_by_date(self, league: str, date_str: str) -> dict | None:
         """Fetch events for a league on a specific date.

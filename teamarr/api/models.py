@@ -101,6 +101,30 @@ class ConditionalContent(BaseModel):
     description_not_final: str | None = None
 
 
+class IdleOffseasonContent(BaseModel):
+    """Offseason content settings (no game in 30-day lookahead).
+
+    Each field (title, subtitle, description) can be independently enabled
+    to override the default idle content when there's no upcoming game.
+    """
+
+    title_enabled: bool = False
+    title: str | None = None
+    subtitle_enabled: bool = False
+    subtitle: str | None = None
+    description_enabled: bool = False
+    description: str | None = "No upcoming {team_name} games scheduled."
+
+
+class ConditionalDescriptionEntry(BaseModel):
+    """A conditional description entry."""
+
+    condition: str
+    condition_value: str | None = None
+    template: str
+    priority: int = 50
+
+
 class TemplateCreate(BaseModel):
     """Request body for creating a template."""
 
@@ -112,6 +136,7 @@ class TemplateCreate(BaseModel):
     # Programme formatting
     title_format: str = "{team_name} {sport}"
     subtitle_template: str | None = "{venue_full}"
+    description_template: str | None = "{matchup} | {venue_full}"
     program_art_url: str | None = None
 
     # Game duration
@@ -138,6 +163,10 @@ class TemplateCreate(BaseModel):
     idle_enabled: bool = True
     idle_content: FillerFallback | None = None
     idle_conditional: ConditionalContent | None = None
+    idle_offseason: IdleOffseasonContent | None = None
+
+    # Conditional descriptions
+    conditional_descriptions: list[ConditionalDescriptionEntry] | None = None
 
     # Event template specific
     event_channel_name: str | None = None
@@ -152,12 +181,33 @@ class TemplateUpdate(BaseModel):
     league: str | None = None
     title_format: str | None = None
     subtitle_template: str | None = None
+    description_template: str | None = None
     program_art_url: str | None = None
     game_duration_mode: str | None = None
     game_duration_override: float | None = None
+
+    # XMLTV metadata
+    xmltv_flags: dict | None = None
+    xmltv_categories: list[str] | None = None
+    categories_apply_to: str | None = None
+
+    # Filler toggles
     pregame_enabled: bool | None = None
+    pregame_fallback: FillerFallback | None = None
     postgame_enabled: bool | None = None
+    postgame_fallback: FillerFallback | None = None
+    postgame_conditional: ConditionalContent | None = None
     idle_enabled: bool | None = None
+    idle_content: FillerFallback | None = None
+    idle_conditional: ConditionalContent | None = None
+    idle_offseason: IdleOffseasonContent | None = None
+
+    # Conditional descriptions
+    conditional_descriptions: list[ConditionalDescriptionEntry] | None = None
+
+    # Event template specific
+    event_channel_name: str | None = None
+    event_channel_logo_url: str | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -187,6 +237,7 @@ class TemplateFullResponse(TemplateResponse):
 
     xmltv_flags: dict | None = None
     xmltv_categories: list[str] | None = None
+    categories_apply_to: str | None = None
     pregame_periods: list[dict] | None = None
     pregame_fallback: dict | None = None
     postgame_periods: list[dict] | None = None
@@ -194,7 +245,10 @@ class TemplateFullResponse(TemplateResponse):
     postgame_conditional: dict | None = None
     idle_content: dict | None = None
     idle_conditional: dict | None = None
+    idle_offseason: dict | None = None
     conditional_descriptions: list[dict] | None = None
+    event_channel_name: str | None = None
+    event_channel_logo_url: str | None = None
 
 
 # =============================================================================
