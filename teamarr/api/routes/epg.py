@@ -246,7 +246,7 @@ def generate_epg(
 
         # Update stats run
         total_programmes = team_result.total_programmes + group_result.total_programmes
-        total_channels = team_result.teams_processed + group_result.channels_created
+        total_channels = team_result.teams_processed + group_result.total_channels_created
         stats_run.programmes_total = total_programmes
         stats_run.programmes_events = team_result.total_events + group_result.total_programmes
         stats_run.programmes_pregame = team_result.total_pregame
