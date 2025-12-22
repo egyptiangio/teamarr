@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Default database path
-DEFAULT_DB_PATH = Path("./teamarr.db")
+DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "teamarr.db"
 
 # Schema file location
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"

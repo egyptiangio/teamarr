@@ -21,31 +21,29 @@ Field Mappings:
   categories                   -> xmltv_categories
 
 Usage:
-    # Make sure V2 database path is correct (default: data/teamarr.db)
-    python scripts/migrate_v1_templates.py
+    python scripts/migrate_v1_templates.py <v1_db_path>
+
+    # Example:
+    python scripts/migrate_v1_templates.py /path/to/v1/data/teamarr.db
 
     # The script will:
-    # 1. Initialize V2 database schema if empty
-    # 2. Read templates from V1 database
-    # 3. Convert to V2 format
-    # 4. Insert into V2 database
+    # 1. Read templates from V1 database at the provided path
+    # 2. Convert to V2 format
+    # 3. Insert into V2 database at ./data/teamarr.db
 
     # If V2 already has templates, migration is skipped to prevent duplicates.
-
-Requirements:
-    - V1 database at: /mnt/nvme/scratch/teamarr/data/teamarr.db
-    - V2 database at: /mnt/nvme/scratch/teamarrv2/data/teamarr.db
-    - V2 schema at: /mnt/nvme/scratch/teamarrv2/teamarr/database/schema.sql
 """
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
 
-# Paths
-V1_DB = Path("/mnt/nvme/scratch/teamarr/data/teamarr.db")
-V2_DB = Path("/mnt/nvme/scratch/teamarrv2/data/teamarr.db")
-V2_SCHEMA = Path("/mnt/nvme/scratch/teamarrv2/teamarr/database/schema.sql")
+# V2 paths (relative to project root)
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+V2_DB = PROJECT_ROOT / "data" / "teamarr.db"
+V2_SCHEMA = PROJECT_ROOT / "teamarr" / "database" / "schema.sql"
 
 
 def init_v2_db():
@@ -67,9 +65,9 @@ def init_v2_db():
     return conn
 
 
-def get_v1_templates():
+def get_v1_templates(v1_db_path: Path):
     """Read templates from V1 database."""
-    conn = sqlite3.connect(V1_DB)
+    conn = sqlite3.connect(v1_db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.execute("SELECT * FROM templates")
     templates = cursor.fetchall()
@@ -191,7 +189,19 @@ def insert_template(conn, template):
 
 def main():
     """Migrate V1 templates to V2."""
-    print("Migrating V1 templates to V2...")
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/migrate_v1_templates.py <v1_db_path>")
+        print("Example: python scripts/migrate_v1_templates.py /path/to/v1/data/teamarr.db")
+        sys.exit(1)
+
+    v1_db_path = Path(sys.argv[1])
+    if not v1_db_path.exists():
+        print(f"Error: V1 database not found at {v1_db_path}")
+        sys.exit(1)
+
+    print(f"Migrating V1 templates to V2...")
+    print(f"  V1 database: {v1_db_path}")
+    print(f"  V2 database: {V2_DB}")
 
     # Initialize V2 database
     v2_conn = init_v2_db()
@@ -205,7 +215,7 @@ def main():
         return
 
     # Get V1 templates
-    v1_templates = get_v1_templates()
+    v1_templates = get_v1_templates(v1_db_path)
     print(f"Found {len(v1_templates)} templates in V1 database")
 
     # Convert and insert each template
