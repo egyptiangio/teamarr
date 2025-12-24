@@ -3,6 +3,18 @@ description: Improve an existing feature
 title: "[Enhancement]: "
 labels: ["enhancement"]
 body:
+  - type: dropdown
+    id: teamarr-version
+    attributes:
+      label: Teamarr Version
+      description: Which version does this apply to?
+      options:
+        - V1 (stable)
+        - V2 (alpha)
+        - Both / Either
+    validations:
+      required: true
+
   - type: textarea
     id: current
     attributes:
