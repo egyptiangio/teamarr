@@ -133,12 +133,16 @@ def extract_matchup_abbrev(ctx: TemplateContext, game_ctx: GameContext | None) -
     description="League short code uppercase (e.g., 'NFL', 'NCAAM')",
 )
 def extract_league(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
-    """Return league alias (short code) uppercase, matching V1 behavior.
+    """Return league short code uppercase.
+
+    Fallback chain:
+        1. Our alias from leagues.league_id_alias (uppercase)
+        2. Raw league code (uppercase)
 
     Examples:
-        mens-college-basketball → NCAAM
-        eng.1 → EPL
-        nfl → NFL
+        mens-college-basketball → NCAAM (alias)
+        eng.1 → EPL (alias)
+        nfl → NFL (code, no alias needed)
     """
     from teamarr.database import get_db
     from teamarr.database.leagues import get_league_id
@@ -152,10 +156,46 @@ def extract_league(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     name="league_name",
     category=Category.IDENTITY,
     suffix_rules=SuffixRules.BASE_ONLY,
-    description="League display name (e.g., 'NFL', 'NBA')",
+    description="League full display name (e.g., 'NFL', 'NCAA Men's Basketball')",
 )
 def extract_league_name(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
-    return ctx.team_config.league_name or ctx.team_config.league.upper()
+    """Return league full display name.
+
+    Fallback chain:
+        1. Our display_name from leagues table
+        2. API's league_name from league_cache table
+        3. Raw league code (uppercase)
+
+    Examples:
+        nfl → NFL
+        mens-college-basketball → NCAA Men's Basketball
+        eng.1 → English Premier League
+    """
+    from teamarr.database import get_db
+
+    league_code = ctx.team_config.league
+
+    with get_db() as conn:
+        # 1. Check our curated display_name in leagues table
+        cursor = conn.execute(
+            "SELECT display_name FROM leagues WHERE league_code = ?",
+            (league_code,),
+        )
+        row = cursor.fetchone()
+        if row and row["display_name"]:
+            return row["display_name"]
+
+        # 2. Fallback to API's league_name from league_cache
+        cursor = conn.execute(
+            "SELECT league_name FROM league_cache WHERE league_slug = ?",
+            (league_code,),
+        )
+        row = cursor.fetchone()
+        if row and row["league_name"]:
+            return row["league_name"]
+
+    # 3. Final fallback to league code uppercase
+    return league_code.upper()
 
 
 @register_variable(
