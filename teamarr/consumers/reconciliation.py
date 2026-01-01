@@ -199,6 +199,7 @@ class ChannelReconciler:
                 )
                 if should_fix:
                     self._apply_fixes(conn, result)
+                    conn.commit()
 
         except Exception as e:
             result.errors.append(f"Reconciliation error: {e}")
