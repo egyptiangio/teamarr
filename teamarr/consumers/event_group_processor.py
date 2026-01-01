@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from sqlite3 import Connection
 from typing import Any, Callable
 
-from teamarr.consumers.cached_matcher import CachedBatchResult, CachedMatcher
+from teamarr.consumers.matching import BatchMatchResult, StreamMatcher
 from teamarr.consumers.channel_lifecycle import (
     StreamProcessResult,
     create_lifecycle_service,
@@ -426,6 +426,9 @@ class EventGroupProcessor:
                     exclusion_reason=r.exclusion_reason,
                 )
                 result.streams.append(preview_stream)
+
+            # Sort: matched first, then unmatched; within each, sort by stream name
+            result.streams.sort(key=lambda s: (not s.matched, s.stream_name.lower()))
 
             return result
 
@@ -839,13 +842,14 @@ class EventGroupProcessor:
                     result.errors.append(f"Channel error: {error}")
 
                 # Step 5: Generate XMLTV from matched streams
-                xmltv_content, programmes_count = self._generate_xmltv(matched_streams, group, conn)
-                result.programmes_generated = programmes_count
+                xmltv_content, programmes_total, event_programmes = self._generate_xmltv(
+                    matched_streams, group, conn
+                )
+                result.programmes_generated = programmes_total
                 result.xmltv_size = len(xmltv_content.encode("utf-8")) if xmltv_content else 0
 
-                stats_run.programmes_total = programmes_count
-                # All event EPG programmes are events
-                stats_run.programmes_events = programmes_count
+                stats_run.programmes_total = programmes_total
+                stats_run.programmes_events = event_programmes
                 stats_run.xmltv_size_bytes = result.xmltv_size
 
                 # Step 6: Store XMLTV for this group (in database)
@@ -1022,8 +1026,8 @@ class EventGroupProcessor:
         leagues: list[str],
         target_date: date,
         group_id: int,
-    ) -> CachedBatchResult:
-        """Match streams to events using CachedMatcher.
+    ) -> BatchMatchResult:
+        """Match streams to events using StreamMatcher.
 
         Uses fingerprint cache - streams only need to be matched once
         unless stream name changes.
@@ -1044,11 +1048,11 @@ class EventGroupProcessor:
 
         sport_durations = self._load_sport_durations_cached()
 
-        matcher = CachedMatcher(
+        matcher = StreamMatcher(
             service=self._service,
-            get_connection=self._db_factory,
-            search_leagues=all_leagues,  # Search ALL leagues
+            db_factory=self._db_factory,
             group_id=group_id,
+            search_leagues=all_leagues,  # Search ALL leagues
             include_leagues=leagues,  # Filter to group's configured leagues
             include_final_events=include_final_events,
             sport_durations=sport_durations,
@@ -1071,7 +1075,7 @@ class EventGroupProcessor:
     def _build_matched_stream_list(
         self,
         streams: list[dict],
-        match_result: CachedBatchResult,
+        match_result: BatchMatchResult,
     ) -> list[dict]:
         """Build list of matched streams with their events.
 
@@ -1101,7 +1105,7 @@ class EventGroupProcessor:
         group_id: int,
         group_name: str,
         streams: list[dict],
-        match_result: CachedBatchResult,
+        match_result: BatchMatchResult,
         filter_result: FilterResult | None = None,
     ) -> None:
         """Save detailed match results to database.
@@ -1124,6 +1128,12 @@ class EventGroupProcessor:
                     result.event.start_time.isoformat()
                     if result.event.start_time else None
                 )
+                # Extract match method and confidence if available (Phase 7 enhancement)
+                match_method = getattr(result, "match_method", None)
+                if match_method and hasattr(match_method, "value"):
+                    match_method = match_method.value  # Convert enum to string
+                confidence = getattr(result, "confidence", None)
+
                 matched_list.append(
                     MatchedStream(
                         run_id=run_id,
@@ -1138,6 +1148,8 @@ class EventGroupProcessor:
                         home_team=result.event.home_team.name if result.event.home_team else None,
                         away_team=result.event.away_team.name if result.event.away_team else None,
                         from_cache=getattr(result, "from_cache", False),
+                        match_method=match_method,
+                        confidence=confidence,
                     )
                 )
             elif result.matched and not result.included:
@@ -1152,6 +1164,7 @@ class EventGroupProcessor:
                         reason="excluded_league",
                         exclusion_reason=result.exclusion_reason,
                         detail=f"League: {result.league}",
+                        detected_league=result.league,
                     )
                 )
             elif result.is_exception:
@@ -1168,7 +1181,11 @@ class EventGroupProcessor:
                     )
                 )
             else:
-                # Unmatched
+                # Unmatched - extract parsed teams if available (Phase 7 enhancement)
+                parsed_team1 = getattr(result, "parsed_team1", None)
+                parsed_team2 = getattr(result, "parsed_team2", None)
+                detected_league = getattr(result, "detected_league", None)
+
                 failed_list.append(
                     FailedMatch(
                         run_id=run_id,
@@ -1177,6 +1194,9 @@ class EventGroupProcessor:
                         stream_id=stream_id,
                         stream_name=result.stream_name,
                         reason="unmatched",
+                        parsed_team1=parsed_team1,
+                        parsed_team2=parsed_team2,
+                        detected_league=detected_league,
                     )
                 )
 
@@ -1284,7 +1304,11 @@ class EventGroupProcessor:
         )
 
         if not programmes:
-            return "", 0
+            return "", 0, 0
+
+        # Track event programmes separately
+        event_programmes_count = len(programmes)
+        filler_programmes_count = 0
 
         # Generate filler if enabled in template
         if filler_config:
@@ -1292,11 +1316,12 @@ class EventGroupProcessor:
                 matched_streams, filler_config, options.sport_durations
             )
             if filler_programmes:
+                filler_programmes_count = len(filler_programmes)
                 programmes.extend(filler_programmes)
                 # Sort all programmes by channel_id then start time
                 programmes.sort(key=lambda p: (p.channel_id, p.start))
                 logger.debug(
-                    f"Added {len(filler_programmes)} filler programmes for group '{group.name}'"
+                    f"Added {filler_programmes_count} filler programmes for group '{group.name}'"
                 )
 
         # Convert to XMLTV
@@ -1305,10 +1330,11 @@ class EventGroupProcessor:
 
         logger.info(
             f"Generated XMLTV for group '{group.name}': "
+            f"{event_programmes_count} events + {filler_programmes_count} filler = "
             f"{len(programmes)} programmes, {len(xmltv_content)} bytes"
         )
 
-        return xmltv_content, len(programmes)
+        return xmltv_content, len(programmes), event_programmes_count
 
     def _load_sport_durations(self, conn: Connection) -> dict[str, float]:
         """Load sport duration settings from database."""
@@ -1343,13 +1369,13 @@ class EventGroupProcessor:
         Returns:
             List of filler Programme entries
         """
-        from teamarr.config import get_timezone
+        from teamarr.config import get_user_timezone
 
         filler_generator = EventFillerGenerator()
         all_filler: list[Programme] = []
 
         # Get configured timezone
-        tz = get_timezone()
+        tz = get_user_timezone()
 
         # Build filler options
         now = datetime.now(tz)
@@ -1369,9 +1395,10 @@ class EventGroupProcessor:
             if not event:
                 continue
 
-            # Build channel ID matching what EventEPGGenerator produces
-            # Uses tvg_id from stream if available, otherwise event ID
-            channel_id = stream.get("tvg_id") or f"event-{event.id}"
+            # Use consistent tvg_id matching EventEPGGenerator and ChannelLifecycleService
+            from teamarr.consumers.lifecycle import generate_event_tvg_id
+
+            channel_id = generate_event_tvg_id(event.id, event.provider)
 
             try:
                 filler_programmes = filler_generator.generate(
@@ -1412,17 +1439,18 @@ class EventGroupProcessor:
         logger.debug(f"Stored XMLTV for group {group_id}")
 
     def _trigger_epg_refresh(self, group: EventEPGGroup) -> None:
-        """Trigger Dispatcharr EPG refresh after XMLTV generation.
+        """Trigger Dispatcharr EPG refresh and associate EPG with channels.
 
         Dispatcharr needs to re-fetch the XMLTV from Teamarr's endpoint
-        and import it into its EPG data store.
+        and import it into its EPG data store. After refresh completes,
+        we associate the EPG data with managed channels by tvg_id.
         """
         if not self._dispatcharr_client:
             return
 
         try:
             from teamarr.database import get_db
-            from teamarr.dispatcharr import EPGManager
+            from teamarr.dispatcharr import ChannelManager, EPGManager
 
             # Get EPG source ID from settings
             with get_db() as conn:
@@ -1438,16 +1466,92 @@ class EventGroupProcessor:
 
             epg_manager = EPGManager(self._dispatcharr_client)
 
-            # Trigger refresh (async on Dispatcharr side)
-            result = epg_manager.refresh(epg_source_id)
+            # Wait for refresh to complete (polls until done or timeout)
+            result = epg_manager.wait_for_refresh(epg_source_id, timeout=120)
 
             if result.success:
-                logger.info(f"Triggered Dispatcharr EPG refresh for source {epg_source_id}")
+                logger.info(
+                    f"Dispatcharr EPG refresh completed for source {epg_source_id} "
+                    f"in {result.duration:.1f}s"
+                )
+
+                # Now associate EPG data with managed channels
+                self._associate_epg_with_channels(epg_source_id)
             else:
-                logger.warning(f"Failed to trigger EPG refresh: {result.message}")
+                logger.warning(f"EPG refresh failed: {result.message}")
 
         except Exception as e:
-            logger.warning(f"Error triggering EPG refresh: {e}")
+            logger.warning(f"Error during EPG refresh: {e}")
+
+    def _associate_epg_with_channels(self, epg_source_id: int) -> None:
+        """Associate EPG data with managed channels after EPG refresh.
+
+        Looks up EPG data by tvg_id and links them to channels in Dispatcharr.
+        """
+        from teamarr.database.channels import get_all_managed_channels
+        from teamarr.dispatcharr import ChannelManager
+
+        try:
+            channel_manager = ChannelManager(self._dispatcharr_client)
+
+            with self._db_factory() as conn:
+                # Get all active managed channels
+                channels = get_all_managed_channels(conn, include_deleted=False)
+
+                if not channels:
+                    logger.debug("No managed channels to associate EPG with")
+                    return
+
+                # Build EPG data lookup from Dispatcharr
+                epg_lookup = channel_manager.build_epg_lookup(epg_source_id)
+
+                if not epg_lookup:
+                    logger.debug("No EPG data found in Dispatcharr to associate")
+                    return
+
+                associated = 0
+                not_found = 0
+
+                for channel in channels:
+                    if not channel.dispatcharr_channel_id or not channel.tvg_id:
+                        continue
+
+                    # Look up EPG data by tvg_id
+                    epg_data = epg_lookup.get(channel.tvg_id)
+
+                    if not epg_data:
+                        not_found += 1
+                        continue
+
+                    # Associate EPG with channel
+                    epg_data_id = epg_data.get("id")
+                    if not epg_data_id:
+                        not_found += 1
+                        continue
+
+                    try:
+                        result = channel_manager.set_channel_epg(
+                            channel.dispatcharr_channel_id,
+                            epg_data_id,
+                        )
+                        if result.success:
+                            associated += 1
+                        else:
+                            logger.debug(
+                                f"Failed to set EPG for channel {channel.channel_name}: {result.error}"
+                            )
+                    except Exception as e:
+                        logger.debug(
+                            f"Failed to associate EPG for channel {channel.channel_name}: {e}"
+                        )
+
+                if associated:
+                    logger.info(f"Associated EPG data with {associated} channels")
+                if not_found:
+                    logger.debug(f"EPG data not found for {not_found} channels (pending refresh)")
+
+        except Exception as e:
+            logger.warning(f"Error associating EPG with channels: {e}")
 
 
 # =============================================================================

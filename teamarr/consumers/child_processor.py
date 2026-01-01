@@ -279,7 +279,7 @@ class ChildStreamProcessor:
                     logger.warning(f"Channel {dispatcharr_channel_id} not found in Dispatcharr")
                     return False
 
-                current_streams = [s.id for s in channel.streams] if channel.streams else []
+                current_streams = list(channel.streams) if channel.streams else []
 
                 if stream_id in current_streams:
                     return True  # Already exists

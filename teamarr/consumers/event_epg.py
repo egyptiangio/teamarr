@@ -275,8 +275,11 @@ class EventEPGGenerator:
             if not event:
                 continue
 
-            # Use tvg_id from stream if available, otherwise generate from event
-            tvg_id = stream.get("tvg_id") or f"event-{event.id}"
+            # Generate consistent tvg_id matching what ChannelLifecycleService uses
+            # This ensures XMLTV channel IDs match managed_channels.tvg_id for EPG association
+            from teamarr.consumers.lifecycle import generate_event_tvg_id
+
+            tvg_id = generate_event_tvg_id(event.id, event.provider)
             stream_name = stream.get("name", "")
 
             # Build context using home team perspective
