@@ -645,6 +645,7 @@ def get_matched_streams(
     """Get matched streams, optionally filtered by run or group.
 
     If run_id is None, gets from most recent run.
+    If run_id is a full_epg run, finds all event_group runs within its time window.
     """
     # Get run_id if not specified
     if run_id is None:
@@ -655,8 +656,40 @@ def get_matched_streams(
             return []
         run_id = row["id"]
 
-    query = "SELECT * FROM epg_matched_streams WHERE run_id = ?"
-    params: list = [run_id]
+    # Check if this is a full_epg run - if so, find child event_group runs
+    run_info = conn.execute(
+        "SELECT run_type, started_at, completed_at FROM processing_runs WHERE id = ?",
+        (run_id,)
+    ).fetchone()
+
+    if run_info and run_info["run_type"] == "full_epg":
+        # Get all event_group runs that happened during this full_epg run
+        child_runs = conn.execute(
+            """
+            SELECT id FROM processing_runs
+            WHERE run_type = 'event_group'
+              AND started_at >= ?
+              AND started_at <= ?
+            """,
+            (run_info["started_at"], run_info["completed_at"])
+        ).fetchall()
+        run_ids = [r["id"] for r in child_runs]
+        if not run_ids:
+            return []
+        placeholders = ",".join("?" * len(run_ids))
+        # Alias detected_league as league for frontend compatibility
+        query = f"""SELECT id, run_id, group_id, group_name, stream_id, stream_name,
+                    event_id, event_name, event_date, home_team, away_team,
+                    detected_league AS league, from_cache, match_method, confidence, created_at
+                    FROM epg_matched_streams WHERE run_id IN ({placeholders})"""
+        params: list = run_ids
+    else:
+        # Alias detected_league as league for frontend compatibility
+        query = """SELECT id, run_id, group_id, group_name, stream_id, stream_name,
+                   event_id, event_name, event_date, home_team, away_team,
+                   detected_league AS league, from_cache, match_method, confidence, created_at
+                   FROM epg_matched_streams WHERE run_id = ?"""
+        params = [run_id]
 
     if group_id is not None:
         query += " AND group_id = ?"
@@ -679,6 +712,7 @@ def get_failed_matches(
     """Get failed matches, optionally filtered by run, group, or reason.
 
     If run_id is None, gets from most recent run.
+    If run_id is a full_epg run, finds all event_group runs within its time window.
     """
     # Get run_id if not specified
     if run_id is None:
@@ -689,8 +723,32 @@ def get_failed_matches(
             return []
         run_id = row["id"]
 
-    query = "SELECT * FROM epg_failed_matches WHERE run_id = ?"
-    params: list = [run_id]
+    # Check if this is a full_epg run - if so, find child event_group runs
+    run_info = conn.execute(
+        "SELECT run_type, started_at, completed_at FROM processing_runs WHERE id = ?",
+        (run_id,)
+    ).fetchone()
+
+    if run_info and run_info["run_type"] == "full_epg":
+        # Get all event_group runs that happened during this full_epg run
+        child_runs = conn.execute(
+            """
+            SELECT id FROM processing_runs
+            WHERE run_type = 'event_group'
+              AND started_at >= ?
+              AND started_at <= ?
+            """,
+            (run_info["started_at"], run_info["completed_at"])
+        ).fetchall()
+        run_ids = [r["id"] for r in child_runs]
+        if not run_ids:
+            return []
+        placeholders = ",".join("?" * len(run_ids))
+        query = f"SELECT * FROM epg_failed_matches WHERE run_id IN ({placeholders})"
+        params: list = run_ids
+    else:
+        query = "SELECT * FROM epg_failed_matches WHERE run_id = ?"
+        params = [run_id]
 
     if group_id is not None:
         query += " AND group_id = ?"
