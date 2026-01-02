@@ -2928,14 +2928,20 @@ def settings_update():
             'channel_range_start', 'channel_range_end'
         ]
 
+        # Boolean checkbox fields - must handle separately since unchecked = not in form
+        boolean_fields = ['cache_enabled', 'auto_generate_enabled', 'dispatcharr_enabled']
+        for field in boolean_fields:
+            value = 1 if request.form.get(field) == 'on' else 0
+            cursor.execute(f"UPDATE settings SET {field} = ? WHERE id = 1", (value,))
+
         for field in fields:
+            # Skip boolean fields - already handled above
+            if field in boolean_fields:
+                continue
             value = request.form.get(field)
             if value is not None:
-                # Handle boolean fields (checkboxes)
-                if field in ['cache_enabled', 'auto_generate_enabled', 'dispatcharr_enabled']:
-                    value = 1 if value == 'on' else 0
                 # Handle radio button / select boolean fields (value is '1' or '0')
-                elif field in ['show_timezone', 'include_final_events']:
+                if field in ['show_timezone', 'include_final_events']:
                     value = int(value)
                 # Validate timezone before saving
                 elif field == 'default_timezone':
