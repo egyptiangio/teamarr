@@ -569,6 +569,55 @@ class CricbuzzClient:
         """Clear all cached data."""
         self._cache.clear()
 
+    def discover_active_series(self) -> dict[str, str]:
+        """Discover current active series IDs from Cricbuzz.
+
+        Scrapes the league listing page to find current series.
+        Returns a dict mapping slug patterns to full series paths.
+
+        Example return:
+        {
+            "indian-premier-league": "9241/indian-premier-league-2026",
+            "big-bash-league": "10289/big-bash-league-2025-26",
+            "bpl": "11328/bpl-2025-26",
+            "sa20": "10394/sa20-2025-26",
+        }
+
+        Use this during cache refresh to auto-update provider_league_id values.
+        """
+        url = f"{CRICBUZZ_BASE_URL}/cricket-series"
+        html = self._fetch_page(url)
+        if not html:
+            logger.warning("Failed to fetch Cricbuzz league listing for auto-discovery")
+            return {}
+
+        # Extract all series paths from the page
+        # Format: cricket-series/12345/slug-name-year
+        pattern = r'cricket-series/(\d+)/([a-z0-9-]+)'
+        matches = re.findall(pattern, html.lower())
+
+        # Build mapping: base slug -> full path
+        # Base slug = slug without year suffix (e.g., "indian-premier-league" from "indian-premier-league-2026")
+        series_map: dict[str, str] = {}
+
+        for series_id, slug in matches:
+            # Remove year suffix patterns like "-2025", "-2025-26", "-2026"
+            base_slug = re.sub(r'-\d{4}(-\d{2})?$', '', slug)
+
+            full_path = f"{series_id}/{slug}"
+
+            # Keep the most recent (highest series_id) for each base slug
+            if base_slug not in series_map:
+                series_map[base_slug] = full_path
+            else:
+                # Compare series IDs - higher is newer
+                existing_id = int(series_map[base_slug].split('/')[0])
+                if int(series_id) > existing_id:
+                    series_map[base_slug] = full_path
+
+        logger.info(f"Cricbuzz auto-discovery found {len(series_map)} active series")
+        return series_map
+
     def close(self) -> None:
         """Close the HTTP client."""
         if self._client:

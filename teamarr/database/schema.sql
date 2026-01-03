@@ -460,9 +460,10 @@ CREATE TABLE IF NOT EXISTS leagues (
     league_code TEXT PRIMARY KEY,            -- 'nfl', 'ohl', 'eng.1'
 
     -- Provider/API Configuration
-    provider TEXT NOT NULL,                  -- 'espn' or 'tsdb'
-    provider_league_id TEXT NOT NULL,        -- ESPN: 'football/nfl', TSDB: '5159'
+    provider TEXT NOT NULL,                  -- 'espn', 'tsdb', 'cricbuzz', 'hockeytech'
+    provider_league_id TEXT NOT NULL,        -- ESPN: 'football/nfl', Cricbuzz: '9241/indian-premier-league-2026'
     provider_league_name TEXT,               -- TSDB only: exact strLeague for API calls
+    series_slug_pattern TEXT,                -- Cricbuzz only: base slug for auto-discovery (e.g., 'indian-premier-league')
     enabled INTEGER DEFAULT 1,               -- Is this league active?
 
     -- Display Configuration
@@ -592,6 +593,13 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
 
     -- Boxing (TSDB) - Combat sport with event cards
     ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, NULL, 0, NULL, 'boxing', 'event_card', NULL);
+
+-- Cricbuzz auto-discovery patterns (base slug without year suffix)
+-- These are used by cache refresh to find current season's series ID
+UPDATE leagues SET series_slug_pattern = 'indian-premier-league' WHERE league_code = 'ipl';
+UPDATE leagues SET series_slug_pattern = 'big-bash-league' WHERE league_code = 'bbl';
+UPDATE leagues SET series_slug_pattern = 'bpl' WHERE league_code = 'bpl';
+UPDATE leagues SET series_slug_pattern = 'sa20' WHERE league_code = 'sa20';
 
 
 -- =============================================================================

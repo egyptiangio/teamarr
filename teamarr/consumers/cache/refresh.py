@@ -148,6 +148,9 @@ class CacheRefresher:
             # This fills in teams that the free tier API doesn't return
             all_teams, all_leagues = self._merge_with_seed(all_teams, all_leagues)
 
+            # Auto-discover Cricbuzz series IDs (yearly updates)
+            self._update_cricbuzz_series_ids(progress_callback)
+
             # Save to database (95-100%)
             report(f"Saving {len(all_teams)} teams, {len(all_leagues)} leagues...", 95)
             self._save_cache(all_teams, all_leagues)
@@ -660,6 +663,75 @@ class CacheRefresher:
             logger.info(f"Merged {added_from_seed} teams from TSDB seed")
 
         return merged_teams, merged_leagues
+
+    def _update_cricbuzz_series_ids(
+        self,
+        progress_callback: Callable[[str, int], None] | None = None,
+    ) -> int:
+        """Auto-discover and update Cricbuzz series IDs.
+
+        Cricbuzz series IDs change yearly (e.g., IPL 2025 -> IPL 2026).
+        This method discovers current series and updates provider_league_id
+        in the leagues table.
+
+        Returns:
+            Number of leagues updated
+        """
+        from teamarr.providers.cricbuzz import CricbuzzClient
+
+        if progress_callback:
+            progress_callback("Discovering Cricbuzz series...", 92)
+
+        # Get leagues with series_slug_pattern (Cricbuzz auto-discovery enabled)
+        with self._db() as conn:
+            cursor = conn.execute(
+                """
+                SELECT league_code, provider_league_id, series_slug_pattern
+                FROM leagues
+                WHERE provider = 'cricbuzz'
+                  AND series_slug_pattern IS NOT NULL
+                  AND enabled = 1
+                """
+            )
+            cricbuzz_leagues = cursor.fetchall()
+
+        if not cricbuzz_leagues:
+            return 0
+
+        # Discover current series from Cricbuzz
+        client = CricbuzzClient()
+        discovered = client.discover_active_series()
+
+        if not discovered:
+            logger.warning("Cricbuzz auto-discovery returned no series")
+            return 0
+
+        # Update leagues with discovered series IDs
+        updated = 0
+        with self._db() as conn:
+            for row in cricbuzz_leagues:
+                league_code = row["league_code"]
+                current_id = row["provider_league_id"]
+                pattern = row["series_slug_pattern"]
+
+                # Find matching discovered series
+                if pattern in discovered:
+                    new_id = discovered[pattern]
+                    if new_id != current_id:
+                        conn.execute(
+                            "UPDATE leagues SET provider_league_id = ? WHERE league_code = ?",
+                            (new_id, league_code),
+                        )
+                        logger.info(
+                            f"Cricbuzz auto-update: {league_code} "
+                            f"{current_id} -> {new_id}"
+                        )
+                        updated += 1
+
+        if updated > 0:
+            logger.info(f"Updated {updated} Cricbuzz series ID(s)")
+
+        return updated
 
     def _refresh_soccer_team_leagues(self) -> int:
         """Update existing soccer teams with all leagues from cache.

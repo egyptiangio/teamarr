@@ -103,6 +103,10 @@ def init_db(db_path: Path | str | None = None) -> None:
             # (schema.sql INSERT OR REPLACE references logo_url_dark column)
             _add_logo_url_dark_column_if_needed(conn)
 
+            # Pre-migration: add series_slug_pattern column before schema.sql runs
+            # (schema.sql UPDATE statements reference series_slug_pattern column)
+            _add_series_slug_pattern_column_if_needed(conn)
+
             # Apply schema (creates tables if missing, INSERT OR REPLACE updates seed data)
             conn.executescript(schema_sql)
             # Run remaining migrations for existing databases
@@ -279,6 +283,30 @@ def _add_logo_url_dark_column_if_needed(conn: sqlite3.Connection) -> None:
     if "logo_url_dark" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN logo_url_dark TEXT")
         logger.info("Added leagues.logo_url_dark column")
+
+
+def _add_series_slug_pattern_column_if_needed(conn: sqlite3.Connection) -> None:
+    """Add series_slug_pattern column if it doesn't exist.
+
+    This is needed for Cricbuzz auto-discovery of current season series IDs.
+    MUST run before schema.sql because UPDATE statements reference this column.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Check if leagues table exists
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='leagues'")
+    if not cursor.fetchone():
+        return  # Fresh database, schema.sql will create table with correct column
+
+    # Check if column exists
+    cursor = conn.execute("PRAGMA table_info(leagues)")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    if "series_slug_pattern" not in columns:
+        conn.execute("ALTER TABLE leagues ADD COLUMN series_slug_pattern TEXT")
+        logger.info("Added leagues.series_slug_pattern column")
 
 
 def _seed_tsdb_cache_if_needed(conn: sqlite3.Connection) -> None:
