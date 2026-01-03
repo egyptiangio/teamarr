@@ -583,10 +583,10 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
     -- Cricket (Cricbuzz)
     -- NOTE: Cricbuzz series IDs change yearly. Update provider_league_id when new season starts.
     -- Format: provider_league_id = 'series_id/url-slug' (e.g., '9241/indian-premier-league-2026')
-    ('ipl', 'cricbuzz', '9241/indian-premier-league-2026', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://static.cricbuzz.com/a/img/v1/192x192/i1/c263802/i.jpg', NULL, 1, 'IPL', 'ipl', 'team_vs_team', NULL),
-    ('bbl', 'cricbuzz', '10289/big-bash-league-2025-26', 'Big Bash League', 'Big Bash League', 'Cricket', 'https://static.cricbuzz.com/a/img/v1/192x192/i1/c172255/i.jpg', NULL, 1, 'BBL', 'bbl', 'team_vs_team', NULL),
-    ('bpl', 'cricbuzz', '11328/bpl-2025-26', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://static.cricbuzz.com/a/img/v1/192x192/i1/c200030/i.jpg', NULL, 1, 'BPL', 'bpl', 'team_vs_team', NULL),
-    ('sa20', 'cricbuzz', '10394/sa20-2025-26', 'SA20', 'SA20', 'Cricket', 'https://static.cricbuzz.com/a/img/v1/192x192/i1/c248432/i.jpg', NULL, 1, 'SA20', 'sa20', 'team_vs_team', NULL),
+    ('ipl', 'cricbuzz', '9241/indian-premier-league-2026', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', NULL, 1, 'IPL', 'ipl', 'team_vs_team', NULL),
+    ('bbl', 'cricbuzz', '10289/big-bash-league-2025-26', 'Big Bash League', 'Big Bash League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png', NULL, 1, 'BBL', 'bbl', 'team_vs_team', NULL),
+    ('bpl', 'cricbuzz', '11328/bpl-2025-26', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://www.thesportsdb.com/images/media/league/badge/o1xh521767355615.png', NULL, 1, 'BPL', 'bpl', 'team_vs_team', NULL),
+    ('sa20', 'cricbuzz', '10394/sa20-2025-26', 'SA20', 'SA20', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/aakvuk1734183412.png', NULL, 1, 'SA20', 'sa20', 'team_vs_team', NULL),
 
     -- Rugby League (TSDB)
     ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'Rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', NULL, 1, 'NRL', 'nrl', 'team_vs_team', NULL),
