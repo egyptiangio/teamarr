@@ -70,7 +70,8 @@ class LeagueMappingService:
                 """
                 SELECT league_code, provider, provider_league_id,
                        provider_league_name, sport, display_name, logo_url,
-                       league_alias, league_id, gracenote_category
+                       league_alias, league_id, gracenote_category,
+                       fallback_provider, fallback_league_id
                 FROM leagues
                 WHERE enabled = 1
                 ORDER BY provider, league_code
@@ -86,6 +87,8 @@ class LeagueMappingService:
                     display_name=row["display_name"],
                     logo_url=row["logo_url"],
                     league_id=row["league_id"],
+                    fallback_provider=row["fallback_provider"],
+                    fallback_league_id=row["fallback_league_id"],
                 )
                 # Index by (league_code, provider) for fast lookup
                 key = (row["league_code"].lower(), row["provider"])
@@ -282,6 +285,72 @@ class LeagueMappingService:
         Thread-safe: uses in-memory cache, no DB access.
         """
         return self._provider_leagues.get(provider, [])
+
+    def get_effective_provider(self, league_code: str) -> tuple[str, str] | None:
+        """Get the effective (provider, league_id) for a league, considering fallbacks.
+
+        This implements provider fallback resolution. For leagues with a fallback
+        configured (e.g., cricket with TSDB primary, Cricbuzz fallback):
+        - If primary provider has premium/full access: return primary
+        - If primary provider is limited: return fallback if available
+
+        Thread-safe: uses in-memory cache + ProviderRegistry check.
+
+        Args:
+            league_code: Canonical league code (e.g., 'ipl', 'nfl')
+
+        Returns:
+            Tuple of (provider_name, provider_league_id) or None if not found.
+
+        Example:
+            For IPL with TSDB free tier:
+            - Primary: ('tsdb', '4460')
+            - Fallback: ('cricbuzz', '9241/indian-premier-league-2026')
+
+            If TSDB is not premium, returns fallback if configured.
+        """
+        key_lower = league_code.lower()
+
+        # Find the mapping for this league (any provider)
+        # First, find by iterating through all mappings
+        mapping: LeagueMapping | None = None
+        for (code, _provider), m in self._mappings.items():
+            if code == key_lower:
+                mapping = m
+                break
+
+        if mapping is None:
+            return None
+
+        # Check if primary provider has premium/full capabilities
+        from teamarr.providers import ProviderRegistry
+
+        if not ProviderRegistry.is_provider_premium(mapping.provider):
+            # Primary provider is limited, check for fallback
+            if mapping.fallback_provider and mapping.fallback_league_id:
+                logger.debug(
+                    f"Using fallback for {league_code}: "
+                    f"{mapping.fallback_provider}/{mapping.fallback_league_id} "
+                    f"(primary {mapping.provider} not premium)"
+                )
+                return (mapping.fallback_provider, mapping.fallback_league_id)
+
+        # Use primary provider
+        return (mapping.provider, mapping.provider_league_id)
+
+    def get_mapping_by_league(self, league_code: str) -> LeagueMapping | None:
+        """Get mapping for a league code (any provider).
+
+        Unlike get_mapping(), this doesn't require specifying the provider.
+        Returns the first matching mapping found.
+
+        Thread-safe: uses in-memory cache, no DB access.
+        """
+        key_lower = league_code.lower()
+        for (code, _provider), mapping in self._mappings.items():
+            if code == key_lower:
+                return mapping
+        return None
 
 
 # Singleton instance - initialized by app startup

@@ -107,6 +107,10 @@ def init_db(db_path: Path | str | None = None) -> None:
             # (schema.sql UPDATE statements reference series_slug_pattern column)
             _add_series_slug_pattern_column_if_needed(conn)
 
+            # Pre-migration: add fallback_provider and fallback_league_id columns
+            # (schema.sql INSERT OR REPLACE references these columns)
+            _add_fallback_columns_if_needed(conn)
+
             # Apply schema (creates tables if missing, INSERT OR REPLACE updates seed data)
             conn.executescript(schema_sql)
             # Run remaining migrations for existing databases
@@ -307,6 +311,35 @@ def _add_series_slug_pattern_column_if_needed(conn: sqlite3.Connection) -> None:
     if "series_slug_pattern" not in columns:
         conn.execute("ALTER TABLE leagues ADD COLUMN series_slug_pattern TEXT")
         logger.info("Added leagues.series_slug_pattern column")
+
+
+def _add_fallback_columns_if_needed(conn: sqlite3.Connection) -> None:
+    """Add fallback_provider and fallback_league_id columns if they don't exist.
+
+    These columns enable provider fallback for leagues where the primary provider
+    may have limited availability (e.g., TSDB premium vs free tier for cricket).
+    MUST run before schema.sql because INSERT OR REPLACE references these columns.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Check if leagues table exists
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='leagues'")
+    if not cursor.fetchone():
+        return  # Fresh database, schema.sql will create table with correct columns
+
+    # Check which columns exist
+    cursor = conn.execute("PRAGMA table_info(leagues)")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    if "fallback_provider" not in columns:
+        conn.execute("ALTER TABLE leagues ADD COLUMN fallback_provider TEXT")
+        logger.info("Added leagues.fallback_provider column")
+
+    if "fallback_league_id" not in columns:
+        conn.execute("ALTER TABLE leagues ADD COLUMN fallback_league_id TEXT")
+        logger.info("Added leagues.fallback_league_id column")
 
 
 def _seed_tsdb_cache_if_needed(conn: sqlite3.Connection) -> None:

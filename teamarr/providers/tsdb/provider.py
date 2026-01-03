@@ -43,6 +43,16 @@ class TSDBProvider(SportsProvider):
     def name(self) -> str:
         return "tsdb"
 
+    @property
+    def is_premium(self) -> bool:
+        """Check if TSDB has premium/full API access.
+
+        Premium access has no rate limits on schedule endpoints.
+        Free tier is limited to ~5 events per day via eventsnextleague.
+        Used by ProviderRegistry for fallback resolution.
+        """
+        return self._client.is_premium
+
     def supports_league(self, league: str) -> bool:
         return self._client.supports_league(league)
 

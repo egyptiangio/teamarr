@@ -31,6 +31,8 @@ class LeagueMapping:
     display_name: str  # 'NFL', 'Ontario Hockey League'
     logo_url: str | None = None
     league_id: str | None = None  # URL-safe identifier for {league_id} variable
+    fallback_provider: str | None = None  # Fallback provider when primary unavailable
+    fallback_league_id: str | None = None  # Fallback provider's league ID
 
 
 class LeagueMappingSource(Protocol):
@@ -50,6 +52,14 @@ class LeagueMappingSource(Protocol):
 
     def get_leagues_for_provider(self, provider: str) -> list[LeagueMapping]:
         """Get all leagues supported by a provider."""
+        ...
+
+    def get_mapping_by_league(self, league_code: str) -> LeagueMapping | None:
+        """Get mapping for a league code (any provider).
+
+        Unlike get_mapping(), this doesn't require specifying the provider.
+        Returns the first matching mapping found.
+        """
         ...
 
 

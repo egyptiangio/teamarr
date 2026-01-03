@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 # These are approximate and used for work-proportional progress allocation
 EXPECTED_LEAGUES = {
     "espn": 280,  # ~52 configured + ~228 discovered soccer leagues
-    "tsdb": 5,  # Reduced - only boxing and rugby left
+    "tsdb": 6,  # NRL, Boxing, IPL, BBL, BPL, SA20 (cricket primary, Cricbuzz fallback)
     "hockeytech": 6,
-    "cricbuzz": 4,  # IPL, BBL, BPL, SA20
+    "cricbuzz": 0,  # Cricket moved to TSDB primary (Cricbuzz is fallback for schedules only)
 }
 
 
@@ -671,8 +671,9 @@ class CacheRefresher:
         """Auto-discover and update Cricbuzz series IDs.
 
         Cricbuzz series IDs change yearly (e.g., IPL 2025 -> IPL 2026).
-        This method discovers current series and updates provider_league_id
-        in the leagues table.
+        This method discovers current series and updates:
+        - fallback_league_id for leagues with fallback_provider='cricbuzz'
+        - provider_league_id for leagues with provider='cricbuzz' (legacy)
 
         Returns:
             Number of leagues updated
@@ -683,12 +684,14 @@ class CacheRefresher:
             progress_callback("Discovering Cricbuzz series...", 92)
 
         # Get leagues with series_slug_pattern (Cricbuzz auto-discovery enabled)
+        # Supports both primary Cricbuzz leagues and TSDB leagues with Cricbuzz fallback
         with self._db() as conn:
             cursor = conn.execute(
                 """
-                SELECT league_code, provider_league_id, series_slug_pattern
+                SELECT league_code, provider, provider_league_id,
+                       fallback_provider, fallback_league_id, series_slug_pattern
                 FROM leagues
-                WHERE provider = 'cricbuzz'
+                WHERE (provider = 'cricbuzz' OR fallback_provider = 'cricbuzz')
                   AND series_slug_pattern IS NOT NULL
                   AND enabled = 1
                 """
@@ -711,12 +714,31 @@ class CacheRefresher:
         with self._db() as conn:
             for row in cricbuzz_leagues:
                 league_code = row["league_code"]
-                current_id = row["provider_league_id"]
                 pattern = row["series_slug_pattern"]
 
                 # Find matching discovered series
-                if pattern in discovered:
-                    new_id = discovered[pattern]
+                if pattern not in discovered:
+                    continue
+
+                new_id = discovered[pattern]
+
+                # Determine which column to update based on provider config
+                if row["fallback_provider"] == "cricbuzz":
+                    # TSDB primary with Cricbuzz fallback - update fallback_league_id
+                    current_id = row["fallback_league_id"]
+                    if new_id != current_id:
+                        conn.execute(
+                            "UPDATE leagues SET fallback_league_id = ? WHERE league_code = ?",
+                            (new_id, league_code),
+                        )
+                        logger.info(
+                            f"Cricbuzz auto-update (fallback): {league_code} "
+                            f"{current_id} -> {new_id}"
+                        )
+                        updated += 1
+                elif row["provider"] == "cricbuzz":
+                    # Cricbuzz primary (legacy) - update provider_league_id
+                    current_id = row["provider_league_id"]
                     if new_id != current_id:
                         conn.execute(
                             "UPDATE leagues SET provider_league_id = ? WHERE league_code = ?",

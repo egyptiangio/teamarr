@@ -16,6 +16,7 @@ to inject the LeagueMappingSource into providers.
 """
 
 from teamarr.providers.cricbuzz import CricbuzzClient, CricbuzzProvider
+from teamarr.providers.cricket_hybrid import CricketHybridProvider
 from teamarr.providers.espn import ESPNClient, ESPNProvider
 from teamarr.providers.hockeytech import HockeyTechClient, HockeyTechProvider
 from teamarr.providers.registry import ProviderConfig, ProviderRegistry
@@ -77,6 +78,21 @@ def _create_cricbuzz_provider() -> CricbuzzProvider:
     )
 
 
+def _create_cricket_hybrid_provider() -> CricketHybridProvider:
+    """Factory for cricket hybrid provider.
+
+    Combines TSDB (teams/logos from cache) with Cricbuzz (events/schedules).
+    Used when TSDB API key is free tier (not premium).
+    """
+    from teamarr.database import get_db
+
+    return CricketHybridProvider(
+        cricbuzz_provider=_create_cricbuzz_provider(),
+        league_mapping_source=ProviderRegistry.get_league_mapping_source(),
+        db_factory=get_db,
+    )
+
+
 # =============================================================================
 # PROVIDER REGISTRATION
 # =============================================================================
@@ -103,7 +119,15 @@ ProviderRegistry.register(
     name="cricbuzz",
     provider_class=CricbuzzProvider,
     factory=_create_cricbuzz_provider,
-    priority=60,  # Cricket leagues (IPL, CPL, BPL, BBL)
+    priority=60,  # Cricket - direct Cricbuzz (rarely used standalone)
+    enabled=False,  # Disabled - use cricket_hybrid instead
+)
+
+ProviderRegistry.register(
+    name="cricket_hybrid",
+    provider_class=CricketHybridProvider,
+    factory=_create_cricket_hybrid_provider,
+    priority=55,  # Cricket leagues - TSDB teams + Cricbuzz events
     enabled=True,
 )
 
@@ -130,9 +154,10 @@ __all__ = [
     # HockeyTech
     "HockeyTechClient",
     "HockeyTechProvider",
-    # Cricbuzz
+    # Cricket
     "CricbuzzClient",
     "CricbuzzProvider",
+    "CricketHybridProvider",
     # TheSportsDB
     "RateLimitStats",
     "TSDBClient",

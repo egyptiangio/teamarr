@@ -132,7 +132,18 @@ class CricbuzzClient:
         logger.warning(f"Cricbuzz structure warning: missing field '{missing_field}'")
 
     def supports_league(self, league: str) -> bool:
-        """Check if we support this league via LeagueMappingSource."""
+        """Check if we support this league.
+
+        Supports both:
+        1. League codes mapped in leagues table (provider='cricbuzz')
+        2. Direct series ID paths like '9241/indian-premier-league-2026'
+           (used when Cricbuzz is fallback for TSDB leagues)
+        """
+        # Direct series ID path - always supported
+        if "/" in league and league.split("/")[0].isdigit():
+            return True
+
+        # Normal path: check league mapping
         if not self._league_mapping_source:
             return False
         return self._league_mapping_source.supports_league(league, "cricbuzz")
@@ -142,7 +153,20 @@ class CricbuzzClient:
 
         Uses LeagueMappingSource to get series_id from provider_league_id.
         Format: 'series_id/url-slug' (e.g., '9241/indian-premier-league-2026')
+
+        Also handles direct series ID paths when used as fallback provider.
+        If league looks like 'series_id/slug', it's used directly.
         """
+        # Check if league is already a series ID path (used when Cricbuzz is fallback)
+        # Format: '9241/indian-premier-league-2026'
+        if "/" in league and league.split("/")[0].isdigit():
+            parts = league.split("/", 1)
+            series_id = parts[0]
+            slug = parts[1]
+            logger.debug(f"Using direct series ID path: {series_id}/{slug}")
+            return (series_id, slug)
+
+        # Normal path: lookup from leagues table
         if not self._league_mapping_source:
             return None
 
@@ -219,7 +243,8 @@ class CricbuzzClient:
                 return None
 
             # Extract a large chunk and unescape
-            chunk_size = 100000  # 100KB to capture all matches
+            # Large series like SA20 have 77+ matches, pages can be 250KB+
+            chunk_size = 500000  # 500KB to capture full series schedules
             end_idx = min(len(html), idx + chunk_size)
             chunk = html[idx:end_idx]
 
@@ -270,9 +295,13 @@ class CricbuzzClient:
         try:
             info = {}
 
-            # Extract numeric fields
+            # Extract numeric fields (may be quoted strings or unquoted numbers)
+            # Cricbuzz sends startDate/endDate as strings: "startDate":"1767483000000"
             for field in ["matchId", "seriesId", "startDate", "endDate"]:
-                match = re.search(rf'"{field}":(\d+)', data)
+                # Try quoted string first (more common for dates), then unquoted number
+                match = re.search(rf'"{field}":"(\d+)"', data)
+                if not match:
+                    match = re.search(rf'"{field}":(\d+)', data)
                 if match:
                     info[field] = int(match.group(1))
 
@@ -282,9 +311,9 @@ class CricbuzzClient:
                 if match:
                     info[field] = match.group(1)
 
-            # Extract team1
+            # Extract team1 (with optional imageId for logos)
             team1_match = re.search(
-                r'"team1":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"',
+                r'"team1":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"[^}]*"imageId":(\d+)',
                 data,
             )
             if team1_match:
@@ -292,11 +321,24 @@ class CricbuzzClient:
                     "teamId": int(team1_match.group(1)),
                     "teamName": team1_match.group(2),
                     "teamSName": team1_match.group(3),
+                    "imageId": int(team1_match.group(4)),
                 }
+            else:
+                # Fallback without imageId
+                team1_match = re.search(
+                    r'"team1":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"',
+                    data,
+                )
+                if team1_match:
+                    info["team1"] = {
+                        "teamId": int(team1_match.group(1)),
+                        "teamName": team1_match.group(2),
+                        "teamSName": team1_match.group(3),
+                    }
 
-            # Extract team2
+            # Extract team2 (with optional imageId for logos)
             team2_match = re.search(
-                r'"team2":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"',
+                r'"team2":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"[^}]*"imageId":(\d+)',
                 data,
             )
             if team2_match:
@@ -304,7 +346,20 @@ class CricbuzzClient:
                     "teamId": int(team2_match.group(1)),
                     "teamName": team2_match.group(2),
                     "teamSName": team2_match.group(3),
+                    "imageId": int(team2_match.group(4)),
                 }
+            else:
+                # Fallback without imageId
+                team2_match = re.search(
+                    r'"team2":\{[^}]*"teamId":(\d+)[^}]*"teamName":"([^"]*)"[^}]*"teamSName":"([^"]*)"',
+                    data,
+                )
+                if team2_match:
+                    info["team2"] = {
+                        "teamId": int(team2_match.group(1)),
+                        "teamName": team2_match.group(2),
+                        "teamSName": team2_match.group(3),
+                    }
 
             # Extract venue
             venue_match = re.search(r'"ground":"([^"]*)"[^}]*"city":"([^"]*)"', data)

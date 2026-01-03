@@ -79,7 +79,11 @@ class SportsDataService:
         self._providers.append(provider)
 
     def get_events(self, league: str, target_date: date) -> list[Event]:
-        """Get all events for a league on a given date."""
+        """Get all events for a league on a given date.
+
+        Iterates through registered providers until one returns events.
+        Provider selection is handled by the registry (cricket_hybrid for cricket, etc.)
+        """
         cache_key = make_cache_key("events", league, target_date.isoformat())
 
         # Check cache
@@ -88,7 +92,7 @@ class SportsDataService:
             logger.debug(f"Cache hit: {cache_key}")
             return cached
 
-        # Fetch from provider
+        # Iterate through providers
         for provider in self._providers:
             if provider.supports_league(league):
                 events = provider.get_events(league, target_date)

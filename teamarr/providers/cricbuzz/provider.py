@@ -274,7 +274,6 @@ class CricbuzzProvider(SportsProvider):
                 sport="Cricket",
                 venue=venue,
                 broadcasts=[],  # Cricbuzz doesn't provide broadcast info
-                headline=series_name if series_name else None,
             )
 
         except Exception as e:

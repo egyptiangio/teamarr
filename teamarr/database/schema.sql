@@ -464,6 +464,8 @@ CREATE TABLE IF NOT EXISTS leagues (
     provider_league_id TEXT NOT NULL,        -- ESPN: 'football/nfl', Cricbuzz: '9241/indian-premier-league-2026'
     provider_league_name TEXT,               -- TSDB only: exact strLeague for API calls
     series_slug_pattern TEXT,                -- Cricbuzz only: base slug for auto-discovery (e.g., 'indian-premier-league')
+    fallback_provider TEXT,                  -- Fallback provider if primary unavailable (e.g., 'cricbuzz' when TSDB has no premium key)
+    fallback_league_id TEXT,                 -- Provider league ID for fallback (e.g., Cricbuzz series ID)
     enabled INTEGER DEFAULT 1,               -- Is this league active?
 
     -- Display Configuration
@@ -516,83 +518,83 @@ CREATE INDEX IF NOT EXISTS idx_leagues_import ON leagues(import_enabled);
 --   - Leave NULL when display_name is already short (NFL, NBA, MLS)
 -- =============================================================================
 
-INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provider_league_name, display_name, sport, logo_url, logo_url_dark, import_enabled, league_alias, league_id, event_type, gracenote_category) VALUES
+INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provider_league_name, display_name, sport, logo_url, logo_url_dark, import_enabled, league_alias, league_id, event_type, gracenote_category, fallback_provider, fallback_league_id) VALUES
     -- Football (ESPN)
-    ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', NULL, 1, NULL, 'nfl', 'team_vs_team', 'NFL Football'),
-    ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', NULL, 1, 'NCAAF', 'ncaaf', 'team_vs_team', 'College Football'),
+    ('nfl', 'espn', 'football/nfl', NULL, 'NFL', 'Football', 'https://a.espncdn.com/i/teamlogos/leagues/500/nfl.png', NULL, 1, NULL, 'nfl', 'team_vs_team', 'NFL Football', NULL, NULL),
+    ('college-football', 'espn', 'football/college-football', NULL, 'NCAA Football', 'Football', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/football.png', NULL, 1, 'NCAAF', 'ncaaf', 'team_vs_team', 'College Football', NULL, NULL),
 
     -- Basketball (ESPN)
-    ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', NULL, 1, NULL, 'nba', 'team_vs_team', 'NBA Basketball'),
-    ('nba-development', 'espn', 'basketball/nba-development', NULL, 'NBA G League', 'Basketball', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba_gleague.png', NULL, 1, 'G League', 'nbag', 'team_vs_team', 'NBA G League Basketball'),
-    ('wnba', 'espn', 'basketball/wnba', NULL, 'WNBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png', NULL, 1, NULL, 'wnba', 'team_vs_team', 'WNBA Basketball'),
-    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', NULL, 'NCAA Men''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', NULL, 1, 'NCAAM', 'ncaam', 'team_vs_team', 'College Basketball'),
-    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', NULL, 'NCAA Women''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', NULL, 1, 'NCAAW', 'ncaaw', 'team_vs_team', 'Women''s College Basketball'),
+    ('nba', 'espn', 'basketball/nba', NULL, 'NBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', NULL, 1, NULL, 'nba', 'team_vs_team', 'NBA Basketball', NULL, NULL),
+    ('nba-development', 'espn', 'basketball/nba-development', NULL, 'NBA G League', 'Basketball', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba_gleague.png', NULL, 1, 'G League', 'nbag', 'team_vs_team', 'NBA G League Basketball', NULL, NULL),
+    ('wnba', 'espn', 'basketball/wnba', NULL, 'WNBA', 'Basketball', 'https://a.espncdn.com/i/teamlogos/leagues/500/wnba.png', NULL, 1, NULL, 'wnba', 'team_vs_team', 'WNBA Basketball', NULL, NULL),
+    ('mens-college-basketball', 'espn', 'basketball/mens-college-basketball', NULL, 'NCAA Men''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', NULL, 1, 'NCAAM', 'ncaam', 'team_vs_team', 'College Basketball', NULL, NULL),
+    ('womens-college-basketball', 'espn', 'basketball/womens-college-basketball', NULL, 'NCAA Women''s Basketball', 'Basketball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/basketball.png', NULL, 1, 'NCAAW', 'ncaaw', 'team_vs_team', 'Women''s College Basketball', NULL, NULL),
 
     -- Hockey (ESPN)
-    ('nhl', 'espn', 'hockey/nhl', NULL, 'NHL', 'Hockey', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png', NULL, 1, NULL, 'nhl', 'team_vs_team', 'NHL Hockey'),
-    ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA Hockey', 'ncaah', 'team_vs_team', 'College Hockey'),
-    ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA W Hockey', 'ncaawh', 'team_vs_team', 'Women''s College Hockey'),
+    ('nhl', 'espn', 'hockey/nhl', NULL, 'NHL', 'Hockey', 'https://a.espncdn.com/i/teamlogos/leagues/500/nhl.png', NULL, 1, NULL, 'nhl', 'team_vs_team', 'NHL Hockey', NULL, NULL),
+    ('mens-college-hockey', 'espn', 'hockey/mens-college-hockey', NULL, 'NCAA Men''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA Hockey', 'ncaah', 'team_vs_team', 'College Hockey', NULL, NULL),
+    ('womens-college-hockey', 'espn', 'hockey/womens-college-hockey', NULL, 'NCAA Women''s Ice Hockey', 'Hockey', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/icehockey.png', NULL, 1, 'NCAA W Hockey', 'ncaawh', 'team_vs_team', 'Women''s College Hockey', NULL, NULL),
 
     -- Hockey - CHL/Canadian Junior (HockeyTech)
-    ('ohl', 'hockeytech', 'ohl', NULL, 'Ontario Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_LIGHTMODE.png', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_DARKMODE.png', 1, 'OHL', 'ohl', 'team_vs_team', NULL),
-    ('whl', 'hockeytech', 'whl', NULL, 'Western Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/6/2023/08/18153245/Western_Hockey_League.svg_-1.png', NULL, 1, 'WHL', 'whl', 'team_vs_team', NULL),
-    ('qmjhl', 'hockeytech', 'lhjmq', NULL, 'Quebec Major Junior Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/2/2023/05/25155229/logo_q_lg.png', NULL, 1, 'QMJHL', 'qmjhl', 'team_vs_team', NULL),
+    ('ohl', 'hockeytech', 'ohl', NULL, 'Ontario Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_LIGHTMODE.png', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/OHL_DARKMODE.png', 1, 'OHL', 'ohl', 'team_vs_team', NULL, NULL, NULL),
+    ('whl', 'hockeytech', 'whl', NULL, 'Western Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/6/2023/08/18153245/Western_Hockey_League.svg_-1.png', NULL, 1, 'WHL', 'whl', 'team_vs_team', NULL, NULL, NULL),
+    ('qmjhl', 'hockeytech', 'lhjmq', NULL, 'Quebec Major Junior Hockey League', 'Hockey', 'https://media.chl.ca/wp-content/uploads/sites/2/2023/05/25155229/logo_q_lg.png', NULL, 1, 'QMJHL', 'qmjhl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Hockey - Pro Leagues (HockeyTech)
-    ('ahl', 'hockeytech', 'ahl', NULL, 'American Hockey League', 'Hockey', 'https://theahl.com/wp-content/uploads/sites/3/2025/10/AHL90_500.png', NULL, 1, 'AHL', 'ahl', 'team_vs_team', NULL),
-    ('pwhl', 'hockeytech', 'pwhl', NULL, 'Professional Women''s Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/PWHL.png', NULL, 1, 'PWHL', 'pwhl', 'team_vs_team', NULL),
+    ('ahl', 'hockeytech', 'ahl', NULL, 'American Hockey League', 'Hockey', 'https://theahl.com/wp-content/uploads/sites/3/2025/10/AHL90_500.png', NULL, 1, 'AHL', 'ahl', 'team_vs_team', NULL, NULL, NULL),
+    ('pwhl', 'hockeytech', 'pwhl', NULL, 'Professional Women''s Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/main/assets/PWHL.png', NULL, 1, 'PWHL', 'pwhl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Hockey - Junior (HockeyTech)
-    ('ushl', 'hockeytech', 'ushl', NULL, 'United States Hockey League', 'Hockey', 'https://dbukjj6eu5tsf.cloudfront.net/ushl.sidearmsports.com/images/responsive_2022/ushl_on-dark.svg', NULL, 1, 'USHL', 'ushl', 'team_vs_team', NULL),
+    ('ushl', 'hockeytech', 'ushl', NULL, 'United States Hockey League', 'Hockey', 'https://dbukjj6eu5tsf.cloudfront.net/ushl.sidearmsports.com/images/responsive_2022/ushl_on-dark.svg', NULL, 1, 'USHL', 'ushl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Baseball (ESPN)
-    ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', NULL, 1, NULL, 'mlb', 'team_vs_team', 'MLB Baseball'),
-    ('college-baseball', 'espn', 'baseball/college-baseball', NULL, 'NCAA Baseball', 'Baseball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/baseball.png', NULL, 1, NULL, 'ncaabb', 'team_vs_team', NULL),
-    ('college-softball', 'espn', 'baseball/college-softball', NULL, 'NCAA Softball', 'Softball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/softball.png', NULL, 1, NULL, 'ncaasbw', 'team_vs_team', NULL),
+    ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', NULL, 1, NULL, 'mlb', 'team_vs_team', 'MLB Baseball', NULL, NULL),
+    ('college-baseball', 'espn', 'baseball/college-baseball', NULL, 'NCAA Baseball', 'Baseball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/baseball.png', NULL, 1, NULL, 'ncaabb', 'team_vs_team', NULL, NULL, NULL),
+    ('college-softball', 'espn', 'baseball/college-softball', NULL, 'NCAA Softball', 'Softball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/softball.png', NULL, 1, NULL, 'ncaasbw', 'team_vs_team', NULL, NULL, NULL),
 
     -- Soccer (ESPN)
-    ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', NULL, 1, NULL, 'mls', 'team_vs_team', 'MLS Soccer'),
-    ('usa.nwsl', 'espn', 'soccer/usa.nwsl', NULL, 'NWSL', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png', NULL, 1, NULL, 'nwsl', 'team_vs_team', 'NWSL Soccer'),
-    ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', NULL, 1, 'NCAA Soccer', 'ncaas', 'team_vs_team', 'Men''s College Soccer'),
-    ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', NULL, 1, 'NCAA W Soccer', 'ncaaws', 'team_vs_team', 'Women''s College Soccer'),
-    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', NULL, 1, 'EPL', 'epl', 'team_vs_team', 'Premier League Soccer'),
-    ('eng.2', 'espn', 'soccer/eng.2', NULL, 'EFL Championship', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png', NULL, 1, NULL, 'championship', 'team_vs_team', 'English Championship Soccer'),
-    ('eng.3', 'espn', 'soccer/eng.3', NULL, 'EFL League One', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png', NULL, 1, NULL, 'league-one', 'team_vs_team', 'English League One Soccer'),
-    ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', NULL, 1, NULL, 'laliga', 'team_vs_team', 'La Liga Soccer'),
-    ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', NULL, 1, NULL, 'bundesliga', 'team_vs_team', 'Bundesliga Soccer'),
-    ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', NULL, 1, NULL, 'seriea', 'team_vs_team', 'Serie A Soccer'),
-    ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', NULL, 1, NULL, 'ligue1', 'team_vs_team', 'Ligue 1 Soccer'),
-    ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', NULL, 1, 'UCL', 'ucl', 'team_vs_team', 'UEFA Champions League Soccer'),
-    ('ksa.1', 'espn', 'soccer/ksa.1', NULL, 'Saudi Pro League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2488.png', NULL, 1, 'SPL', 'spl', 'team_vs_team', 'Saudi Pro League Soccer'),
+    ('usa.1', 'espn', 'soccer/usa.1', NULL, 'MLS', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png', NULL, 1, NULL, 'mls', 'team_vs_team', 'MLS Soccer', NULL, NULL),
+    ('usa.nwsl', 'espn', 'soccer/usa.nwsl', NULL, 'NWSL', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2323.png', NULL, 1, NULL, 'nwsl', 'team_vs_team', 'NWSL Soccer', NULL, NULL),
+    ('usa.ncaa.m.1', 'espn', 'soccer/usa.ncaa.m.1', NULL, 'NCAA Men''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', NULL, 1, 'NCAA Soccer', 'ncaas', 'team_vs_team', 'Men''s College Soccer', NULL, NULL),
+    ('usa.ncaa.w.1', 'espn', 'soccer/usa.ncaa.w.1', NULL, 'NCAA Women''s Soccer', 'Soccer', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/soccer.png', NULL, 1, 'NCAA W Soccer', 'ncaaws', 'team_vs_team', 'Women''s College Soccer', NULL, NULL),
+    ('eng.1', 'espn', 'soccer/eng.1', NULL, 'English Premier League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', NULL, 1, 'EPL', 'epl', 'team_vs_team', 'Premier League Soccer', NULL, NULL),
+    ('eng.2', 'espn', 'soccer/eng.2', NULL, 'EFL Championship', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png', NULL, 1, NULL, 'championship', 'team_vs_team', 'English Championship Soccer', NULL, NULL),
+    ('eng.3', 'espn', 'soccer/eng.3', NULL, 'EFL League One', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/25.png', NULL, 1, NULL, 'league-one', 'team_vs_team', 'English League One Soccer', NULL, NULL),
+    ('esp.1', 'espn', 'soccer/esp.1', NULL, 'La Liga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png', NULL, 1, NULL, 'laliga', 'team_vs_team', 'La Liga Soccer', NULL, NULL),
+    ('ger.1', 'espn', 'soccer/ger.1', NULL, 'Bundesliga', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png', NULL, 1, NULL, 'bundesliga', 'team_vs_team', 'Bundesliga Soccer', NULL, NULL),
+    ('ita.1', 'espn', 'soccer/ita.1', NULL, 'Serie A', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png', NULL, 1, NULL, 'seriea', 'team_vs_team', 'Serie A Soccer', NULL, NULL),
+    ('fra.1', 'espn', 'soccer/fra.1', NULL, 'Ligue 1', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png', NULL, 1, NULL, 'ligue1', 'team_vs_team', 'Ligue 1 Soccer', NULL, NULL),
+    ('uefa.champions', 'espn', 'soccer/uefa.champions', NULL, 'UEFA Champions League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', NULL, 1, 'UCL', 'ucl', 'team_vs_team', 'UEFA Champions League Soccer', NULL, NULL),
+    ('ksa.1', 'espn', 'soccer/ksa.1', NULL, 'Saudi Pro League', 'Soccer', 'https://a.espncdn.com/i/leaguelogos/soccer/500/2488.png', NULL, 1, 'SPL', 'spl', 'team_vs_team', 'Saudi Pro League Soccer', NULL, NULL),
 
     -- MMA (ESPN) - Combat sport with event cards
-    ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', NULL, 0, NULL, 'ufc', 'event_card', NULL),
+    ('ufc', 'espn', 'mma/ufc', NULL, 'UFC', 'MMA', 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png', NULL, 0, NULL, 'ufc', 'event_card', NULL, NULL, NULL),
 
     -- Volleyball (ESPN)
-    ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', NULL, 1, 'NCAA Volleyball', 'ncaavb', 'team_vs_team', 'Men''s College Volleyball'),
-    ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', NULL, 1, 'NCAA W Volleyball', 'ncaawvb', 'team_vs_team', 'Women''s College Volleyball'),
+    ('mens-college-volleyball', 'espn', 'volleyball/mens-college-volleyball', NULL, 'NCAA Men''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', NULL, 1, 'NCAA Volleyball', 'ncaavb', 'team_vs_team', 'Men''s College Volleyball', NULL, NULL),
+    ('womens-college-volleyball', 'espn', 'volleyball/womens-college-volleyball', NULL, 'NCAA Women''s Volleyball', 'Volleyball', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/volleyball.png', NULL, 1, 'NCAA W Volleyball', 'ncaawvb', 'team_vs_team', 'Women''s College Volleyball', NULL, NULL),
 
     -- Lacrosse - NCAA (ESPN)
-    ('mens-college-lacrosse', 'espn', 'lacrosse/mens-college-lacrosse', NULL, 'NCAA Men''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', NULL, 1, 'NCAA Lacrosse', 'ncaalax', 'team_vs_team', NULL),
-    ('womens-college-lacrosse', 'espn', 'lacrosse/womens-college-lacrosse', NULL, 'NCAA Women''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', NULL, 1, 'NCAA W Lacrosse', 'ncaawlax', 'team_vs_team', NULL),
+    ('mens-college-lacrosse', 'espn', 'lacrosse/mens-college-lacrosse', NULL, 'NCAA Men''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', NULL, 1, 'NCAA Lacrosse', 'ncaalax', 'team_vs_team', NULL, NULL, NULL),
+    ('womens-college-lacrosse', 'espn', 'lacrosse/womens-college-lacrosse', NULL, 'NCAA Women''s Lacrosse', 'Lacrosse', 'https://www.ncaa.com/modules/custom/casablanca_core/img/sportbanners/lacrosse.png', NULL, 1, 'NCAA W Lacrosse', 'ncaawlax', 'team_vs_team', NULL, NULL, NULL),
 
     -- Lacrosse (ESPN)
-    ('nll', 'espn', 'lacrosse/nll', NULL, 'National Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/guid/5f77fe12-e54f-41a1-904e-77135452f348/logos/default.png', NULL, 1, 'NLL', 'nll', 'team_vs_team', NULL),
-    ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', NULL, 1, 'PLL', 'pll', 'team_vs_team', NULL),
+    ('nll', 'espn', 'lacrosse/nll', NULL, 'National Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/guid/5f77fe12-e54f-41a1-904e-77135452f348/logos/default.png', NULL, 1, 'NLL', 'nll', 'team_vs_team', NULL, NULL, NULL),
+    ('pll', 'espn', 'lacrosse/pll', NULL, 'Premier Lacrosse League', 'Lacrosse', 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/pll.png', NULL, 1, 'PLL', 'pll', 'team_vs_team', NULL, NULL, NULL),
 
-    -- Cricket (Cricbuzz)
-    -- NOTE: Cricbuzz series IDs change yearly. Update provider_league_id when new season starts.
-    -- Format: provider_league_id = 'series_id/url-slug' (e.g., '9241/indian-premier-league-2026')
-    ('ipl', 'cricbuzz', '9241/indian-premier-league-2026', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', NULL, 1, 'IPL', 'ipl', 'team_vs_team', NULL),
-    ('bbl', 'cricbuzz', '10289/big-bash-league-2025-26', 'Big Bash League', 'Big Bash League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png', NULL, 1, 'BBL', 'bbl', 'team_vs_team', NULL),
-    ('bpl', 'cricbuzz', '11328/bpl-2025-26', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://www.thesportsdb.com/images/media/league/badge/o1xh521767355615.png', NULL, 1, 'BPL', 'bpl', 'team_vs_team', NULL),
-    ('sa20', 'cricbuzz', '10394/sa20-2025-26', 'SA20', 'SA20', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/aakvuk1734183412.png', NULL, 1, 'SA20', 'sa20', 'team_vs_team', NULL),
+    -- Cricket (TSDB primary, Cricbuzz fallback)
+    -- TSDB provides teams/logos year-round; Cricbuzz provides schedules when TSDB free tier limited
+    -- fallback_league_id format: 'series_id/url-slug' (changes yearly - auto-discovered by cache refresh)
+    ('ipl', 'tsdb', '4460', 'Indian Premier League', 'Indian Premier League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/gaiti11741709844.png', NULL, 1, 'IPL', 'ipl', 'team_vs_team', NULL, 'cricbuzz', '9241/indian-premier-league-2026'),
+    ('bbl', 'tsdb', '4461', 'Australian Big Bash League', 'Big Bash League', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png', NULL, 1, 'BBL', 'bbl', 'team_vs_team', NULL, 'cricbuzz', '10289/big-bash-league-2025-26'),
+    ('bpl', 'tsdb', '5529', 'Bangladesh Premier League', 'Bangladesh Premier League', 'Cricket', 'https://www.thesportsdb.com/images/media/league/badge/o1xh521767355615.png', NULL, 1, 'BPL', 'bpl', 'team_vs_team', NULL, 'cricbuzz', '11328/bpl-2025-26'),
+    ('sa20', 'tsdb', '5532', 'SA20', 'SA20', 'Cricket', 'https://r2.thesportsdb.com/images/media/league/badge/aakvuk1734183412.png', NULL, 1, 'SA20', 'sa20', 'team_vs_team', NULL, 'cricbuzz', '10394/sa20-2025-26'),
 
     -- Rugby League (TSDB)
-    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'Rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', NULL, 1, 'NRL', 'nrl', 'team_vs_team', NULL),
+    ('nrl', 'tsdb', '4416', 'Australian National Rugby League', 'National Rugby League', 'Rugby', 'https://r2.thesportsdb.com/images/media/league/badge/gsztcj1552071996.png', NULL, 1, 'NRL', 'nrl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Boxing (TSDB) - Combat sport with event cards
-    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, NULL, 0, NULL, 'boxing', 'event_card', NULL);
+    ('boxing', 'tsdb', '4445', 'Boxing', 'Boxing', 'Boxing', NULL, NULL, 0, NULL, 'boxing', 'event_card', NULL, NULL, NULL);
 
 -- Cricbuzz auto-discovery patterns (base slug without year suffix)
 -- These are used by cache refresh to find current season's series ID

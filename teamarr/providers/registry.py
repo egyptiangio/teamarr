@@ -204,3 +204,30 @@ class ProviderRegistry:
     def get_league_mapping_source(cls) -> "LeagueMappingSource | None":
         """Get the league mapping source (for factory functions)."""
         return _league_mapping_source
+
+    @classmethod
+    def is_provider_premium(cls, name: str) -> bool:
+        """Check if provider has premium/full capabilities.
+
+        Used for fallback resolution. When a provider's primary functionality
+        is limited (e.g., TSDB free tier has schedule limits), this returns False
+        so the service layer can route to a fallback provider.
+
+        Args:
+            name: Provider name (e.g., 'tsdb', 'espn')
+
+        Returns:
+            True if provider has full capabilities, False if limited.
+            Returns True for providers without an is_premium property
+            (assumes full capability if not explicitly limited).
+        """
+        provider = cls.get(name)
+        if provider is None:
+            return False
+
+        # Check if provider exposes an is_premium property
+        if hasattr(provider, "is_premium"):
+            return provider.is_premium
+
+        # Assume full capability if provider doesn't track premium status
+        return True
