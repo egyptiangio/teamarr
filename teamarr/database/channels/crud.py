@@ -36,11 +36,21 @@ def create_managed_channel(
 
     # Check for existing channel by tvg_id first (UNIQUE constraint)
     existing_by_tvg = conn.execute(
-        "SELECT id FROM managed_channels WHERE tvg_id = ? AND deleted_at IS NULL",
+        "SELECT id, deleted_at FROM managed_channels WHERE tvg_id = ?",
         (tvg_id,),
     ).fetchone()
     if existing_by_tvg:
-        return existing_by_tvg[0]
+        channel_id = existing_by_tvg[0]
+        was_deleted = existing_by_tvg[1] is not None
+        if was_deleted:
+            # Reactivate soft-deleted channel
+            conn.execute(
+                """UPDATE managed_channels
+                   SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (channel_id,),
+            )
+        return channel_id
 
     # Also check by event composite key (handles race conditions)
     if exception_keyword:
@@ -122,11 +132,21 @@ def create_managed_channel(
         # Handle race condition - record may have been created between check and insert
         # First check by tvg_id (the UNIQUE constraint that likely failed)
         existing_by_tvg = conn.execute(
-            "SELECT id FROM managed_channels WHERE tvg_id = ? AND deleted_at IS NULL",
+            "SELECT id, deleted_at FROM managed_channels WHERE tvg_id = ?",
             (tvg_id,),
         ).fetchone()
         if existing_by_tvg:
-            return existing_by_tvg[0]
+            channel_id = existing_by_tvg[0]
+            was_deleted = existing_by_tvg[1] is not None
+            if was_deleted:
+                # Reactivate soft-deleted channel
+                conn.execute(
+                    """UPDATE managed_channels
+                       SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (channel_id,),
+                )
+            return channel_id
 
         # Also check by event composite key
         if exception_keyword:
