@@ -34,6 +34,7 @@ interface Stream {
 interface EnabledGroup {
   id: number
   m3u_group_id: number | null
+  m3u_account_id: number | null
 }
 
 // Fetch M3U accounts from Dispatcharr
@@ -92,11 +93,11 @@ export function EventGroupImport() {
     enabled: !!selectedAccount && !!previewGroup,
   })
 
-  // Get set of already-enabled M3U group IDs
-  const enabledGroupIds = new Set(
+  // Get set of already-enabled (account_id, group_id) pairs
+  const enabledGroupKeys = new Set(
     (enabledQuery.data ?? [])
-      .filter((g) => g.m3u_group_id !== null)
-      .map((g) => g.m3u_group_id)
+      .filter((g) => g.m3u_group_id !== null && g.m3u_account_id !== null)
+      .map((g) => `${g.m3u_account_id}:${g.m3u_group_id}`)
   )
 
   // Filter groups by search (preserving original order from Dispatcharr)
@@ -238,7 +239,7 @@ export function EventGroupImport() {
               ) : (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
                   {filteredGroups.map((group) => {
-                    const isEnabled = enabledGroupIds.has(group.id)
+                    const isEnabled = enabledGroupKeys.has(`${selectedAccount!.id}:${group.id}`)
 
                     return (
                       <div
