@@ -128,6 +128,11 @@ class CacheRefresher:
             report(f"Saving {len(all_teams)} teams, {len(all_leagues)} leagues...", 95)
             self._save_cache(all_teams, all_leagues)
 
+            # Update existing soccer teams with newly discovered leagues
+            soccer_updated = self._refresh_soccer_team_leagues()
+            if soccer_updated > 0:
+                report(f"Updated {soccer_updated} soccer teams with new leagues", 98)
+
             # Update metadata
             duration = time.time() - start_time
             self._update_meta(len(all_leagues), len(all_teams), duration, None)
@@ -610,3 +615,59 @@ class CacheRefresher:
             logger.info(f"Merged {added_from_seed} teams from TSDB seed")
 
         return merged_teams, merged_leagues
+
+    def _refresh_soccer_team_leagues(self) -> int:
+        """Update existing soccer teams with all leagues from cache.
+
+        Soccer teams play in multiple competitions (EPL + Champions League + FA Cup).
+        After cache refresh, update existing teams' leagues arrays with any new
+        competitions found in the cache.
+
+        Returns:
+            Number of teams updated
+        """
+        import json
+
+        updated = 0
+
+        with self._db() as conn:
+            # Get all soccer teams
+            cursor = conn.execute(
+                "SELECT id, provider, provider_team_id, leagues FROM teams WHERE sport = 'soccer'"
+            )
+            soccer_teams = cursor.fetchall()
+
+            for team in soccer_teams:
+                team_id = team["id"]
+                provider = team["provider"]
+                provider_team_id = team["provider_team_id"]
+
+                # Parse current leagues
+                try:
+                    current_leagues = json.loads(team["leagues"]) if team["leagues"] else []
+                except (json.JSONDecodeError, TypeError):
+                    current_leagues = []
+
+                # Get all leagues from cache for this team
+                cache_cursor = conn.execute(
+                    "SELECT DISTINCT league FROM team_cache WHERE provider = ? AND provider_team_id = ? AND sport = 'soccer'",
+                    (provider, provider_team_id),
+                )
+                cache_leagues = [row["league"] for row in cache_cursor.fetchall()]
+
+                # Merge and check if there are new leagues
+                all_leagues = sorted(set(current_leagues + cache_leagues))
+                if all_leagues != sorted(current_leagues):
+                    conn.execute(
+                        "UPDATE teams SET leagues = ? WHERE id = ?",
+                        (json.dumps(all_leagues), team_id),
+                    )
+                    updated += 1
+                    logger.debug(
+                        f"Updated soccer team {team_id}: {len(current_leagues)} -> {len(all_leagues)} leagues"
+                    )
+
+            if updated > 0:
+                logger.info(f"Updated leagues for {updated} soccer teams")
+
+        return updated
