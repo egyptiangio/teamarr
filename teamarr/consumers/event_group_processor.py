@@ -388,10 +388,7 @@ class EventGroupProcessor:
 
             if group.m3u_account_id:
                 try:
-                    from teamarr.dispatcharr import M3UManager
-
-                    m3u_manager = M3UManager(self._dispatcharr_client)
-                    refresh_result = m3u_manager.wait_for_refresh(
+                    refresh_result = self._dispatcharr_client.m3u.wait_for_refresh(
                         group.m3u_account_id,
                         timeout=180,
                         skip_if_recent_minutes=60,
@@ -822,11 +819,7 @@ class EventGroupProcessor:
 
     def _get_child_processor(self) -> ChildStreamProcessor:
         """Get or create ChildStreamProcessor instance."""
-        channel_manager = None
-        if self._dispatcharr_client:
-            from teamarr.dispatcharr import ChannelManager
-
-            channel_manager = ChannelManager(self._dispatcharr_client)
+        channel_manager = self._dispatcharr_client.channels if self._dispatcharr_client else None
 
         return ChildStreamProcessor(
             db_factory=self._db_factory,
@@ -853,11 +846,7 @@ class EventGroupProcessor:
             multi_league_ids: IDs of multi-league groups for cross-group check
             lifecycle_service: Optional lifecycle service for orphan/disabled cleanup
         """
-        channel_manager = None
-        if self._dispatcharr_client:
-            from teamarr.dispatcharr import ChannelManager
-
-            channel_manager = ChannelManager(self._dispatcharr_client)
+        channel_manager = self._dispatcharr_client.channels if self._dispatcharr_client else None
 
         # 1. Keyword enforcement: move streams to correct keyword channels
         try:
@@ -1107,9 +1096,7 @@ class EventGroupProcessor:
             return []
 
         try:
-            from teamarr.dispatcharr import M3UManager
-
-            m3u_manager = M3UManager(self._dispatcharr_client)
+            m3u_manager = self._dispatcharr_client.m3u
 
             # Fetch streams filtered by M3U group if configured
             if group.m3u_group_id:
@@ -1811,7 +1798,6 @@ class EventGroupProcessor:
 
         try:
             from teamarr.database import get_db
-            from teamarr.dispatcharr import EPGManager
 
             # Get EPG source ID from settings
             with get_db() as conn:
@@ -1825,7 +1811,7 @@ class EventGroupProcessor:
                 logger.debug("No Dispatcharr EPG source configured - skipping refresh")
                 return
 
-            epg_manager = EPGManager(self._dispatcharr_client)
+            epg_manager = self._dispatcharr_client.epg
 
             # Wait for refresh to complete (polls until done or timeout)
             result = epg_manager.wait_for_refresh(epg_source_id, timeout=120)
@@ -1850,10 +1836,9 @@ class EventGroupProcessor:
         Looks up EPG data by tvg_id and links them to channels in Dispatcharr.
         """
         from teamarr.database.channels import get_all_managed_channels
-        from teamarr.dispatcharr import ChannelManager
 
         try:
-            channel_manager = ChannelManager(self._dispatcharr_client)
+            channel_manager = self._dispatcharr_client.channels
 
             with self._db_factory() as conn:
                 # Get all active managed channels
