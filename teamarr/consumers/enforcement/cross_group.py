@@ -266,7 +266,8 @@ class CrossGroupEnforcer:
                 if not channel:
                     return
 
-                current_streams = [s.id for s in channel.streams] if channel.streams else []
+                # channel.streams is already a tuple of stream IDs
+                current_streams = list(channel.streams) if channel.streams else []
                 stream_ids = [s.dispatcharr_stream_id for s in streams]
 
                 new_streams = current_streams + [
