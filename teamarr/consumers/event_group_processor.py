@@ -1278,6 +1278,8 @@ class EventGroupProcessor:
             include_final_events=include_final_events,
             sport_durations=sport_durations,
             generation=getattr(self, "_generation", None),  # Use shared generation if set
+            custom_regex_teams=group.custom_regex_teams,
+            custom_regex_teams_enabled=group.custom_regex_teams_enabled,
         )
 
         result = matcher.match_all(streams, target_date, progress_callback=stream_progress_callback)

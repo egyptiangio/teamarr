@@ -998,12 +998,20 @@ export function EventGroups() {
                               )}
                               {/* Regex badge */}
                               {(group.custom_regex_teams_enabled ||
+                                group.custom_regex_date_enabled ||
+                                group.custom_regex_time_enabled ||
                                 group.stream_include_regex_enabled ||
                                 group.stream_exclude_regex_enabled) && (
                                 <Badge
                                   variant="secondary"
                                   className="bg-blue-500/15 text-blue-400 border-blue-500/30 text-xs"
-                                  title="Custom regex patterns configured"
+                                  title={`Custom regex: ${[
+                                    group.custom_regex_teams_enabled && "teams",
+                                    group.custom_regex_date_enabled && "date",
+                                    group.custom_regex_time_enabled && "time",
+                                    group.stream_include_regex_enabled && "include",
+                                    group.stream_exclude_regex_enabled && "exclude",
+                                  ].filter(Boolean).join(", ")}`}
                                 >
                                   Regex
                                 </Badge>

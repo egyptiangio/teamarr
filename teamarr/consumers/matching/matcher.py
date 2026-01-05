@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 from teamarr.config import get_user_timezone
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
+    CustomRegexConfig,
     StreamCategory,
     classify_stream,
 )
@@ -146,6 +147,8 @@ class StreamMatcher:
         sport_durations: dict[str, float] | None = None,
         user_tz: ZoneInfo | None = None,
         generation: int | None = None,
+        custom_regex_teams: str | None = None,
+        custom_regex_teams_enabled: bool = False,
     ):
         """Initialize the matcher.
 
@@ -159,6 +162,8 @@ class StreamMatcher:
             sport_durations: Sport duration settings
             user_tz: User timezone for date calculations
             generation: Cache generation counter (if None, will be fetched/incremented)
+            custom_regex_teams: Custom regex pattern for extracting team names
+            custom_regex_teams_enabled: Whether custom regex is enabled
         """
         self._service = service
         self._db_factory = db_factory
@@ -168,6 +173,12 @@ class StreamMatcher:
         self._include_final_events = include_final_events
         self._sport_durations = sport_durations or {}
         self._user_tz = user_tz or get_user_timezone()
+
+        # Custom regex configuration
+        self._custom_regex = CustomRegexConfig(
+            teams_pattern=custom_regex_teams,
+            teams_enabled=custom_regex_teams_enabled,
+        ) if custom_regex_teams_enabled and custom_regex_teams else None
 
         # Initialize cache
         self._cache = StreamMatchCache(db_factory)
@@ -248,7 +259,7 @@ class StreamMatcher:
         # Determine event type from configured leagues
         league_event_type = self._get_dominant_event_type()
 
-        classified = classify_stream(stream_name, league_event_type)
+        classified = classify_stream(stream_name, league_event_type, self._custom_regex)
 
         # Step 2: Handle placeholders
         if classified.category == StreamCategory.PLACEHOLDER:

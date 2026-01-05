@@ -7,9 +7,11 @@ strategy to use:
 - PLACEHOLDER: Filler streams with no event info (skip)
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
+from re import Pattern
 
 from teamarr.consumers.matching.normalizer import NormalizedStream, normalize_stream
 from teamarr.utilities.constants import (
@@ -18,6 +20,8 @@ from teamarr.utilities.constants import (
     LEAGUE_HINT_PATTERNS,
     PLACEHOLDER_PATTERNS,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class StreamCategory(Enum):
@@ -45,6 +49,75 @@ class ClassifiedStream:
 
     # Detected league hint (for any category)
     league_hint: str | None = None
+
+    # Track if custom regex was used
+    custom_regex_used: bool = False
+
+
+@dataclass
+class CustomRegexConfig:
+    """Configuration for custom regex team extraction."""
+
+    teams_pattern: str | None = None
+    teams_enabled: bool = False
+
+    # Compiled pattern (cached)
+    _compiled: Pattern | None = None
+
+    def get_pattern(self) -> Pattern | None:
+        """Get compiled regex pattern, compiling on first access."""
+        if not self.teams_enabled or not self.teams_pattern:
+            return None
+
+        if self._compiled is None:
+            try:
+                self._compiled = re.compile(self.teams_pattern, re.IGNORECASE)
+            except re.error as e:
+                logger.warning(f"Invalid custom regex pattern: {e}")
+                return None
+
+        return self._compiled
+
+
+def extract_teams_with_custom_regex(
+    text: str,
+    config: CustomRegexConfig,
+) -> tuple[str | None, str | None, bool]:
+    """Extract team names using custom regex pattern.
+
+    Args:
+        text: Stream name (normalized)
+        config: Custom regex configuration
+
+    Returns:
+        Tuple of (team1, team2, success)
+    """
+    pattern = config.get_pattern()
+    if not pattern:
+        return None, None, False
+
+    match = pattern.search(text)
+    if not match:
+        return None, None, False
+
+    # Try numbered groups first (group 1 and 2)
+    groups = match.groups()
+    if len(groups) >= 2:
+        team1 = groups[0].strip() if groups[0] else None
+        team2 = groups[1].strip() if groups[1] else None
+        if team1 and team2:
+            return team1, team2, True
+
+    # Try named groups (?P<team1>...) and (?P<team2>...)
+    try:
+        team1 = match.group("team1")
+        team2 = match.group("team2")
+        if team1 and team2:
+            return team1.strip(), team2.strip(), True
+    except (IndexError, re.error):
+        pass
+
+    return None, None, False
 
 
 # =============================================================================
@@ -299,6 +372,7 @@ def extract_event_card_hint(text: str) -> str | None:
 def classify_stream(
     stream_name: str,
     league_event_type: str | None = None,
+    custom_regex: CustomRegexConfig | None = None,
 ) -> ClassifiedStream:
     """Classify a stream for matching strategy selection.
 
@@ -306,12 +380,14 @@ def classify_stream(
     1. Normalize stream name
     2. Check for placeholder patterns → PLACEHOLDER
     3. Check for event card keywords/type → EVENT_CARD
-    4. Check for game separator (vs/@/at) → TEAM_VS_TEAM
-    5. Default → PLACEHOLDER (can't classify)
+    4. Try custom regex for team extraction (if configured) → TEAM_VS_TEAM
+    5. Check for game separator (vs/@/at) → TEAM_VS_TEAM
+    6. Default → PLACEHOLDER (can't classify)
 
     Args:
         stream_name: Raw stream name from M3U
         league_event_type: Optional event_type from leagues table
+        custom_regex: Optional custom regex configuration for team extraction
 
     Returns:
         ClassifiedStream with category and extracted info
@@ -348,7 +424,21 @@ def classify_stream(
             league_hint=league_hint,
         )
 
-    # Step 4: Check for game separator
+    # Step 4: Try custom regex for team extraction (if configured)
+    if custom_regex and custom_regex.teams_enabled:
+        team1, team2, success = extract_teams_with_custom_regex(text, custom_regex)
+        if success:
+            return ClassifiedStream(
+                category=StreamCategory.TEAM_VS_TEAM,
+                normalized=normalized,
+                team1=team1,
+                team2=team2,
+                separator_found="custom_regex",
+                league_hint=league_hint,
+                custom_regex_used=True,
+            )
+
+    # Step 5: Check for game separator (builtin fallback)
     separator, sep_position = find_game_separator(text)
     if separator:
         team1, team2 = extract_teams_from_separator(text, separator, sep_position)
@@ -364,7 +454,7 @@ def classify_stream(
                 league_hint=league_hint,
             )
 
-    # Step 5: Default to placeholder if we can't classify
+    # Step 6: Default to placeholder if we can't classify
     return ClassifiedStream(
         category=StreamCategory.PLACEHOLDER,
         normalized=normalized,
@@ -375,14 +465,16 @@ def classify_stream(
 def classify_streams(
     stream_names: list[str],
     league_event_type: str | None = None,
+    custom_regex: CustomRegexConfig | None = None,
 ) -> list[ClassifiedStream]:
     """Classify multiple streams.
 
     Args:
         stream_names: List of raw stream names
         league_event_type: Optional event_type from leagues table
+        custom_regex: Optional custom regex configuration for team extraction
 
     Returns:
         List of ClassifiedStream objects
     """
-    return [classify_stream(name, league_event_type) for name in stream_names]
+    return [classify_stream(name, league_event_type, custom_regex) for name in stream_names]
