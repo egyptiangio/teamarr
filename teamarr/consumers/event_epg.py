@@ -188,7 +188,15 @@ class EventEPGGenerator:
             description = self._resolver.resolve(options.template.description_format, context)
 
         # Icon priority: template program_art_url > home team logo
-        icon = options.template.program_art_url or event.home_team.logo_url
+        # Resolve template variables in program_art_url if present
+        icon = None
+        if options.template.program_art_url:
+            resolved_art = self._resolver.resolve(options.template.program_art_url, context)
+            # Only use if resolution succeeded (no unresolved placeholders)
+            if "{" not in resolved_art:
+                icon = resolved_art
+        if not icon:
+            icon = event.home_team.logo_url if event.home_team else None
 
         return Programme(
             channel_id=channel_id,

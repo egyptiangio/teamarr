@@ -182,3 +182,27 @@ def extract_away_team_pascal(ctx: TemplateContext, game_ctx: GameContext | None)
     if not game_ctx or not game_ctx.event:
         return ""
     return _to_pascal_case(game_ctx.event.away_team.name)
+
+
+@register_variable(
+    name="home_team_logo",
+    category=Category.HOME_AWAY,
+    suffix_rules=SuffixRules.ALL,
+    description="Home team logo URL",
+)
+def extract_home_team_logo(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    if not game_ctx or not game_ctx.event:
+        return ""
+    return game_ctx.event.home_team.logo_url or ""
+
+
+@register_variable(
+    name="away_team_logo",
+    category=Category.HOME_AWAY,
+    suffix_rules=SuffixRules.ALL,
+    description="Away team logo URL",
+)
+def extract_away_team_logo(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
+    if not game_ctx or not game_ctx.event:
+        return ""
+    return game_ctx.event.away_team.logo_url or ""
