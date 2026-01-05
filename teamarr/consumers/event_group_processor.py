@@ -770,7 +770,7 @@ class EventGroupProcessor:
                     matched_count=0,
                     filtered_include_regex=result.filtered_include_regex,
                     filtered_exclude_regex=result.filtered_exclude_regex,
-                    filtered_no_match=result.streams_after_filter,  # All unmatched due to no events
+                    failed_count=result.streams_after_filter,  # All unmatched due to no events
                     filtered_not_event=result.filtered_not_event,
                     total_stream_count=result.streams_fetched,
                 )
@@ -834,7 +834,7 @@ class EventGroupProcessor:
                 matched_count=result.streams_matched,
                 filtered_include_regex=result.filtered_include_regex,
                 filtered_exclude_regex=result.filtered_exclude_regex,
-                filtered_no_match=result.streams_unmatched,
+                failed_count=result.streams_unmatched,
                 filtered_not_event=result.filtered_not_event,
                 streams_excluded=result.streams_excluded,
                 total_stream_count=result.streams_fetched,  # V1 parity
@@ -1012,7 +1012,7 @@ class EventGroupProcessor:
                     matched_count=0,
                     filtered_include_regex=filter_result.filtered_include,
                     filtered_exclude_regex=filter_result.filtered_exclude,
-                    filtered_no_match=result.streams_after_filter,  # All unmatched due to no events
+                    failed_count=result.streams_after_filter,  # All unmatched due to no events
                     filtered_not_event=filter_result.filtered_not_event,
                     total_stream_count=result.streams_fetched,
                 )
@@ -1103,7 +1103,7 @@ class EventGroupProcessor:
                 matched_count=result.streams_matched,
                 filtered_include_regex=result.filtered_include_regex,
                 filtered_exclude_regex=result.filtered_exclude_regex,
-                filtered_no_match=result.streams_unmatched,
+                failed_count=result.streams_unmatched,
                 filtered_not_event=result.filtered_not_event,
                 streams_excluded=result.streams_excluded,
                 total_stream_count=result.streams_fetched,  # V1 parity

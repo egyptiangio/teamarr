@@ -635,8 +635,8 @@ def _convert_v1_group_to_v2(v1_row: dict, template_id_map: dict[int, int]) -> di
         "skip_builtin_filter": v1_row.get("skip_builtin_filter") or 0,
         "filtered_include_regex": 0,  # Reset
         "filtered_exclude_regex": 0,  # Reset
-        "filtered_no_match": 0,  # Reset
         "filtered_not_event": 0,  # Reset
+        "failed_count": 0,  # Reset
         "channel_sort_order": v1_row.get("channel_sort_order") or "time",
         # Map V1 overlap_handling to V2 values ("consolidate" → "add_stream")
         "overlap_handling": "add_stream"

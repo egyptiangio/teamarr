@@ -151,12 +151,12 @@ class GroupResponse(BaseModel):
     last_refresh: str | None = None
     stream_count: int = 0
     matched_count: int = 0
-    # Filtering stats
-    filtered_include_regex: int = 0
-    filtered_exclude_regex: int = 0
-    filtered_no_match: int = 0
-    filtered_not_event: int = 0
-    streams_excluded: int = 0  # Matched but excluded by timing (past/final/early)
+    # Processing stats by category (FILTERED / FAILED / EXCLUDED)
+    filtered_include_regex: int = 0  # FILTERED: Didn't match include regex
+    filtered_exclude_regex: int = 0  # FILTERED: Matched exclude regex
+    filtered_not_event: int = 0  # FILTERED: Stream doesn't look like event
+    failed_count: int = 0  # FAILED: Match attempted but couldn't find event
+    streams_excluded: int = 0  # EXCLUDED: Matched but excluded (timing/config)
     # Multi-sport enhancements (Phase 3)
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
@@ -294,7 +294,7 @@ def list_groups(
                 matched_count=g.matched_count,
                 filtered_include_regex=g.filtered_include_regex,
                 filtered_exclude_regex=g.filtered_exclude_regex,
-                filtered_no_match=g.filtered_no_match,
+                failed_count=g.failed_count,
                 filtered_not_event=g.filtered_not_event,
                 streams_excluded=g.streams_excluded,
                 channel_sort_order=g.channel_sort_order,
@@ -403,7 +403,7 @@ def create_group(request: GroupCreate):
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        filtered_no_match=group.filtered_no_match,
+        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
         streams_excluded=group.streams_excluded,
         channel_sort_order=group.channel_sort_order,
@@ -464,7 +464,7 @@ def get_group_by_id(group_id: int):
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        filtered_no_match=group.filtered_no_match,
+        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
         streams_excluded=group.streams_excluded,
         channel_sort_order=group.channel_sort_order,
@@ -600,7 +600,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         matched_count=group.matched_count,
         filtered_include_regex=group.filtered_include_regex,
         filtered_exclude_regex=group.filtered_exclude_regex,
-        filtered_no_match=group.filtered_no_match,
+        failed_count=group.failed_count,
         filtered_not_event=group.filtered_not_event,
         streams_excluded=group.streams_excluded,
         channel_sort_order=group.channel_sort_order,
