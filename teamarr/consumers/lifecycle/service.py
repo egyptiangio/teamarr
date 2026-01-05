@@ -254,6 +254,9 @@ class ChannelLifecycleService:
                     )
 
                     if not decision.should_act:
+                        logger.debug(
+                            f"Skipping channel creation for '{stream_name}': {decision.reason}"
+                        )
                         result.skipped.append(
                             {
                                 "stream": stream_name,
@@ -302,6 +305,10 @@ class ChannelLifecycleService:
                     )
 
                     if channel_result.success:
+                        logger.info(
+                            f"Created channel {channel_result.dispatcharr_channel_id} "
+                            f"(#{channel_result.channel_number}): {stream_name}"
+                        )
                         result.created.append(
                             {
                                 "stream": stream_name,
@@ -322,6 +329,9 @@ class ChannelLifecycleService:
                             notes=f"Created from stream '{stream_name}'",
                         )
                     else:
+                        logger.warning(
+                            f"Failed to create channel for '{stream_name}': {channel_result.error}"
+                        )
                         result.errors.append(
                             {
                                 "stream": stream_name,
