@@ -132,8 +132,9 @@ export function MainLayout() {
       </footer>
 
       {/* Toast notifications - themed styling for all toasts */}
+      {/* Position bottom-right to avoid overlapping with top-right UI elements like save buttons */}
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
           className: "!bg-background !text-foreground !border !border-border !rounded-lg !shadow-lg !overflow-hidden",
           style: {
