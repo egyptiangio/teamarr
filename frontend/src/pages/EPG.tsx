@@ -168,13 +168,24 @@ export function EPG() {
     enabled: failedModalRunId !== null,
   })
 
-  // Fetch leagues for alias dialog
+  // Fetch leagues for alias dialog, matched modal, and failed modal
   const { data: leaguesData, isLoading: leaguesLoading } = useQuery({
     queryKey: ["cache", "leagues"],
     queryFn: () => getLeagues(false),
-    enabled: aliasDialogOpen,
+    enabled: aliasDialogOpen || matchedModalRunId !== null || failedModalRunId !== null,
     staleTime: 5 * 60 * 1000,
   })
+
+  // Map league codes to display names (uses league_alias if available, otherwise name)
+  const getLeagueDisplay = useMemo(() => {
+    const map = new Map<string, string>()
+    if (leaguesData?.leagues) {
+      for (const league of leaguesData.leagues) {
+        map.set(league.slug, league.league_alias || league.name)
+      }
+    }
+    return (code: string | null) => code ? (map.get(code) ?? code) : "-"
+  }, [leaguesData?.leagues])
 
   // Fetch teams when league selected
   const { data: teamsData, isLoading: teamsLoading } = useQuery({
@@ -845,24 +856,24 @@ export function EPG() {
                 No matched streams for this run.
               </div>
             ) : (
-              <Table>
+              <Table className="table-fixed w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Stream Name</TableHead>
-                    <TableHead>Event</TableHead>
-                    <TableHead>League</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Group</TableHead>
+                    <TableHead className="w-[30%]">Stream Name</TableHead>
+                    <TableHead className="w-[25%]">Event</TableHead>
+                    <TableHead className="w-[80px]">League</TableHead>
+                    <TableHead className="w-[120px]">Method</TableHead>
+                    <TableHead className="w-[20%]">Group</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {matchedData?.streams.map((stream) => (
                     <TableRow key={stream.id}>
-                      <TableCell className="font-medium max-w-xs truncate">
+                      <TableCell className="font-medium truncate" title={stream.stream_name}>
                         {stream.stream_name}
                       </TableCell>
-                      <TableCell className="max-w-xs">
-                        <div className="truncate">
+                      <TableCell>
+                        <div className="truncate" title={stream.event_name || `${stream.away_team} @ ${stream.home_team}`}>
                           {stream.event_name || `${stream.away_team} @ ${stream.home_team}`}
                         </div>
                         {stream.event_date && (
@@ -872,22 +883,15 @@ export function EPG() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{stream.league ?? "-"}</Badge>
+                        <Badge variant="secondary">{getLeagueDisplay(stream.league)}</Badge>
                       </TableCell>
                       <TableCell>
                         {getMatchMethodBadge(stream.match_method)}
-                        {/* Show origin method for cache hits */}
-                        {stream.match_method === "cache" && stream.origin_match_method && (
-                          <span className="text-xs text-muted-foreground ml-1">
-                            (origin: {stream.origin_match_method})
-                          </span>
-                        )}
-                        {/* Only show Cached badge if method is not already 'cache' */}
-                        {!!stream.from_cache && stream.match_method !== "cache" && (
+                        {stream.from_cache && stream.match_method !== "cache" && (
                           <Badge variant="outline" className="ml-1">Cached</Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
+                      <TableCell className="text-muted-foreground text-sm truncate" title={stream.group_name ?? undefined}>
                         {stream.group_name}
                       </TableCell>
                     </TableRow>
@@ -931,26 +935,26 @@ export function EPG() {
                 No failed matches for this run.
               </div>
             ) : (
-              <Table>
+              <Table className="table-fixed w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Stream Name</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Detected Teams</TableHead>
-                    <TableHead>Group</TableHead>
-                    <TableHead className="w-20">Actions</TableHead>
+                    <TableHead className="w-[30%]">Stream Name</TableHead>
+                    <TableHead className="w-[100px]">Reason</TableHead>
+                    <TableHead className="w-[25%]">Detected Teams</TableHead>
+                    <TableHead className="w-[20%]">Group</TableHead>
+                    <TableHead className="w-[60px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {failedData?.failures.map((failure) => (
                     <TableRow key={failure.id}>
-                      <TableCell className="font-medium max-w-xs truncate">
+                      <TableCell className="font-medium truncate" title={failure.stream_name}>
                         {failure.stream_name}
                       </TableCell>
                       <TableCell>
                         {getFailReasonBadge(failure.reason)}
                         {failure.exclusion_reason && (
-                          <div className="text-xs text-muted-foreground mt-1">
+                          <div className="text-xs text-muted-foreground mt-1 truncate" title={failure.exclusion_reason}>
                             {failure.exclusion_reason}
                           </div>
                         )}
@@ -958,17 +962,17 @@ export function EPG() {
                       <TableCell className="text-sm">
                         {failure.extracted_team1 || failure.extracted_team2 ? (
                           <div>
-                            {failure.extracted_team1 && <div>{failure.extracted_team1}</div>}
-                            {failure.extracted_team2 && <div className="text-muted-foreground">vs {failure.extracted_team2}</div>}
+                            {failure.extracted_team1 && <div className="truncate" title={failure.extracted_team1}>{failure.extracted_team1}</div>}
+                            {failure.extracted_team2 && <div className="text-muted-foreground truncate" title={failure.extracted_team2}>vs {failure.extracted_team2}</div>}
                             {failure.detected_league && (
-                              <Badge variant="outline" className="mt-1">{failure.detected_league}</Badge>
+                              <Badge variant="outline" className="mt-1">{getLeagueDisplay(failure.detected_league)}</Badge>
                             )}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
+                      <TableCell className="text-muted-foreground text-sm truncate" title={failure.group_name ?? undefined}>
                         {failure.group_name}
                       </TableCell>
                       <TableCell>
