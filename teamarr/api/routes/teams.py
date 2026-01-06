@@ -206,11 +206,13 @@ def update_team(team_id: int, team: TeamUpdate):
 
 @router.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_team(team_id: int):
-    """Delete a team."""
+    """Delete a team and its associated XMLTV content."""
     with get_db() as conn:
         cursor = conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+        # Clean up orphaned XMLTV content
+        conn.execute("DELETE FROM team_epg_xmltv WHERE team_id = ?", (team_id,))
 
 
 @router.post("/teams/bulk-import", response_model=BulkImportResponse)
