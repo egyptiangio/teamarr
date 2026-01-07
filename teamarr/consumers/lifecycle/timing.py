@@ -220,11 +220,11 @@ class ChannelLifecycleManager:
         falls outside the lifecycle window. Returns None if the event is
         eligible for channel creation.
 
-        V1 Parity Rules:
-        1. Exclude if before create timing
-        2. Exclude if after delete timing
-        3. Past day final events → ALWAYS exclude (regardless of setting)
-        4. Today's final events → honor include_final_events setting
+        Lifecycle Rules:
+        1. Exclude if before create timing → BEFORE_WINDOW
+        2. Exclude if after delete timing → EVENT_PAST
+        3. Final events outside lifecycle window → EVENT_FINAL (always)
+        4. Final events within lifecycle window → honor include_final_events
 
         Args:
             event: The matched event to categorize
@@ -233,11 +233,21 @@ class ChannelLifecycleManager:
             ExcludedReason if event should be excluded, None if eligible
         """
         now = now_user()
-        today = now.date()
 
-        # Get event date in user timezone for day comparison
-        event_start_user = to_user_tz(event.start_time)
-        event_day = event_start_user.date()
+        # Calculate lifecycle window thresholds
+        delete_threshold = self._calculate_delete_threshold(event)
+        create_threshold = self._calculate_create_threshold(event) if self.create_timing != "stream_available" else None
+
+        # Check if we're past delete threshold (event lifecycle is over)
+        if delete_threshold and now >= delete_threshold:
+            return ExcludedReason.EVENT_PAST
+
+        # Check if we're before create threshold (too early)
+        if create_threshold and now < create_threshold:
+            return ExcludedReason.BEFORE_WINDOW
+
+        # At this point, we're within the lifecycle window (create <= now < delete)
+        # Now check if event is final
 
         # Determine if event is final (status-based or time-based fallback)
         is_final = False
@@ -256,26 +266,9 @@ class ChannelLifecycleManager:
             if now > event_end_with_buffer:
                 is_final = True
 
-        # V1 Parity: Handle final events based on date
-        if is_final:
-            # Past day final events → ALWAYS exclude (regardless of include_final_events)
-            if event_day < today:
-                return ExcludedReason.EVENT_FINAL
-            # Today's final events → honor the include_final_events setting
-            elif event_day == today and not self.include_final_events:
-                return ExcludedReason.EVENT_FINAL
-            # Today's final with include_final_events=True → allow (don't exclude here)
+        # Final events within lifecycle window → honor include_final_events setting
+        if is_final and not self.include_final_events:
+            return ExcludedReason.EVENT_FINAL
 
-        # Check if we're past delete threshold (event is over)
-        delete_threshold = self._calculate_delete_threshold(event)
-        if delete_threshold and now >= delete_threshold:
-            return ExcludedReason.EVENT_PAST
-
-        # Check if we're before create threshold (too early)
-        if self.create_timing != "stream_available":
-            create_threshold = self._calculate_create_threshold(event)
-            if now < create_threshold:
-                return ExcludedReason.BEFORE_WINDOW
-
-        # Event is within the lifecycle window
+        # Event is within lifecycle window and passes all checks
         return None
