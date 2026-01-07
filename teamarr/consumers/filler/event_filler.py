@@ -429,10 +429,10 @@ class EventFillerGenerator:
         else:
             refreshed = event
 
-        # V1 parity - comprehensive final check
-        status_state = refreshed.status.state.lower() if refreshed.status.state else ""
-        status_detail = refreshed.status.detail.lower() if refreshed.status.detail else ""
-        return status_state in ("final", "post", "completed") or "final" in status_detail
+        # Use unified final status check
+        from teamarr.utilities.event_status import is_event_final
+
+        return is_event_final(refreshed)
 
 
 def template_to_event_filler_config(template) -> EventFillerConfig:

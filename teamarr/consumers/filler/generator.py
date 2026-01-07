@@ -549,19 +549,17 @@ class FillerGenerator:
         """Check if event is final, refreshing status from provider if needed.
 
         Fetches fresh status via summary endpoint to get accurate final detection.
-        Caches enriched events to avoid redundant API calls.
         """
         if not event:
             return False
 
         # Refresh event status from provider for accurate final detection
-        # Uses 30-minute cache on single events (get_event)
         refreshed = self._service.refresh_event_status(event)
 
-        # V1 parity - comprehensive final check
-        status_state = refreshed.status.state.lower() if refreshed.status.state else ""
-        status_detail = refreshed.status.detail.lower() if refreshed.status.detail else ""
-        return status_state in ("final", "post", "completed") or "final" in status_detail
+        # Use unified final status check
+        from teamarr.utilities.event_status import is_event_final
+
+        return is_event_final(refreshed)
 
     def _build_filler_context(
         self,

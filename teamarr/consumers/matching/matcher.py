@@ -49,6 +49,7 @@ from teamarr.consumers.stream_match_cache import (
 from teamarr.core import Event
 from teamarr.database.leagues import get_league
 from teamarr.services import SportsDataService
+from teamarr.utilities.event_status import is_event_final
 
 logger = logging.getLogger(__name__)
 
@@ -440,11 +441,8 @@ class StreamMatcher:
             # Check if league is in include list
             if outcome.detected_league and outcome.detected_league in self._include_leagues:
                 # Check if event is final
-                if not self._include_final_events and outcome.event.status:
-                    if outcome.event.status.state == "final":
-                        exclusion_reason = "event_final"
-                    else:
-                        included = True
+                if not self._include_final_events and is_event_final(outcome.event):
+                    exclusion_reason = "event_final"
                 else:
                     included = True
             else:

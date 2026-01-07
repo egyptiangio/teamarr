@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 
 from teamarr.consumers.matching.result import ExcludedReason
 from teamarr.core import Event
+from teamarr.utilities.event_status import is_event_final
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import crosses_midnight
 from teamarr.utilities.tz import now_user, to_user_tz
@@ -249,25 +250,19 @@ class ChannelLifecycleManager:
         # At this point, we're within the lifecycle window (create <= now < delete)
         # Now check if event is final
 
-        # Determine if event is final (status-based or time-based fallback)
-        is_final = False
-
-        # Status-based check
-        if event.status:
-            status_state = event.status.state.lower() if event.status.state else ""
-            status_detail = event.status.detail.lower() if event.status.detail else ""
-            is_final = status_state in ("final", "post", "completed") or "final" in status_detail
+        # Use unified final status check
+        final = is_event_final(event)
 
         # Time-based fallback: if event end + 2hr buffer is in past, treat as final
         # This catches stale cached events that still show old status
-        if not is_final:
+        if not final:
             event_end = self.get_event_end_time(event)
             event_end_with_buffer = event_end + timedelta(hours=2)
             if now > event_end_with_buffer:
-                is_final = True
+                final = True
 
         # Final events within lifecycle window → honor include_final_events setting
-        if is_final and not self.include_final_events:
+        if final and not self.include_final_events:
             return ExcludedReason.EVENT_FINAL
 
         # Event is within lifecycle window and passes all checks

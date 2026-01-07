@@ -17,6 +17,7 @@ from teamarr.core import Event, Programme, TemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
+from teamarr.utilities.event_status import is_event_final
 from teamarr.utilities.sports import get_effective_duration
 from teamarr.utilities.tz import now_user, to_user_tz
 
@@ -269,7 +270,7 @@ class TeamEPGGenerator:
             # Skip completed (final) events - matching V1 logic:
             # - Past day finals: ALWAYS excluded (regardless of include_final_events)
             # - Today's finals: honor include_final_events setting
-            if event.status.state == "final" and event_end < now:
+            if is_event_final(event) and event_end < now:
                 event_day = event.start_time.date()
                 if event_day < today:
                     # Past day completed event - always skip
