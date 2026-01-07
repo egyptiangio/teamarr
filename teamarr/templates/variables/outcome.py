@@ -33,7 +33,7 @@ def _get_result(ctx: TemplateContext, game_ctx: GameContext | None) -> str | Non
 @register_variable(
     name="result",
     category=Category.OUTCOME,
-    suffix_rules=SuffixRules.LAST_ONLY,
+    suffix_rules=SuffixRules.ALL,
     description="Game result ('W', 'L', or 'T')",
 )
 def extract_result(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
@@ -50,7 +50,7 @@ def extract_result(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
 @register_variable(
     name="result_lower",
     category=Category.OUTCOME,
-    suffix_rules=SuffixRules.LAST_ONLY,
+    suffix_rules=SuffixRules.ALL,
     description="Game result lowercase ('w', 'l', or 't')",
 )
 def extract_result_lower(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
@@ -67,7 +67,7 @@ def extract_result_lower(ctx: TemplateContext, game_ctx: GameContext | None) -> 
 @register_variable(
     name="result_text",
     category=Category.OUTCOME,
-    suffix_rules=SuffixRules.LAST_ONLY,
+    suffix_rules=SuffixRules.ALL,
     description="Game result as text ('defeated', 'lost to', 'tied')",
 )
 def extract_result_text(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
@@ -84,8 +84,8 @@ def extract_result_text(ctx: TemplateContext, game_ctx: GameContext | None) -> s
 @register_variable(
     name="overtime_text",
     category=Category.OUTCOME,
-    suffix_rules=SuffixRules.LAST_ONLY,
-    description="'OT' or 'in overtime' if game went to overtime",
+    suffix_rules=SuffixRules.ALL,  # Works for event channels without suffix
+    description="'in overtime' if game went to overtime, empty otherwise",
 )
 def extract_overtime_text(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     if not game_ctx or not game_ctx.event:
@@ -102,7 +102,7 @@ def extract_overtime_text(ctx: TemplateContext, game_ctx: GameContext | None) ->
 @register_variable(
     name="overtime_short",
     category=Category.OUTCOME,
-    suffix_rules=SuffixRules.LAST_ONLY,
+    suffix_rules=SuffixRules.ALL,  # Works for event channels without suffix
     description="'OT' if game went to overtime, empty otherwise",
 )
 def extract_overtime_short(ctx: TemplateContext, game_ctx: GameContext | None) -> str:

@@ -49,7 +49,7 @@ class SuffixRules(Enum):
     ALL = auto()  # base, .next, .last (most variables)
     BASE_ONLY = auto()  # base only (team_name, league - team-level, not game-specific)
     BASE_NEXT_ONLY = auto()  # base, .next only (odds_* - no odds for past games)
-    LAST_ONLY = auto()  # .last only (score, result - only exist after game ends)
+    LAST_ONLY = auto()  # .last only (deprecated - use ALL instead)
 
 
 @dataclass(frozen=True)
