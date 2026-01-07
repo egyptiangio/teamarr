@@ -157,7 +157,6 @@ class StreamMatcher:
         generation: int | None = None,
         custom_regex_teams: str | None = None,
         custom_regex_teams_enabled: bool = False,
-        days_back: int = 2,
     ):
         """Initialize the matcher.
 
@@ -173,7 +172,6 @@ class StreamMatcher:
             generation: Cache generation counter (if None, will be fetched/incremented)
             custom_regex_teams: Custom regex pattern for extracting team names
             custom_regex_teams_enabled: Whether custom regex is enabled
-            days_back: Days back for event matching (for weekly sports like NFL)
         """
         self._service = service
         self._db_factory = db_factory
@@ -183,7 +181,6 @@ class StreamMatcher:
         self._include_final_events = include_final_events
         self._sport_durations = sport_durations or {}
         self._user_tz = user_tz or get_user_timezone()
-        self._days_back = days_back
 
         # Custom regex configuration
         self._custom_regex = CustomRegexConfig(
@@ -276,12 +273,12 @@ class StreamMatcher:
         per-stream is extremely slow (278 leagues × 15 days × 400 streams).
         Instead, fetch all events ONCE and reuse for all streams.
 
-        Uses the same two-tier strategy as TeamMatcher:
-        - Recent dates (within days_back): fetch from API if not cached (ESPN only)
-        - Older dates (up to 14 days): cache-only
+        Strategy:
+        - Today: always fetch from API (ESPN only)
+        - Past dates: use full 30-day cache for matching
         - TSDB leagues: always cache-only
         """
-        MATCH_WINDOW_DAYS = 14  # Match window for weekly sports like NFL
+        MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
 
         self._prefetched_events = {}
         total_events = 0
@@ -292,8 +289,8 @@ class StreamMatcher:
 
             for offset in range(-MATCH_WINDOW_DAYS, 1):
                 fetch_date = target_date + timedelta(days=offset)
-                # TSDB: always cache-only; ESPN: fetch recent, cache-only for older
-                cache_only = is_tsdb or offset < -self._days_back
+                # Today: fetch fresh; Past: always use cache
+                cache_only = is_tsdb or offset < 0
                 events = self._service.get_events(league, fetch_date, cache_only=cache_only)
                 league_events.extend(events)
 
@@ -371,7 +368,6 @@ class StreamMatcher:
                 generation=self._generation,
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
-                days_back=self._days_back,
             )
         else:
             return self._team_matcher.match_multi_league(
@@ -383,7 +379,6 @@ class StreamMatcher:
                 generation=self._generation,
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
-                days_back=self._days_back,
                 prefetched_events=self._prefetched_events,
             )
 

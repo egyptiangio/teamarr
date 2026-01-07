@@ -134,6 +134,7 @@ def create_lifecycle_service(
         delete_timing=lifecycle["delete_timing"],
         default_duration_hours=durations.default,
         sport_durations=sport_durations,
+        include_final_events=all_settings.epg.include_final_events,
     )
 
 

@@ -50,28 +50,20 @@ class MatchContext:
     # Sport durations for ongoing event detection (hours)
     sport_durations: dict[str, float] = field(default_factory=dict)
 
-    # Days back for event matching (from event_match_days_back setting)
-    # Default 7 for weekly sports like NFL
-    days_back: int = 2
-
     def is_event_in_search_window(self, event: "Event") -> bool:
-        """Check if an event falls within the search window for matching.
+        """Check if an event falls within the 30-day search window for matching.
 
-        V2 Exclusion Tracking: Events in the search window are candidates for matching.
+        V2 uses full 30-day cache for matching to support stats tracking.
         The lifecycle layer will categorize matched-but-past events as EXCLUDED,
         allowing users to see that streams matched correctly even if events are over.
-
-        Returns True if event is within search window:
-        - Uses days_back from event_match_days_back setting (default 7 for weekly sports)
-        - Today and future events up to extracted_date (if any) are always included
 
         Final/completed status is NOT checked here - lifecycle handles exclusions.
         """
         event_start = event.start_time.astimezone(self.user_tz)
         event_date = event_start.date()
 
-        # Check if event is within search window (uses configurable days_back)
-        earliest_date = self.target_date - timedelta(days=self.days_back)
+        # Use full 30-day window for matching
+        earliest_date = self.target_date - timedelta(days=30)
 
         return event_date >= earliest_date
 
@@ -115,7 +107,6 @@ class TeamMatcher:
         generation: int,
         user_tz: ZoneInfo,
         sport_durations: dict[str, float] | None = None,
-        days_back: int = 2,
     ) -> MatchOutcome:
         """Single-league matching - search only the specified league.
 
@@ -152,7 +143,6 @@ class TeamMatcher:
             team1=classified.team1,
             team2=classified.team2,
             sport_durations=sport_durations or {},
-            days_back=days_back,
         )
 
         # Check cache first
@@ -160,17 +150,17 @@ class TeamMatcher:
         if cache_result:
             return cache_result
 
-        # Fetch events with two-tier strategy:
-        # - Recent dates (within days_back): fetch from API if not cached (ESPN only)
-        # - Older dates (up to MATCH_WINDOW_DAYS): cache-only, no API calls
-        # - TSDB leagues: always cache-only (let cache build organically)
-        MATCH_WINDOW_DAYS = 14  # Look back 14 days in cache for matches
+        # Fetch events: use full 30-day cache for matching
+        # - Today: fetch from API (ESPN only)
+        # - Past: always use cache
+        # - TSDB leagues: always cache-only
+        MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
         is_tsdb = self._service.get_provider_name(league) == "tsdb"
         events = []
         for offset in range(-MATCH_WINDOW_DAYS, 1):
             fetch_date = target_date + timedelta(days=offset)
-            # TSDB: always cache-only; ESPN: fetch recent, cache-only for older
-            cache_only = is_tsdb or offset < -days_back
+            # Today: fetch fresh; Past: always use cache
+            cache_only = is_tsdb or offset < 0
             events.extend(self._service.get_events(league, fetch_date, cache_only=cache_only))
 
         if not events:
@@ -202,7 +192,6 @@ class TeamMatcher:
         generation: int,
         user_tz: ZoneInfo,
         sport_durations: dict[str, float] | None = None,
-        days_back: int = 2,
         prefetched_events: dict[str, list["Event"]] | None = None,
     ) -> MatchOutcome:
         """Multi-league matching with league hint detection.
@@ -226,7 +215,6 @@ class TeamMatcher:
             generation: Cache generation counter
             user_tz: User timezone for date validation
             sport_durations: Sport duration settings for ongoing event detection
-            days_back: Days back for event matching (for weekly sports like NFL)
             prefetched_events: Optional pre-fetched events by league (for performance)
 
         Returns:
@@ -250,7 +238,6 @@ class TeamMatcher:
             team1=classified.team1,
             team2=classified.team2,
             sport_durations=sport_durations or {},
-            days_back=days_back,
         )
 
         # Check cache first
@@ -277,7 +264,7 @@ class TeamMatcher:
             leagues_to_search = enabled_leagues
 
         # Use prefetched events if available (much faster for multi-stream matching)
-        # Otherwise, fetch events with two-tier strategy
+        # Otherwise, fetch events: use full 30-day cache for matching
         all_events: list[tuple[str, Event]] = []
 
         if prefetched_events:
@@ -287,13 +274,13 @@ class TeamMatcher:
                     all_events.append((league, event))
         else:
             # Fallback: fetch events per-stream (slower, used when no prefetch)
-            MATCH_WINDOW_DAYS = 14  # Look back 14 days in cache for matches
+            MATCH_WINDOW_DAYS = 30  # Use full 30-day cache for matching
             for league in leagues_to_search:
                 is_tsdb = self._service.get_provider_name(league) == "tsdb"
                 for offset in range(-MATCH_WINDOW_DAYS, 1):
                     fetch_date = target_date + timedelta(days=offset)
-                    # TSDB: always cache-only; ESPN: fetch recent, cache-only for older
-                    cache_only = is_tsdb or offset < -days_back
+                    # Today: fetch fresh; Past: always use cache
+                    cache_only = is_tsdb or offset < 0
                     events = self._service.get_events(league, fetch_date, cache_only=cache_only)
                     for event in events:
                         all_events.append((league, event))

@@ -35,6 +35,7 @@ class ChannelLifecycleManager:
             delete_timing='day_after',
             default_duration_hours=3.0,
             sport_durations={'basketball': 3.0, 'football': 3.5},
+            include_final_events=False,
         )
 
         # Check if channel should be created
@@ -54,11 +55,13 @@ class ChannelLifecycleManager:
         delete_timing: DeleteTiming = "day_after",
         default_duration_hours: float = 3.0,
         sport_durations: dict[str, float] | None = None,
+        include_final_events: bool = False,
     ):
         self.create_timing = create_timing
         self.delete_timing = delete_timing
         self.default_duration_hours = default_duration_hours
         self.sport_durations = sport_durations or {}
+        self.include_final_events = include_final_events
 
     def should_create_channel(
         self,
@@ -230,7 +233,7 @@ class ChannelLifecycleManager:
             status_state = event.status.state.lower() if event.status.state else ""
             status_detail = event.status.detail.lower() if event.status.detail else ""
             is_final = status_state in ("final", "post", "completed") or "final" in status_detail
-            if is_final:
+            if is_final and not self.include_final_events:
                 return ExcludedReason.EVENT_FINAL
 
         # Check if we're past delete threshold (event is over)

@@ -560,25 +560,7 @@ export function Settings() {
           <CardDescription>Configure settings for event-based EPG generation (Event Groups)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="event-lookback">Event Lookback</Label>
-              <Select
-                id="event-lookback"
-                value={String(epg?.event_match_days_back ?? 7)}
-                onChange={(e) =>
-                  epg && setEPG({ ...epg, event_match_days_back: parseInt(e.target.value) })
-                }
-              >
-                <option value="1">1 day</option>
-                <option value="3">3 days</option>
-                <option value="7">7 days</option>
-                <option value="14">14 days</option>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                How far back to search for events (weekly sports)
-              </p>
-            </div>
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="event-lookahead">Event Lookahead</Label>
               <Select

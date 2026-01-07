@@ -24,7 +24,6 @@ export interface SchedulerSettings {
 export interface EPGSettings {
   team_schedule_days_ahead: number
   event_match_days_ahead: number
-  event_match_days_back: number
   epg_output_days_ahead: number
   epg_lookback_hours: number
   epg_timezone: string
@@ -36,7 +35,6 @@ export interface EPGSettings {
 
 // Note: team_schedule_days_ahead default is 30 (for Team EPG)
 // Note: event_match_days_ahead default is 3 (for Event Groups)
-// Note: event_match_days_back default is 7 (for weekly sports like NFL)
 
 export interface DurationSettings {
   default: number

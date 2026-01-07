@@ -1275,9 +1275,8 @@ class EventGroupProcessor:
     def _fetch_events(self, leagues: list[str], target_date: date) -> list[Event]:
         """Fetch events from data providers for leagues in parallel.
 
-        Uses event_match_days_back and event_match_days_ahead settings to
-        determine the date range. This handles weekly sports like NFL where
-        games may be 7 days apart.
+        Uses a fixed 7-day lookback (for weekly sports like NFL) and
+        event_match_days_ahead setting for future events.
         """
         if not leagues:
             return []
@@ -1286,11 +1285,12 @@ class EventGroupProcessor:
         num_workers = min(MAX_WORKERS, len(leagues))
 
         # Load date range settings
+        # Note: days_back is hardcoded to 7 for weekly sports like NFL
         with self._db_factory() as conn:
             row = conn.execute(
-                "SELECT event_match_days_back, event_match_days_ahead FROM settings WHERE id = 1"
+                "SELECT event_match_days_ahead FROM settings WHERE id = 1"
             ).fetchone()
-            days_back = row["event_match_days_back"] if row and row["event_match_days_back"] else 2
+            days_back = 7  # Hardcoded for weekly sports
             days_ahead = row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
 
         # Build date range: [target - days_back, target + days_ahead]
@@ -1358,10 +1358,9 @@ class EventGroupProcessor:
         # Load settings for event filtering
         with self._db_factory() as conn:
             row = conn.execute(
-                "SELECT include_final_events, event_match_days_back FROM settings WHERE id = 1"
+                "SELECT include_final_events FROM settings WHERE id = 1"
             ).fetchone()
             include_final_events = bool(row["include_final_events"]) if row else False
-            days_back = row["event_match_days_back"] if row and row["event_match_days_back"] else 2
 
         sport_durations = self._load_sport_durations_cached()
 
@@ -1376,7 +1375,6 @@ class EventGroupProcessor:
             generation=getattr(self, "_generation", None),  # Use shared generation if set
             custom_regex_teams=group.custom_regex_teams,
             custom_regex_teams_enabled=group.custom_regex_teams_enabled,
-            days_back=days_back,
         )
 
         result = matcher.match_all(streams, target_date, progress_callback=stream_progress_callback)

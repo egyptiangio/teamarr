@@ -69,6 +69,7 @@ class ChannelLifecycleService:
         default_duration_hours: float = 3.0,
         sport_durations: dict[str, float] | None = None,
         timezone: str = "America/New_York",
+        include_final_events: bool = False,
     ):
         """Initialize the lifecycle service.
 
@@ -83,6 +84,7 @@ class ChannelLifecycleService:
             default_duration_hours: Default event duration
             sport_durations: Per-sport duration mapping (basketball, football, etc.)
             timezone: User timezone for timing calculations
+            include_final_events: Whether to include completed/final events in EPG
 
         Raises:
             ValueError: If sports_service is not provided
@@ -103,6 +105,7 @@ class ChannelLifecycleService:
             delete_timing=delete_timing,
             default_duration_hours=default_duration_hours,
             sport_durations=sport_durations,
+            include_final_events=include_final_events,
         )
 
         # Thread lock for Dispatcharr operations
