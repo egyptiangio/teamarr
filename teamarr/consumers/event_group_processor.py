@@ -1068,21 +1068,6 @@ class EventGroupProcessor:
             # This ensures lifecycle filtering uses current final status
             matched_streams = self._enrich_matched_events(matched_streams)
 
-            # DEBUG: Log specific event for troubleshooting
-            DEBUG_TEAMS = ("ravens", "steelers", "baltimore", "pittsburgh")
-            for ms in matched_streams:
-                evt = ms.get("event")
-                if evt:
-                    evt_name = (evt.name or "").lower()
-                    if any(team in evt_name for team in DEBUG_TEAMS):
-                        logger.warning(
-                            f"DEBUG [Ravens/Steelers]: MATCHED - "
-                            f"id={evt.id}, name='{evt.name}', "
-                            f"status.state='{evt.status.state}', "
-                            f"status.detail='{evt.status.detail}', "
-                            f"start={evt.start_time}"
-                        )
-
             # Extract all stream IDs for cleanup (V1 parity: cleanup missing streams)
             all_stream_ids = [s.get("id") for s in streams if s.get("id")]
 
@@ -1125,32 +1110,10 @@ class EventGroupProcessor:
                     excl.get("event_id") for excl in lifecycle_result.excluded
                     if excl.get("event_id")
                 }
-
-                # DEBUG: Check if Ravens/Steelers was excluded
-                DEBUG_TEAMS = ("ravens", "steelers", "baltimore", "pittsburgh")
-                for excl in lifecycle_result.excluded:
-                    excl_name = (excl.get("event_name") or "").lower()
-                    if any(team in excl_name for team in DEBUG_TEAMS):
-                        logger.warning(
-                            f"DEBUG [Ravens/Steelers]: EXCLUDED - "
-                            f"id={excl.get('event_id')}, reason={excl.get('reason')}"
-                        )
-
                 xmltv_streams = [
                     ms for ms in matched_streams
                     if ms.get("event") and ms["event"].id not in excluded_event_ids
                 ]
-
-                # DEBUG: Check if Ravens/Steelers made it to XMLTV
-                for ms in xmltv_streams:
-                    evt = ms.get("event")
-                    if evt:
-                        evt_name = (evt.name or "").lower()
-                        if any(team in evt_name for team in DEBUG_TEAMS):
-                            logger.warning(
-                                f"DEBUG [Ravens/Steelers]: IN XMLTV_STREAMS - "
-                                f"id={evt.id}, name='{evt.name}' (NOT FILTERED!)"
-                            )
 
                 xmltv_content, programmes_total, event_programmes, pregame, postgame = (
                     self._generate_xmltv(xmltv_streams, group, conn)
