@@ -498,7 +498,10 @@ class FillerGenerator:
         elif filler_type == FillerType.POSTGAME:
             # Check for conditional postgame template
             if config.postgame_conditional.enabled and last_event:
-                is_final = last_event.status.state == "final"
+                # V1 parity - comprehensive final check
+                status_state = last_event.status.state.lower() if last_event.status.state else ""
+                status_detail = last_event.status.detail.lower() if last_event.status.detail else ""
+                is_final = status_state in ("final", "post", "completed") or "final" in status_detail
                 if is_final and config.postgame_conditional.description_final:
                     return FillerTemplate(
                         title=config.postgame_template.title,
@@ -527,7 +530,10 @@ class FillerGenerator:
 
             # Check for conditional idle template
             if config.idle_conditional.enabled and last_event:
-                is_final = last_event.status.state == "final"
+                # V1 parity - comprehensive final check
+                status_state = last_event.status.state.lower() if last_event.status.state else ""
+                status_detail = last_event.status.detail.lower() if last_event.status.detail else ""
+                is_final = status_state in ("final", "post", "completed") or "final" in status_detail
                 if is_final and config.idle_conditional.description_final:
                     return FillerTemplate(
                         title=config.idle_template.title,

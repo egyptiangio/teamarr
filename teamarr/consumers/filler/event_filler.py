@@ -394,8 +394,10 @@ class EventFillerGenerator:
         if not config.postgame_conditional.enabled:
             return config.postgame_template
 
-        # Check if game is final
-        is_final = event.status.state == "final" or event.status.detail == "Final"
+        # Check if game is final (V1 parity - comprehensive check)
+        status_state = event.status.state.lower() if event.status.state else ""
+        status_detail = event.status.detail.lower() if event.status.detail else ""
+        is_final = status_state in ("final", "post", "completed") or "final" in status_detail
 
         if is_final and config.postgame_conditional.description_final:
             return FillerTemplate(
