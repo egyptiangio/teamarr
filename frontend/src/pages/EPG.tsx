@@ -683,7 +683,7 @@ export function EPG() {
                 {/* XML Content */}
                 <pre
                   ref={previewRef}
-                  className="bg-muted/50 rounded-lg p-4 text-xs font-mono overflow-auto"
+                  className="bg-muted/50 rounded-lg p-4 text-xs font-mono overflow-auto max-h-[600px]"
                   dangerouslySetInnerHTML={{ __html: highlightedContent }}
                 />
               </div>

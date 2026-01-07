@@ -661,23 +661,27 @@ def get_epg_analysis():
 
 @router.get("/epg/content")
 def get_epg_content(
-    max_lines: int = Query(2000, ge=100, le=10000, description="Max lines to return"),
+    max_lines: int = Query(2000, ge=0, le=100000, description="Max lines to return (0 = all)"),
 ):
     """Get raw XMLTV content for preview.
 
     Returns the combined XMLTV content as text for display in UI.
+    Use max_lines=0 to return the full content without truncation.
     """
     xmltv = _get_combined_xmltv()
 
     if not xmltv:
-        return {"content": "", "total_lines": 0, "truncated": False}
+        return {"content": "", "total_lines": 0, "truncated": False, "size_bytes": 0}
 
     lines = xmltv.split("\n")
     total_lines = len(lines)
-    truncated = total_lines > max_lines
 
-    if truncated:
+    # max_lines=0 means no limit
+    if max_lines > 0 and total_lines > max_lines:
+        truncated = True
         lines = lines[:max_lines]
+    else:
+        truncated = False
 
     return {
         "content": "\n".join(lines),

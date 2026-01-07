@@ -84,7 +84,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
         epg=EPGSettings(
             team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,
             event_match_days_ahead=row["event_match_days_ahead"] or 3,
-            event_match_days_back=row["event_match_days_back"] or 7,
+            event_match_days_back=row["event_match_days_back"] or 2,
             epg_output_days_ahead=row["epg_output_days_ahead"] or 14,
             epg_lookback_hours=row["epg_lookback_hours"] or 6,
             epg_timezone=row["epg_timezone"] or "America/New_York",
@@ -229,7 +229,7 @@ def get_epg_settings(conn: Connection) -> EPGSettings:
     return EPGSettings(
         team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,
         event_match_days_ahead=row["event_match_days_ahead"] or 3,
-        event_match_days_back=row["event_match_days_back"] or 7,
+        event_match_days_back=row["event_match_days_back"] or 2,
         epg_output_days_ahead=row["epg_output_days_ahead"] or 14,
         epg_lookback_hours=row["epg_lookback_hours"] or 6,
         epg_timezone=row["epg_timezone"] or "America/New_York",

@@ -54,7 +54,7 @@ class EPGSettings:
 
     team_schedule_days_ahead: int = 30
     event_match_days_ahead: int = 3
-    event_match_days_back: int = 7
+    event_match_days_back: int = 2
     epg_output_days_ahead: int = 14
     epg_lookback_hours: int = 6
     epg_timezone: str = "America/New_York"
