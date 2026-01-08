@@ -637,7 +637,13 @@ class EventGroupProcessor:
             if processed_group_ids:
                 xmltv_contents = get_all_group_xmltv(conn, processed_group_ids)
                 if xmltv_contents:
-                    batch_result.total_xmltv = merge_xmltv_content(xmltv_contents)
+                    from teamarr.database.settings import get_display_settings
+                    display_settings = get_display_settings(conn)
+                    batch_result.total_xmltv = merge_xmltv_content(
+                        xmltv_contents,
+                        generator_name=display_settings.xmltv_generator_name,
+                        generator_url=display_settings.xmltv_generator_url,
+                    )
                     logger.info(
                         f"Aggregated XMLTV from {len(xmltv_contents)} groups, "
                         f"{len(batch_result.total_xmltv)} bytes"

@@ -116,7 +116,7 @@ def run_full_generation(
     from teamarr.consumers.team_processor import get_all_team_xmltv
     from teamarr.database.channels import cleanup_old_history, get_reconciliation_settings
     from teamarr.database.groups import get_all_group_xmltv
-    from teamarr.database.settings import get_dispatcharr_settings, get_epg_settings
+    from teamarr.database.settings import get_dispatcharr_settings, get_display_settings, get_epg_settings
     from teamarr.database.stats import create_run, save_run
     from teamarr.dispatcharr import EPGManager
     from teamarr.services import create_default_service
@@ -153,6 +153,7 @@ def run_full_generation(
         with db_factory() as conn:
             settings = get_epg_settings(conn)
             dispatcharr_settings = get_dispatcharr_settings(conn)
+            display_settings = get_display_settings(conn)
 
         # Step 1: Refresh M3U accounts (0-5%)
         update_progress("init", 3, "Refreshing M3U accounts...")
@@ -237,7 +238,11 @@ def run_full_generation(
 
         output_path = settings.epg_output_path
         if xmltv_contents and output_path:
-            merged_xmltv = merge_xmltv_content(xmltv_contents)
+            merged_xmltv = merge_xmltv_content(
+                xmltv_contents,
+                generator_name=display_settings.xmltv_generator_name,
+                generator_url=display_settings.xmltv_generator_url,
+            )
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(merged_xmltv, encoding="utf-8")

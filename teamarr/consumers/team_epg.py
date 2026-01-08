@@ -54,6 +54,10 @@ class TeamEPGOptions:
     # If True, today's final events are included (same-day completed games)
     include_final_events: bool = False
 
+    # XMLTV generator metadata (for orchestrator-based generation)
+    generator_name: str | None = None
+    generator_url: str | None = None
+
     # Backwards compatibility
     @property
     def days_ahead(self) -> int:

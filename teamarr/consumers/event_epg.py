@@ -44,6 +44,10 @@ class EventEPGOptions:
     # Keys: basketball, football, hockey, baseball, soccer
     sport_durations: dict[str, float] = field(default_factory=dict)
 
+    # XMLTV generator metadata (for orchestrator-based generation)
+    generator_name: str | None = None
+    generator_url: str | None = None
+
 
 class EventEPGGenerator:
     """Generates EPG programmes for events from data providers."""

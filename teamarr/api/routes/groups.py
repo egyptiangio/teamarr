@@ -1128,6 +1128,8 @@ def get_combined_xmltv() -> Response:
     This is useful for having a single EPG source in Dispatcharr.
     """
     from teamarr.database.groups import get_all_groups
+    from teamarr.database.settings import get_display_settings
+    from teamarr.utilities.xmltv import merge_xmltv_content
 
     with get_db() as conn:
         # Get all enabled groups
@@ -1153,10 +1155,13 @@ def get_combined_xmltv() -> Response:
                 detail="No XMLTV generated for any groups. Process groups first.",
             )
 
-    # Merge XMLTV files
-    from teamarr.utilities.xmltv import merge_xmltv_content
+        display_settings = get_display_settings(conn)
 
-    combined = merge_xmltv_content([row["xmltv_content"] for row in rows])
+    combined = merge_xmltv_content(
+        [row["xmltv_content"] for row in rows],
+        generator_name=display_settings.xmltv_generator_name,
+        generator_url=display_settings.xmltv_generator_url,
+    )
 
     return Response(
         content=combined,

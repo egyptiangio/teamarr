@@ -15,6 +15,7 @@ def programmes_to_xmltv(
     programmes: list[Programme],
     channels: list[dict],
     generator_name: str = "Teamarr",
+    generator_url: str | None = None,
 ) -> str:
     """Generate XMLTV XML from programmes.
 
@@ -24,12 +25,15 @@ def programmes_to_xmltv(
         programmes: List of Programme objects
         channels: List of channel dicts with 'id', 'name', 'icon' keys
         generator_name: Generator info for XML header
+        generator_url: Generator URL for XML header
 
     Returns:
         XMLTV XML string
     """
     root = Element("tv")
     root.set("generator-info-name", generator_name)
+    if generator_url:
+        root.set("generator-info-url", generator_url)
 
     # Add all channels first
     for channel in channels:
@@ -131,7 +135,11 @@ def _prettify(xml_str: str) -> str:
     return "\n".join(lines)
 
 
-def merge_xmltv_content(xmltv_contents: list[str]) -> str:
+def merge_xmltv_content(
+    xmltv_contents: list[str],
+    generator_name: str = "Teamarr",
+    generator_url: str | None = None,
+) -> str:
     """Merge multiple XMLTV content strings into one.
 
     Combines channels and programmes from multiple sources,
@@ -140,6 +148,8 @@ def merge_xmltv_content(xmltv_contents: list[str]) -> str:
 
     Args:
         xmltv_contents: List of XMLTV XML strings
+        generator_name: Generator info for XML header
+        generator_url: Generator URL for XML header
 
     Returns:
         Merged XMLTV XML string
@@ -147,7 +157,9 @@ def merge_xmltv_content(xmltv_contents: list[str]) -> str:
     import xml.etree.ElementTree as ET
 
     root = Element("tv")
-    root.set("generator-info-name", "Teamarr v2")
+    root.set("generator-info-name", generator_name)
+    if generator_url:
+        root.set("generator-info-url", generator_url)
 
     seen_channels: set[str] = set()
     seen_programmes: set[tuple[str, str, str]] = set()  # (channel, start, stop)

@@ -455,20 +455,25 @@ def match_streams(
 
 def _get_combined_xmltv() -> str:
     """Get combined XMLTV content from all teams."""
+    from teamarr.database.settings import get_display_settings
+    from teamarr.utilities.xmltv import merge_xmltv_content
+
     with get_db() as conn:
         rows = conn.execute("SELECT xmltv_content FROM team_epg_xmltv ORDER BY team_id").fetchall()
+        display_settings = get_display_settings(conn)
 
     if not rows:
         return ""
-
-    # Merge all XMLTV content
-    from teamarr.utilities.xmltv import merge_xmltv_content
 
     contents = [row["xmltv_content"] for row in rows if row["xmltv_content"]]
     if not contents:
         return ""
 
-    return merge_xmltv_content(contents)
+    return merge_xmltv_content(
+        contents,
+        generator_name=display_settings.xmltv_generator_name,
+        generator_url=display_settings.xmltv_generator_url,
+    )
 
 
 def _analyze_xmltv(xmltv_content: str) -> dict:

@@ -91,7 +91,12 @@ class Orchestrator:
             for config in team_configs
         ]
 
-        xmltv = programmes_to_xmltv(all_programmes, channels)
+        xmltv = programmes_to_xmltv(
+            all_programmes,
+            channels,
+            generator_name=options.generator_name if options and options.generator_name else "Teamarr",
+            generator_url=options.generator_url if options else None,
+        )
 
         return GenerationResult(
             programmes=all_programmes,
@@ -123,7 +128,12 @@ class Orchestrator:
 
         channel_dicts = [{"id": ch.channel_id, "name": ch.name, "icon": ch.icon} for ch in channels]
 
-        xmltv = programmes_to_xmltv(programmes, channel_dicts)
+        xmltv = programmes_to_xmltv(
+            programmes,
+            channel_dicts,
+            generator_name=options.generator_name if options.generator_name else "Teamarr",
+            generator_url=options.generator_url,
+        )
 
         return GenerationResult(
             programmes=programmes,
