@@ -1775,8 +1775,9 @@ class EventGroupProcessor:
             if template_db and (template_db.pregame_enabled or template_db.postgame_enabled):
                 filler_config = template_to_event_filler_config(template_db)
 
-        # Load sport durations from settings
+        # Load sport durations and lookback from settings
         options.sport_durations = self._load_sport_durations(conn)
+        lookback_hours = self._load_lookback_hours(conn)
 
         # Generate programmes and channels from matched streams
         programmes, channels = self._epg_generator.generate_for_matched_streams(
@@ -1794,7 +1795,7 @@ class EventGroupProcessor:
         # Generate filler if enabled in template
         if filler_config:
             filler_result = self._generate_filler_for_streams(
-                matched_streams, filler_config, options.sport_durations
+                matched_streams, filler_config, options.sport_durations, lookback_hours
             )
             if filler_result.programmes:
                 pregame_count = filler_result.pregame_count
@@ -1838,11 +1839,19 @@ class EventGroupProcessor:
             "boxing": settings.get("duration_boxing", 4.0),
         }
 
+    def _load_lookback_hours(self, conn: Connection) -> int:
+        """Load EPG lookback hours setting from database."""
+        row = conn.execute("SELECT epg_lookback_hours FROM settings WHERE id = 1").fetchone()
+        if not row:
+            return 6  # Default
+        return row[0] or 6
+
     def _generate_filler_for_streams(
         self,
         matched_streams: list[dict],
         filler_config: EventFillerConfig,
         sport_durations: dict[str, float],
+        lookback_hours: int = 6,
     ) -> EventFillerResult:
         """Generate filler programmes for matched event streams.
 
@@ -1850,6 +1859,7 @@ class EventGroupProcessor:
             matched_streams: List of matched stream/event dicts
             filler_config: Filler configuration from template
             sport_durations: Sport duration settings
+            lookback_hours: How far back to generate EPG (for preceding content)
 
         Returns:
             EventFillerResult with programmes and pregame/postgame counts
@@ -1862,10 +1872,11 @@ class EventGroupProcessor:
         # Get configured timezone
         tz = get_user_timezone()
 
-        # Build filler options
+        # Build filler options - lookback allows preceding EPG content
         now = datetime.now(tz)
+        epg_start = now - timedelta(hours=lookback_hours)
         options = EventFillerOptions(
-            epg_start=now,
+            epg_start=epg_start,
             epg_end=now + timedelta(days=1),  # 24 hour window
             epg_timezone=str(tz),
             sport_durations=sport_durations,
