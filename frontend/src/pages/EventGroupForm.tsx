@@ -1819,13 +1819,20 @@ export function EventGroupForm() {
                     }}
                   />
 
-                  <p className="text-xs text-muted-foreground">
-                    {!(formData.include_teams?.length || formData.exclude_teams?.length)
-                      ? "No filter active. All events will be matched."
-                      : formData.team_filter_mode === "include"
-                        ? `Only events involving ${formData.include_teams?.length} selected team(s) will be matched.`
-                        : `Events involving ${formData.exclude_teams?.length} selected team(s) will be excluded.`}
-                  </p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      {!(formData.include_teams?.length || formData.exclude_teams?.length)
+                        ? "No filter active. All events will be matched."
+                        : formData.team_filter_mode === "include"
+                          ? `Only events involving ${formData.include_teams?.length} selected team(s) will be matched.`
+                          : `Events involving ${formData.exclude_teams?.length} selected team(s) will be excluded.`}
+                    </p>
+                    {(formData.include_teams?.length || formData.exclude_teams?.length) ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Filter only applies to leagues where you've made selections.
+                      </p>
+                    ) : null}
+                  </div>
                 </CardContent>
               )}
             </Card>

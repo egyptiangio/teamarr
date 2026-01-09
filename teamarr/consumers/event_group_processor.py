@@ -1505,10 +1505,22 @@ class EventGroupProcessor:
         filtered = []
         filtered_count = 0
 
+        # Extract leagues that have teams in the filter
+        # Only filter events from leagues with explicit selections
+        filter_leagues = {f.get("league") for f in filter_list if f.get("league")}
+
         for match in matched_streams:
             event = match.get("event")
             if not event:
                 # No event - can't filter by team, keep it
+                filtered.append(match)
+                continue
+
+            # Get event's league
+            event_league = event.league if event else None
+
+            # If no teams from this league are in the filter, pass through unfiltered
+            if event_league and event_league not in filter_leagues:
                 filtered.append(match)
                 continue
 

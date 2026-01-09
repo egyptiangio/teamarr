@@ -830,13 +830,20 @@ export function Settings() {
 
           {/* Status message and Save button */}
           <div className="flex justify-between items-center">
-            <p className="text-xs text-muted-foreground">
-              {!(teamFilter.include_teams?.length || teamFilter.exclude_teams?.length)
-                ? "No filter active. All events will be matched."
-                : teamFilter.mode === "include"
-                  ? `Only events involving ${teamFilter.include_teams?.length} selected team(s) will be matched.`
-                  : `Events involving ${teamFilter.exclude_teams?.length} selected team(s) will be excluded.`}
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">
+                {!(teamFilter.include_teams?.length || teamFilter.exclude_teams?.length)
+                  ? "No filter active. All events will be matched."
+                  : teamFilter.mode === "include"
+                    ? `Only events involving ${teamFilter.include_teams?.length} selected team(s) will be matched.`
+                    : `Events involving ${teamFilter.exclude_teams?.length} selected team(s) will be excluded.`}
+              </p>
+              {(teamFilter.include_teams?.length || teamFilter.exclude_teams?.length) ? (
+                <p className="text-xs text-muted-foreground italic">
+                  Filter only applies to leagues where you've made selections.
+                </p>
+              ) : null}
+            </div>
             <Button
               onClick={() => {
                 updateTeamFilter.mutate({
