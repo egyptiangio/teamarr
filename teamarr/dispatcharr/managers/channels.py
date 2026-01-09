@@ -217,6 +217,7 @@ class ChannelManager:
         channel_group_id: int | None = None,
         logo_id: int | None = None,
         stream_profile_id: int | None = None,
+        channel_profile_ids: list[int] | None = None,
     ) -> OperationResult:
         """Create a new channel in Dispatcharr.
 
@@ -228,6 +229,7 @@ class ChannelManager:
             channel_group_id: Optional group to assign channel to
             logo_id: Optional logo ID
             stream_profile_id: Optional stream profile ID
+            channel_profile_ids: Optional list of channel profile IDs to add to
 
         Returns:
             OperationResult with success status and created channel data
@@ -246,6 +248,9 @@ class ChannelManager:
             payload["logo_id"] = logo_id
         if stream_profile_id:
             payload["stream_profile_id"] = stream_profile_id
+        # Always send profile_ids - empty array means no profiles
+        if channel_profile_ids is not None:
+            payload["profile_ids"] = channel_profile_ids
 
         response = self._client.post("/api/channels/channels/", payload)
 

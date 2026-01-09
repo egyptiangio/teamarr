@@ -17,7 +17,7 @@ from sqlite3 import Connection
 
 logger = logging.getLogger(__name__)
 
-MAX_CHANNEL = 9999
+MAX_CHANNEL = 999999  # Effectively no limit per Dispatcharr update
 
 
 def get_global_channel_range(conn: Connection) -> tuple[int, int | None]:

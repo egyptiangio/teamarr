@@ -1202,7 +1202,6 @@ export function EventGroupForm() {
                     id="channel_start"
                     type="number"
                     min={1}
-                    max={9999}
                     value={formData.channel_start_number || ""}
                     onChange={(e) =>
                       setFormData({
@@ -1213,7 +1212,7 @@ export function EventGroupForm() {
                     placeholder="Required for MANUAL mode"
                   />
                   <p className="text-xs text-muted-foreground">
-                    First channel number for created channels (max 9999)
+                    First channel number for created channels
                   </p>
                 </div>
               )}
