@@ -631,16 +631,16 @@ def get_all_team_xmltv(conn: Connection, team_ids: list[int] | None = None) -> l
             cursor = conn.execute(
                 f"""SELECT x.xmltv_content FROM team_epg_xmltv x
                     JOIN teams t ON x.team_id = t.id
-                    WHERE t.id IN ({placeholders}) AND t.enabled = 1
+                    WHERE t.id IN ({placeholders}) AND t.active = 1
                     AND x.xmltv_content IS NOT NULL AND x.xmltv_content != ''""",
                 team_ids,
             )
         else:
-            # Get XMLTV for all enabled teams only
+            # Get XMLTV for all active teams only
             cursor = conn.execute(
                 """SELECT x.xmltv_content FROM team_epg_xmltv x
                    JOIN teams t ON x.team_id = t.id
-                   WHERE t.enabled = 1
+                   WHERE t.active = 1
                    AND x.xmltv_content IS NOT NULL AND x.xmltv_content != ''"""
             )
 

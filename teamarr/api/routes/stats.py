@@ -342,7 +342,7 @@ def get_live_stats(
                 SELECT x.xmltv_content
                 FROM team_epg_xmltv x
                 JOIN teams t ON x.team_id = t.id
-                WHERE t.enabled = 1
+                WHERE t.active = 1
                 AND x.xmltv_content IS NOT NULL AND x.xmltv_content != ''
             """)
             for row in cursor.fetchall():

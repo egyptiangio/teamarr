@@ -459,11 +459,11 @@ def _get_combined_xmltv() -> str:
     from teamarr.utilities.xmltv import merge_xmltv_content
 
     with get_db() as conn:
-        # Only get XMLTV for enabled teams
+        # Only get XMLTV for active teams
         rows = conn.execute(
             """SELECT x.xmltv_content FROM team_epg_xmltv x
                JOIN teams t ON x.team_id = t.id
-               WHERE t.enabled = 1
+               WHERE t.active = 1
                AND x.xmltv_content IS NOT NULL AND x.xmltv_content != ''
                ORDER BY t.id"""
         ).fetchall()
