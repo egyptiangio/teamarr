@@ -140,15 +140,6 @@ export function Settings() {
     queryFn: () => getLeagues(),
   })
 
-  // V1 Migration state
-  const [v1DbPath, setV1DbPath] = useState("/v1-data/teamarr.db")
-  const [isMigrating, setIsMigrating] = useState<string | null>(null)
-  const [migrationResults, setMigrationResults] = useState<{
-    templates?: { count: number; items: string[] }
-    teams?: { count: number; items: string[] }
-    groups?: { count: number; items: string[] }
-  } | null>(null)
-
   // Local form state
   const [dispatcharr, setDispatcharr] = useState<Partial<DispatcharrSettings>>({})
   const [lifecycle, setLifecycle] = useState<LifecycleSettings | null>(null)
@@ -331,70 +322,6 @@ export function Settings() {
       toast.success("Keyword deleted")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete keyword")
-    }
-  }
-
-  const handleMigrateV1 = async (type: "templates" | "teams" | "groups" | "all") => {
-    if (!v1DbPath.trim()) {
-      toast.error("Please enter the path to your V1 database")
-      return
-    }
-    setIsMigrating(type)
-    try {
-      const endpoint = type === "all"
-        ? "/api/v1/templates/migrate-v1-all"
-        : `/api/v1/templates/migrate-v1${type === "templates" ? "" : `-${type}`}`
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ v1_db_path: v1DbPath }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.detail || "Migration failed")
-      }
-
-      // Update results based on type
-      if (type === "all") {
-        setMigrationResults({
-          templates: { count: data.templates_migrated, items: [] },
-          teams: { count: data.teams_migrated, items: [] },
-          groups: { count: data.groups_migrated, items: [] },
-        })
-      } else if (type === "templates") {
-        setMigrationResults(prev => ({
-          ...prev,
-          templates: { count: data.migrated_count, items: data.templates || [] },
-        }))
-      } else if (type === "teams") {
-        setMigrationResults(prev => ({
-          ...prev,
-          teams: { count: data.migrated_count, items: data.teams || [] },
-        }))
-      } else if (type === "groups") {
-        setMigrationResults(prev => ({
-          ...prev,
-          groups: { count: data.migrated_count, items: data.groups || [] },
-        }))
-      }
-
-      if (type === "all") {
-        const total = data.templates_migrated + data.teams_migrated + data.groups_migrated
-        if (total > 0) {
-          toast.success(data.message)
-        } else {
-          toast.info(data.message)
-        }
-      } else if (data.migrated_count > 0) {
-        toast.success(data.message)
-      } else {
-        toast.info(data.message)
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Migration failed")
-    } finally {
-      setIsMigrating(null)
     }
   }
 
@@ -1421,26 +1348,6 @@ export function Settings() {
               Event Groups Only
             </Button>
           </div>
-
-          {migrationResults && (
-            <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
-              <p className="text-sm font-medium">Migration Results:</p>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Templates:</span>{" "}
-                  <span className="font-medium">{migrationResults.templates?.count ?? 0}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Teams:</span>{" "}
-                  <span className="font-medium">{migrationResults.teams?.count ?? 0}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Event Groups:</span>{" "}
-                  <span className="font-medium">{migrationResults.groups?.count ?? 0}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
