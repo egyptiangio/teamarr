@@ -56,16 +56,26 @@ def get_cache_ttl_for_date(target_date: date) -> int:
 # These are public keys used by the official league websites
 # Source: https://gist.github.com/sethwv/e48703d6a8a557391e0938849329e329
 API_KEYS: dict[str, str] = {
-    # CHL - Canadian Hockey League (shared key)
+    # CHL - Canadian Hockey League and member leagues (shared key)
+    "chl": "f1aa699db3d81487",
     "ohl": "f1aa699db3d81487",
     "whl": "f1aa699db3d81487",
     "lhjmq": "f1aa699db3d81487",  # QMJHL uses lhjmq as client_code
     # AHL - American Hockey League
     "ahl": "50c2cd9b5e18e390",
+    # ECHL - East Coast Hockey League
+    "echl": "2c2b89ea7345cae8",
     # PWHL - Professional Women's Hockey League
     "pwhl": "446521baf8c38984",
     # USHL - United States Hockey League
     "ushl": "e828f89b243dc43f",
+    # Canadian Junior A leagues
+    "ojhl": "77a0bd73d9d363d3",   # Ontario Junior Hockey League
+    "bchl": "ca4e9e599d4dae55",   # British Columbia Hockey League
+    "sjhl": "2fb5c2e84bf3e4a8",   # Saskatchewan Junior Hockey League
+    "ajhl": "cbe60a1d91c44ade",   # Alberta Junior Hockey League
+    "mjhl": "f894c324fe5fd8f0",   # Manitoba Junior Hockey League
+    "mhl": "4a948e7faf5ee58d",    # Maritime Junior Hockey League
 }
 
 

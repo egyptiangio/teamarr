@@ -566,6 +566,16 @@ INSERT OR REPLACE INTO leagues (league_code, provider, provider_league_id, provi
 
     -- Hockey - Junior (HockeyTech)
     ('ushl', 'hockeytech', 'ushl', NULL, 'United States Hockey League', 'Hockey', 'https://dbukjj6eu5tsf.cloudfront.net/ushl.sidearmsports.com/images/responsive_2022/ushl_on-dark.svg', NULL, 1, 'USHL', 'ushl', 'team_vs_team', NULL, NULL, NULL),
+    ('echl', 'hockeytech', 'echl', NULL, 'East Coast Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/ECHL.png', NULL, 1, 'ECHL', 'echl', 'team_vs_team', NULL, NULL, NULL),
+
+    -- Hockey - Canadian Junior A (HockeyTech)
+    ('chl', 'hockeytech', 'chl', NULL, 'Canadian Hockey League', 'Hockey', 'https://raw.githubusercontent.com/sethwv/game-thumbs/dev/assets/CHL.png', NULL, 1, 'CHL', 'chl', 'team_vs_team', NULL, NULL, NULL),
+    ('ojhl', 'hockeytech', 'ojhl', NULL, 'Ontario Junior Hockey League', 'Hockey', 'https://www.ojhl.ca/wp-content/uploads/sites/2/2023/04/cropped-ojhl-512.png', NULL, 1, 'OJHL', 'ojhl', 'team_vs_team', NULL, NULL, NULL),
+    ('bchl', 'hockeytech', 'bchl', NULL, 'British Columbia Hockey League', 'Hockey', 'https://bchl.ca/wp-content/uploads/2015/12/BCHL-Footer-Logo.png', NULL, 1, 'BCHL', 'bchl', 'team_vs_team', NULL, NULL, NULL),
+    ('sjhl', 'hockeytech', 'sjhl', NULL, 'Saskatchewan Junior Hockey League', 'Hockey', 'https://www.sjhl.ca/wp-content/uploads/sites/2/2019/08/SJHL_Logo_512px.png', NULL, 1, 'SJHL', 'sjhl', 'team_vs_team', NULL, NULL, NULL),
+    ('ajhl', 'hockeytech', 'ajhl', NULL, 'Alberta Junior Hockey League', 'Hockey', 'https://www.ajhl.ca/wp-content/uploads/sites/2/2022/05/cropped-ajhl_512.png', NULL, 1, 'AJHL', 'ajhl', 'team_vs_team', NULL, NULL, NULL),
+    ('mjhl', 'hockeytech', 'mjhl', NULL, 'Manitoba Junior Hockey League', 'Hockey', 'https://www.mjhlhockey.ca/wp-content/uploads/sites/2/2019/06/cropped-MJHLalternate-web-600x.png', NULL, 1, 'MJHL', 'mjhl', 'team_vs_team', NULL, NULL, NULL),
+    ('mhl', 'hockeytech', 'mhl', NULL, 'Maritime Junior Hockey League', 'Hockey', 'https://www.themhl.ca/wp-content/uploads/sites/2/2021/10/cropped-mhl_512.png', NULL, 1, 'MHL', 'mhl', 'team_vs_team', NULL, NULL, NULL),
 
     -- Baseball (ESPN)
     ('mlb', 'espn', 'baseball/mlb', NULL, 'MLB', 'Baseball', 'https://a.espncdn.com/i/teamlogos/leagues/500/mlb.png', NULL, 1, NULL, 'mlb', 'team_vs_team', 'MLB Baseball', NULL, NULL),
