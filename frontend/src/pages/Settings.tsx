@@ -12,8 +12,6 @@ import {
   Database,
   Plus,
   Trash2,
-  Upload,
-  ArrowRight,
 } from "lucide-react"
 import { useGenerationProgress } from "@/contexts/GenerationContext"
 import { Button } from "@/components/ui/button"
@@ -1306,50 +1304,8 @@ export function Settings() {
       <>
       <div className="mb-4">
         <h2 className="text-lg font-semibold">Advanced</h2>
-        <p className="text-sm text-muted-foreground">Import, export, and other advanced options</p>
+        <p className="text-sm text-muted-foreground">Advanced configuration options</p>
       </div>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Import from V1
-              </CardTitle>
-              <CardDescription>Migrate templates, teams, and event groups from Teamarr V1</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* V1 Migration disabled for beta */}
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 space-y-2">
-            <p className="text-sm font-medium text-amber-400">Temporarily Disabled</p>
-            <p className="text-sm text-muted-foreground">
-              V1 migration is temporarily disabled while we fix some edge cases in the migration logic.
-              Please manually recreate your templates, teams, and event groups in V2 for now.
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">
-              This feature will be re-enabled in a future release.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2 opacity-50">
-            <Button disabled>
-              <ArrowRight className="h-4 w-4 mr-1" />
-              Migrate All
-            </Button>
-            <Button variant="outline" disabled>
-              Templates Only
-            </Button>
-            <Button variant="outline" disabled>
-              Teams Only
-            </Button>
-            <Button variant="outline" disabled>
-              Event Groups Only
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

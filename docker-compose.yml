@@ -7,8 +7,5 @@ services:
       - 9195:9195
     volumes:
       - ./data:/app/data
-      # V1 Migration: Mount your V1 data directory to import templates
-      # Uncomment and adjust the path to your V1 installation:
-      # - /path/to/v1/teamarr/data:/v1-data:ro
     environment:
       - TZ=America/Detroit

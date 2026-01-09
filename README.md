@@ -55,28 +55,6 @@ open http://localhost:9195
 
 **TheSportsDB**: OHL, WHL, QMJHL, NLL, PLL, IPL, BBL, CPL, T20 Blast, Boxing
 
-## Migrating from V1
-
-If you have an existing V1 installation, you can import your templates to V2:
-
-1. **Update docker-compose.yml** - Mount your V1 data directory:
-   ```yaml
-   volumes:
-     - ./data:/app/data
-     - /path/to/v1/teamarr/data:/v1-data:ro  # Add this line
-   ```
-
-2. **Restart the container**:
-   ```bash
-   docker compose up -d
-   ```
-
-3. **Import templates** - Go to Settings > "Import from V1" and click "Import Templates"
-
-The default path is `/v1-data/teamarr.db`. Adjust if your V1 database is in a different location.
-
-**Note**: V2 uses a different database schema. Only templates are migrated - teams and event groups must be recreated.
-
 ## Configuration
 
 1. Open http://localhost:9195
