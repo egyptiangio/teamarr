@@ -780,7 +780,8 @@ class ChannelLifecycleService:
                     if logo_result.success and logo_result.logo:
                         dispatcharr_logo_id = logo_result.logo.get("id")
 
-                # Create channel (profile IDs passed in request per Dispatcharr caf56a5)
+                # Create channel (profile_ids in create request is not supported
+                # by Dispatcharr's regular channel endpoint - only from-stream endpoint)
                 create_result = self._channel_manager.create_channel(
                     name=channel_name,
                     channel_number=channel_number,
@@ -789,7 +790,6 @@ class ChannelLifecycleService:
                     channel_group_id=channel_group_id,
                     logo_id=dispatcharr_logo_id,
                     stream_profile_id=stream_profile_id,
-                    channel_profile_ids=channel_profile_ids if channel_profile_ids else [],
                 )
 
                 if not create_result.success:
@@ -801,6 +801,14 @@ class ChannelLifecycleService:
                 if create_result.channel:
                     dispatcharr_channel_id = create_result.channel.get("id")
                     dispatcharr_uuid = create_result.channel.get("uuid")
+
+                    # Add to channel profiles via explicit PATCH calls
+                    # (regular create endpoint doesn't support profile_ids)
+                    for profile_id in channel_profile_ids:
+                        self._channel_manager.add_to_profile(
+                            profile_id,
+                            dispatcharr_channel_id,
+                        )
 
         # Create in DB - with rollback protection for Dispatcharr orphans
         try:
