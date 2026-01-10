@@ -15,6 +15,7 @@ class DispatcharrSettings:
     username: str | None = None
     password: str | None = None
     epg_id: int | None = None
+    default_channel_profile_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

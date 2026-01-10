@@ -7,6 +7,7 @@ export interface DispatcharrSettings {
   username: string | null
   password: string | null
   epg_id: number | null
+  default_channel_profile_ids: number[]
 }
 
 export interface LifecycleSettings {

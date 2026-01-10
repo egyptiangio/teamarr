@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS settings (
     dispatcharr_username TEXT,
     dispatcharr_password TEXT,                -- Note: Consider encrypting in production
     dispatcharr_epg_id INTEGER,               -- Teamarr's EPG source ID in Dispatcharr
+    default_channel_profile_ids JSON,         -- Default channel profiles for event channels
 
     -- Reconciliation Settings
     reconcile_on_epg_generation BOOLEAN DEFAULT 1,

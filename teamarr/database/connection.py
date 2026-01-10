@@ -348,6 +348,8 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     - 13: Added display_name to event_epg_groups
     - 14: Added streams_excluded to event_epg_groups
     - 15: Renamed filtered_no_match -> failed_count (clearer stat categories)
+    - 16-22: Various additions (see individual migrations)
+    - 23: Added default_channel_profile_ids to settings
     """
     # Get current schema version
     try:
@@ -662,6 +664,16 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE settings SET schema_version = 22 WHERE id = 1")
         logger.info("Schema upgraded to version 22 (default team filter settings)")
         current_version = 22
+
+    # Version 23: Add default_channel_profile_ids to settings
+    # Default Dispatcharr channel profiles for new event channels
+    if current_version < 23:
+        _add_column_if_not_exists(
+            conn, "settings", "default_channel_profile_ids", "JSON"
+        )
+        conn.execute("UPDATE settings SET schema_version = 23 WHERE id = 1")
+        logger.info("Schema upgraded to version 23 (default_channel_profile_ids)")
+        current_version = 23
 
 
 def _rename_filtered_no_match_to_failed_count(conn: sqlite3.Connection) -> None:

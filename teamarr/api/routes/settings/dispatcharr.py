@@ -28,6 +28,7 @@ def get_dispatcharr_settings():
         username=settings.username,
         password="********" if settings.password else None,
         epg_id=settings.epg_id,
+        default_channel_profile_ids=settings.default_channel_profile_ids,
     )
 
 
@@ -48,6 +49,7 @@ def update_dispatcharr_settings(update: DispatcharrSettingsUpdate):
             username=update.username,
             password=update.password,
             epg_id=update.epg_id,
+            default_channel_profile_ids=update.default_channel_profile_ids,
         )
 
     # Trigger reconnect on next use
@@ -67,6 +69,7 @@ def update_dispatcharr_settings(update: DispatcharrSettingsUpdate):
         username=settings.username,
         password="********" if settings.password else None,
         epg_id=settings.epg_id,
+        default_channel_profile_ids=settings.default_channel_profile_ids,
     )
 
 

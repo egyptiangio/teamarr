@@ -14,6 +14,7 @@ def update_dispatcharr_settings(
     username: str | None = None,
     password: str | None = None,
     epg_id: int | None = None,
+    default_channel_profile_ids: list[int] | None = None,
 ) -> bool:
     """Update Dispatcharr settings.
 
@@ -26,6 +27,7 @@ def update_dispatcharr_settings(
         username: Username
         password: Password
         epg_id: EPG source ID in Dispatcharr
+        default_channel_profile_ids: Default channel profiles for event channels
 
     Returns:
         True if updated
@@ -48,6 +50,9 @@ def update_dispatcharr_settings(
     if epg_id is not None:
         updates.append("dispatcharr_epg_id = ?")
         values.append(epg_id)
+    if default_channel_profile_ids is not None:
+        updates.append("default_channel_profile_ids = ?")
+        values.append(json.dumps(default_channel_profile_ids) if default_channel_profile_ids else None)
 
     if not updates:
         return False

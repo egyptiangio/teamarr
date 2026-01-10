@@ -197,6 +197,13 @@ class ChannelLifecycleService:
                     group_config.get("channel_profile_ids")
                 )
 
+                # Fallback to default profiles from settings if group has none
+                if not channel_profile_ids:
+                    from teamarr.database.settings import get_dispatcharr_settings
+
+                    dispatcharr_settings = get_dispatcharr_settings(conn)
+                    channel_profile_ids = dispatcharr_settings.default_channel_profile_ids
+
                 for matched in matched_streams:
                     stream = matched.get("stream", {})
                     event = matched.get("event")
@@ -781,8 +788,8 @@ class ChannelLifecycleService:
                         dispatcharr_logo_id = logo_result.logo.get("id")
 
                 # Create channel with channel_profile_ids
-                # Note: empty [] is treated as "all profiles" by Dispatcharr,
-                # so we handle that case after creation by removing from all
+                # Note: empty [] means "all profiles" in Dispatcharr (default behavior)
+                # Group profiles fallback to settings defaults in process_matched_streams()
                 create_result = self._channel_manager.create_channel(
                     name=channel_name,
                     channel_number=channel_number,
@@ -803,16 +810,6 @@ class ChannelLifecycleService:
                 if create_result.channel:
                     dispatcharr_channel_id = create_result.channel.get("id")
                     dispatcharr_uuid = create_result.channel.get("uuid")
-
-                    # Handle "no profiles" case: Dispatcharr treats [] as "all profiles"
-                    # so we must explicitly remove from all profiles
-                    if channel_profile_ids is not None and len(channel_profile_ids) == 0:
-                        all_profiles = self._channel_manager.list_profiles()
-                        for profile in all_profiles:
-                            self._channel_manager.remove_from_profile(
-                                profile.id,
-                                dispatcharr_channel_id,
-                            )
 
         # Create in DB - with rollback protection for Dispatcharr orphans
         try:

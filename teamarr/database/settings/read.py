@@ -149,7 +149,7 @@ def get_dispatcharr_settings(conn: Connection) -> DispatcharrSettings:
     """
     cursor = conn.execute(
         """SELECT dispatcharr_enabled, dispatcharr_url, dispatcharr_username,
-                  dispatcharr_password, dispatcharr_epg_id
+                  dispatcharr_password, dispatcharr_epg_id, default_channel_profile_ids
            FROM settings WHERE id = 1"""
     )
     row = cursor.fetchone()
@@ -157,12 +157,21 @@ def get_dispatcharr_settings(conn: Connection) -> DispatcharrSettings:
     if not row:
         return DispatcharrSettings()
 
+    # Parse JSON for default_channel_profile_ids
+    default_profile_ids = []
+    if row["default_channel_profile_ids"]:
+        try:
+            default_profile_ids = json.loads(row["default_channel_profile_ids"])
+        except json.JSONDecodeError:
+            default_profile_ids = []
+
     return DispatcharrSettings(
         enabled=bool(row["dispatcharr_enabled"]),
         url=row["dispatcharr_url"],
         username=row["dispatcharr_username"],
         password=row["dispatcharr_password"],
         epg_id=row["dispatcharr_epg_id"],
+        default_channel_profile_ids=default_profile_ids,
     )
 
 

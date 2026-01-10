@@ -18,6 +18,7 @@ class DispatcharrSettingsModel(BaseModel):
     username: str | None = None
     password: str | None = None
     epg_id: int | None = None
+    default_channel_profile_ids: list[int] = []
 
 
 class DispatcharrSettingsUpdate(BaseModel):
@@ -28,6 +29,7 @@ class DispatcharrSettingsUpdate(BaseModel):
     username: str | None = None
     password: str | None = None
     epg_id: int | None = None
+    default_channel_profile_ids: list[int] | None = None
 
 
 class ConnectionTestRequest(BaseModel):

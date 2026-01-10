@@ -13,6 +13,7 @@ import {
   Database,
   Plus,
   Trash2,
+  X,
 } from "lucide-react"
 import { useGenerationProgress } from "@/contexts/GenerationContext"
 import { Button } from "@/components/ui/button"
@@ -112,6 +113,20 @@ export function Settings() {
   const { data: settings, isLoading, error, refetch } = useSettings()
   const dispatcharrStatus = useDispatcharrStatus()
   const epgSourcesQuery = useDispatcharrEPGSources(dispatcharrStatus.data?.connected ?? false)
+
+  // Fetch channel profiles from Dispatcharr
+  const channelProfilesQuery = useQuery({
+    queryKey: ["dispatcharr-channel-profiles"],
+    queryFn: async () => {
+      const response = await fetch("/api/v1/dispatcharr/channel-profiles")
+      if (!response.ok) {
+        throw new Error(response.status === 503 ? "Dispatcharr not connected" : "Failed to fetch channel profiles")
+      }
+      return response.json() as Promise<{ id: number; name: string }[]>
+    },
+    enabled: dispatcharrStatus.data?.connected ?? false,
+    retry: false,
+  })
   const schedulerStatus = useSchedulerStatus()
   const { data: cacheStatus, refetch: refetchCache } = useCacheStatus()
   const refreshCacheMutation = useRefreshCache()
@@ -154,6 +169,11 @@ export function Settings() {
   })
   const [newKeyword, setNewKeyword] = useState({ keywords: "", behavior: "consolidate" })
 
+  // Channel profile creation state
+  const [showCreateProfile, setShowCreateProfile] = useState(false)
+  const [newProfileName, setNewProfileName] = useState("")
+  const [creatingProfile, setCreatingProfile] = useState(false)
+
   // Initialize local state from settings
   useEffect(() => {
     if (settings) {
@@ -163,6 +183,7 @@ export function Settings() {
         username: settings.dispatcharr.username,
         password: "", // Don't show masked password
         epg_id: settings.dispatcharr.epg_id,
+        default_channel_profile_ids: settings.dispatcharr.default_channel_profile_ids || [],
       })
       setLifecycle(settings.lifecycle)
       setScheduler(settings.scheduler)
@@ -198,6 +219,7 @@ export function Settings() {
         url: dispatcharr.url,
         username: dispatcharr.username,
         epg_id: dispatcharr.epg_id,
+        default_channel_profile_ids: dispatcharr.default_channel_profile_ids,
       }
       if (dispatcharr.password) {
         data.password = dispatcharr.password
@@ -1101,6 +1123,14 @@ export function Settings() {
               <CardDescription>Configure connection to Dispatcharr for channel management</CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              <Button onClick={handleTestConnection} variant="outline" size="sm" disabled={testConnection.isPending}>
+                {testConnection.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <TestTube className="h-4 w-4 mr-1" />
+                )}
+                Test
+              </Button>
               {dispatcharrStatus.data?.connected ? (
                 <Badge variant="success" className="gap-1">
                   <CheckCircle className="h-3 w-3" /> Connected
@@ -1131,6 +1161,7 @@ export function Settings() {
             </div>
           )}
 
+          {/* 1. Enable */}
           <div className="flex items-center gap-2">
             <Switch
               checked={dispatcharr.enabled ?? false}
@@ -1139,39 +1170,18 @@ export function Settings() {
             <Label>Enable Dispatcharr Integration</Label>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dispatcharr-url">URL</Label>
-              <Input
-                id="dispatcharr-url"
-                value={dispatcharr.url ?? ""}
-                onChange={(e) => setDispatcharr({ ...dispatcharr, url: e.target.value })}
-                placeholder="http://localhost:5000"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dispatcharr-epg">EPG Source</Label>
-              <Select
-                id="dispatcharr-epg"
-                value={dispatcharr.epg_id?.toString() ?? ""}
-                onChange={(e) =>
-                  setDispatcharr({
-                    ...dispatcharr,
-                    epg_id: e.target.value ? parseInt(e.target.value) : null,
-                  })
-                }
-                disabled={!dispatcharrStatus.data?.connected}
-              >
-                <option value="">Select EPG source...</option>
-                {epgSourcesQuery.data?.sources?.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name} ({source.source_type})
-                  </option>
-                ))}
-              </Select>
-            </div>
+          {/* 2. URL */}
+          <div className="space-y-2">
+            <Label htmlFor="dispatcharr-url">URL</Label>
+            <Input
+              id="dispatcharr-url"
+              value={dispatcharr.url ?? ""}
+              onChange={(e) => setDispatcharr({ ...dispatcharr, url: e.target.value })}
+              placeholder="http://localhost:5000"
+            />
           </div>
 
+          {/* 3. Credentials */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="dispatcharr-username">Username</Label>
@@ -1193,24 +1203,157 @@ export function Settings() {
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={handleTestConnection} variant="outline" disabled={testConnection.isPending}>
-              {testConnection.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <TestTube className="h-4 w-4 mr-1" />
-              )}
-              Test Connection
-            </Button>
-            <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
-              {updateDispatcharr.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
-              )}
-              Save
-            </Button>
+          {/* 4. EPG Source */}
+          <div className="space-y-2">
+            <Label htmlFor="dispatcharr-epg">EPG Source</Label>
+            <Select
+              id="dispatcharr-epg"
+              value={dispatcharr.epg_id?.toString() ?? ""}
+              onChange={(e) =>
+                setDispatcharr({
+                  ...dispatcharr,
+                  epg_id: e.target.value ? parseInt(e.target.value) : null,
+                })
+              }
+              disabled={!dispatcharrStatus.data?.connected}
+            >
+              <option value="">Select EPG source...</option>
+              {epgSourcesQuery.data?.sources?.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.name} ({source.source_type})
+                </option>
+              ))}
+            </Select>
           </div>
+
+          {/* 5. Default Channel Profiles */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Default Channel Profiles</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => setShowCreateProfile(!showCreateProfile)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                New
+              </Button>
+            </div>
+            {showCreateProfile && (
+              <div className="flex gap-2 p-2 bg-muted/50 rounded-md">
+                <Input
+                  placeholder="New profile name..."
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={creatingProfile || !newProfileName.trim()}
+                  onClick={async () => {
+                    setCreatingProfile(true)
+                    try {
+                      const response = await fetch(`/api/v1/dispatcharr/channel-profiles?name=${encodeURIComponent(newProfileName.trim())}`, {
+                        method: "POST",
+                      })
+                      if (response.ok) {
+                        const created = await response.json()
+                        toast.success(`Created profile "${created.name}"`)
+                        setDispatcharr({
+                          ...dispatcharr,
+                          default_channel_profile_ids: [...(dispatcharr.default_channel_profile_ids ?? []), created.id],
+                        })
+                        setNewProfileName("")
+                        setShowCreateProfile(false)
+                        channelProfilesQuery.refetch()
+                      } else {
+                        toast.error("Failed to create profile")
+                      }
+                    } catch {
+                      toast.error("Failed to create profile")
+                    }
+                    setCreatingProfile(false)
+                  }}
+                >
+                  {creatingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowCreateProfile(false)
+                    setNewProfileName("")
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2 min-h-[36px] p-2 border rounded-md bg-background">
+              {(dispatcharr.default_channel_profile_ids ?? []).map((profileId) => {
+                const profile = channelProfilesQuery.data?.find(p => p.id === profileId)
+                return (
+                  <Badge key={profileId} variant="secondary" className="gap-1">
+                    {profile?.name ?? `Profile ${profileId}`}
+                    <button
+                      type="button"
+                      className="ml-1 hover:text-destructive"
+                      onClick={() => {
+                        setDispatcharr({
+                          ...dispatcharr,
+                          default_channel_profile_ids: (dispatcharr.default_channel_profile_ids ?? []).filter(id => id !== profileId),
+                        })
+                      }}
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                )
+              })}
+              {(dispatcharr.default_channel_profile_ids ?? []).length === 0 && (
+                <span className="text-sm text-muted-foreground">No default profiles (channels will be added to all profiles)</span>
+              )}
+            </div>
+            <Select
+              value=""
+              onChange={(e) => {
+                const profileId = parseInt(e.target.value)
+                if (profileId && !(dispatcharr.default_channel_profile_ids ?? []).includes(profileId)) {
+                  setDispatcharr({
+                    ...dispatcharr,
+                    default_channel_profile_ids: [...(dispatcharr.default_channel_profile_ids ?? []), profileId],
+                  })
+                }
+              }}
+              disabled={!dispatcharrStatus.data?.connected}
+            >
+              <option value="">Add profile...</option>
+              {channelProfilesQuery.data
+                ?.filter(p => !(dispatcharr.default_channel_profile_ids ?? []).includes(p.id))
+                .map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Default profiles for new event channels. If empty, channels will be added to all profiles.
+            </p>
+          </div>
+
+          {/* Save button */}
+          <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
+            {updateDispatcharr.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
         </CardContent>
       </Card>
 

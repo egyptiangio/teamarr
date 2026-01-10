@@ -167,6 +167,18 @@ export function EventGroupForm() {
     retry: false,  // Don't retry on connection errors
   })
 
+  // Fetch default channel profiles from settings
+  const { data: defaultProfileIds } = useQuery({
+    queryKey: ["settings-default-profiles"],
+    queryFn: async () => {
+      const response = await fetch("/api/v1/settings/dispatcharr")
+      if (!response.ok) return []
+      const data = await response.json()
+      return (data.default_channel_profile_ids || []) as number[]
+    },
+    retry: false,
+  })
+
   // Inline create state
   const [showCreateGroup, setShowCreateGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
@@ -247,6 +259,19 @@ export function EventGroupForm() {
       }
     }
   }, [group, cachedLeagues])
+
+  // Pre-populate channel_profile_ids with defaults for new groups
+  useEffect(() => {
+    if (!isEdit && defaultProfileIds && defaultProfileIds.length > 0) {
+      // Only set if not already set by user
+      if (!formData.channel_profile_ids || formData.channel_profile_ids.length === 0) {
+        setFormData(prev => ({
+          ...prev,
+          channel_profile_ids: defaultProfileIds,
+        }))
+      }
+    }
+  }, [isEdit, defaultProfileIds])
 
   // Group leagues by sport
   const leaguesBySport = useMemo(() => {
@@ -1361,17 +1386,16 @@ export function EventGroupForm() {
                 <div className="flex items-center justify-between">
                   <Label>Channel Profiles</Label>
                   <div className="flex gap-1">
-                    {(formData.channel_profile_ids?.length || 0) > 0 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-muted-foreground"
-                        onClick={() => setFormData({ ...formData, channel_profile_ids: [] })}
-                      >
-                        Clear
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-muted-foreground"
+                      onClick={() => setFormData({ ...formData, channel_profile_ids: defaultProfileIds || [] })}
+                      title={defaultProfileIds?.length ? `Reset to defaults: ${defaultProfileIds.length} profile(s)` : "Clear selection"}
+                    >
+                      {defaultProfileIds?.length ? "Reset to Defaults" : "Clear"}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1477,7 +1501,7 @@ export function EventGroupForm() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Select profiles to add created channels to (click to toggle)
+                  Select profiles to add channels to. If none selected, will use default profiles from Settings.
                 </p>
               </div>
             </CardContent>
