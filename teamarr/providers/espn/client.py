@@ -5,7 +5,6 @@ No data transformation - just fetch and return JSON.
 """
 
 import logging
-import ssl
 import threading
 import time
 
@@ -27,63 +26,21 @@ COLLEGE_SCOREBOARD_GROUPS = {
     # Note: mens-college-hockey does NOT need groups param
 }
 
-# Rate limiting defaults
-DEFAULT_REQUESTS_PER_SECOND = 10.0  # Max sustained request rate
-DEFAULT_BURST_SIZE = 20  # Allow burst of this many requests
-
-
-class RateLimiter:
-    """Token bucket rate limiter for API requests.
-
-    Allows bursts up to bucket_size, then limits to rate requests/second.
-    Thread-safe for concurrent use.
-    """
-
-    def __init__(self, rate: float = DEFAULT_REQUESTS_PER_SECOND, bucket_size: int = DEFAULT_BURST_SIZE):
-        self._rate = rate
-        self._bucket_size = bucket_size
-        self._tokens = float(bucket_size)
-        self._last_update = time.monotonic()
-        self._lock = threading.Lock()
-
-    def acquire(self) -> None:
-        """Block until a token is available."""
-        with self._lock:
-            now = time.monotonic()
-            # Replenish tokens based on time elapsed
-            elapsed = now - self._last_update
-            self._tokens = min(self._bucket_size, self._tokens + elapsed * self._rate)
-            self._last_update = now
-
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
-                return
-
-            # Need to wait for token
-            wait_time = (1.0 - self._tokens) / self._rate
-            self._tokens = 0.0
-
-        # Wait outside the lock
-        time.sleep(wait_time)
-
 
 class ESPNClient:
-    """Low-level ESPN API client with rate limiting."""
+    """Low-level ESPN API client."""
 
     def __init__(
         self,
         timeout: float = 10.0,
         retry_count: int = 3,
         retry_delay: float = 1.0,
-        requests_per_second: float = DEFAULT_REQUESTS_PER_SECOND,
-        burst_size: int = DEFAULT_BURST_SIZE,
     ):
         self._timeout = timeout
         self._retry_count = retry_count
         self._retry_delay = retry_delay
         self._client: httpx.Client | None = None
         self._lock = threading.Lock()
-        self._rate_limiter = RateLimiter(rate=requests_per_second, bucket_size=burst_size)
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -92,27 +49,14 @@ class ESPNClient:
                 if self._client is None:
                     self._client = httpx.Client(
                         timeout=self._timeout,
-                        # Reduced from 100 to 50 to prevent overwhelming ESPN
-                        limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+                        limits=httpx.Limits(max_connections=100, max_keepalive_connections=10),
                     )
         return self._client
 
-    def _is_ssl_error(self, error: Exception) -> bool:
-        """Check if an error is SSL-related."""
-        # Check for ssl.SSLError directly
-        if isinstance(error, ssl.SSLError):
-            return True
-        # Check error message for SSL indicators
-        error_str = str(error).lower()
-        return "ssl" in error_str or "eof occurred" in error_str
-
     def _request(self, url: str, params: dict | None = None) -> dict | None:
-        """Make HTTP request with retry logic and rate limiting."""
+        """Make HTTP request with retry logic."""
         for attempt in range(self._retry_count):
             try:
-                # Apply rate limiting before each request
-                self._rate_limiter.acquire()
-
                 client = self._get_client()
                 response = client.get(url, params=params)
                 response.raise_for_status()
@@ -126,14 +70,9 @@ class ESPNClient:
             except (httpx.RequestError, RuntimeError, OSError) as e:
                 # RuntimeError: "Cannot send a request, as the client has been closed"
                 # OSError: "Bad file descriptor" from stale connections
-                # ssl.SSLError: SSL connection errors (subclass of OSError)
                 logger.warning(f"Request failed for {url}: {e}")
-
-                # Reset connection pool on SSL errors to get fresh connections
-                if self._is_ssl_error(e):
-                    logger.info("SSL error detected, resetting connection pool")
-                    self._reset_client()
-
+                # Don't reset client here - causes race conditions in parallel processing
+                # httpx connection pool handles stale connections automatically
                 if attempt < self._retry_count - 1:
                     time.sleep(self._retry_delay * (attempt + 1))
                     continue
