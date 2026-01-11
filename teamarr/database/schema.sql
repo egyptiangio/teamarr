@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
     -- XMLTV
     xmltv_generator_name TEXT DEFAULT 'Teamarr v2',
-    xmltv_generator_url TEXT DEFAULT 'https://github.com/egyptiangio/teamarr',
+    xmltv_generator_url TEXT DEFAULT 'https://github.com/Pharaoh-Labs/teamarr',
 
     -- Display Preferences
     time_format TEXT DEFAULT '12h' CHECK(time_format IN ('12h', '24h')),
