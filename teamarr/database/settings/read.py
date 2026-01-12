@@ -53,6 +53,14 @@ def get_all_settings(conn: Connection) -> AllSettings:
     if not row:
         return AllSettings()
 
+    # Parse default_channel_profile_ids
+    default_profile_ids = []
+    if row["default_channel_profile_ids"]:
+        try:
+            default_profile_ids = json.loads(row["default_channel_profile_ids"])
+        except json.JSONDecodeError:
+            default_profile_ids = []
+
     return AllSettings(
         dispatcharr=DispatcharrSettings(
             enabled=bool(row["dispatcharr_enabled"]),
@@ -60,6 +68,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             username=row["dispatcharr_username"],
             password=row["dispatcharr_password"],
             epg_id=row["dispatcharr_epg_id"],
+            default_channel_profile_ids=default_profile_ids,
         ),
         lifecycle=LifecycleSettings(
             channel_create_timing=row["channel_create_timing"] or "same_day",
