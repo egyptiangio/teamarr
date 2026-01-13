@@ -559,6 +559,53 @@ class ChannelManager:
             error=self._client.parse_api_error(response),
         )
 
+    def bulk_update_profile_channels(
+        self,
+        profile_id: int,
+        add_channel_ids: list[int] | None = None,
+        remove_channel_ids: list[int] | None = None,
+    ) -> OperationResult:
+        """Bulk update channel membership in a profile.
+
+        More efficient than individual add_to_profile/remove_from_profile calls
+        when updating multiple channels at once.
+
+        Args:
+            profile_id: Channel profile ID
+            add_channel_ids: Channel IDs to enable in the profile
+            remove_channel_ids: Channel IDs to disable in the profile
+
+        Returns:
+            OperationResult with success status
+        """
+        channels = []
+        if add_channel_ids:
+            channels.extend({"channel_id": cid, "enabled": True} for cid in add_channel_ids)
+        if remove_channel_ids:
+            channels.extend({"channel_id": cid, "enabled": False} for cid in remove_channel_ids)
+
+        if not channels:
+            return OperationResult(success=True)  # Nothing to do
+
+        response = self._client.patch(
+            f"/api/channels/profiles/{profile_id}/channels/bulk-update/",
+            {"channels": channels},
+        )
+
+        if response is None:
+            return OperationResult(
+                success=False,
+                error=self._client.parse_api_error(response),
+            )
+
+        if response.status_code == 200:
+            return OperationResult(success=True)
+
+        return OperationResult(
+            success=False,
+            error=self._client.parse_api_error(response),
+        )
+
     def get_epg_data_list(self, epg_source_id: int | None = None) -> list[dict]:
         """Get all EPGData entries from Dispatcharr.
 
