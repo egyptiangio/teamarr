@@ -5,8 +5,7 @@ on:
     branches:
       - main
       - dev
-      - dev-withevents
-      - v2-alpha
+      - 1.4.9-archive
     tags:
       - 'v*.*.*'
   pull_request:
