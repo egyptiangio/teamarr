@@ -152,6 +152,9 @@ export function EventGroupForm() {
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
 
+  // Channel profile default state - true = use global default, false = custom selection
+  const [useDefaultProfiles, setUseDefaultProfiles] = useState(true)
+
   // Mutations
   const createMutation = useCreateGroup()
   const updateMutation = useUpdateGroup()
@@ -167,7 +170,7 @@ export function EventGroupForm() {
         template_id: group.template_id,
         channel_start_number: group.channel_start_number,
         channel_group_id: group.channel_group_id,
-        channel_profile_ids: group.channel_profile_ids || [],
+        channel_profile_ids: group.channel_profile_ids,  // Keep null = "use default"
         duplicate_event_handling: group.duplicate_event_handling,
         channel_assignment_mode: group.channel_assignment_mode,
         sort_order: group.sort_order,
@@ -201,6 +204,9 @@ export function EventGroupForm() {
       // Use stored group_mode (not derived from league count) to preserve user intent
       const mode = group.group_mode as GroupMode || (group.leagues.length > 1 ? "multi" : "single")
       setGroupMode(mode)
+
+      // Set useDefaultProfiles based on whether channel_profile_ids is null (use default) or has a value
+      setUseDefaultProfiles(group.channel_profile_ids === null || group.channel_profile_ids === undefined)
 
       if (mode === "single") {
         // Single league mode - use first league
@@ -857,10 +863,36 @@ export function EventGroupForm() {
               {/* Channel Profiles */}
               <div className="space-y-2">
                 <Label>Channel Profiles</Label>
+                <div className="flex items-center gap-2 mb-2">
+                  <Checkbox
+                    id="use_default_profiles"
+                    checked={useDefaultProfiles}
+                    onClick={() => {
+                      const newValue = !useDefaultProfiles
+                      setUseDefaultProfiles(newValue)
+                      if (newValue) {
+                        // Use default - set to null
+                        setFormData({ ...formData, channel_profile_ids: null })
+                      } else {
+                        // Custom selection - set to empty array initially
+                        setFormData({ ...formData, channel_profile_ids: [] })
+                      }
+                    }}
+                  />
+                  <Label htmlFor="use_default_profiles" className="font-normal cursor-pointer">
+                    Use default channel profiles
+                  </Label>
+                </div>
                 <ChannelProfileSelector
                   selectedIds={formData.channel_profile_ids || []}
                   onChange={(ids) => setFormData({ ...formData, channel_profile_ids: ids })}
+                  disabled={useDefaultProfiles}
                 />
+                <p className="text-xs text-muted-foreground">
+                  {useDefaultProfiles
+                    ? "Using default profiles from global settings"
+                    : "Select specific profiles for this group"}
+                </p>
               </div>
             </CardContent>
           </Card>}

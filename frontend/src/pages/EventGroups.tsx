@@ -213,7 +213,7 @@ export function EventGroups() {
   const [bulkEditClearChannelGroup, setBulkEditClearChannelGroup] = useState(false)
   const [bulkEditProfilesEnabled, setBulkEditProfilesEnabled] = useState(false)
   const [bulkEditProfileIds, setBulkEditProfileIds] = useState<number[]>([])
-  const [bulkEditClearProfiles, setBulkEditClearProfiles] = useState(false)
+  const [bulkEditUseDefaultProfiles, setBulkEditUseDefaultProfiles] = useState(true)
   const [bulkEditSortOrderEnabled, setBulkEditSortOrderEnabled] = useState(false)
   const [bulkEditSortOrder, setBulkEditSortOrder] = useState<string>("time")
   const [bulkEditOverlapHandlingEnabled, setBulkEditOverlapHandlingEnabled] = useState(false)
@@ -676,7 +676,7 @@ export function EventGroups() {
     setBulkEditClearChannelGroup(false)
     setBulkEditProfilesEnabled(false)
     setBulkEditProfileIds([])
-    setBulkEditClearProfiles(false)
+    setBulkEditUseDefaultProfiles(true)
     setBulkEditSortOrderEnabled(false)
     setBulkEditSortOrder("time")
     setBulkEditOverlapHandlingEnabled(false)
@@ -718,9 +718,11 @@ export function EventGroups() {
       }
     }
     if (bulkEditProfilesEnabled) {
-      if (bulkEditClearProfiles) {
+      if (bulkEditUseDefaultProfiles) {
+        // Use default = clear and fall back to global setting (null)
         request.clear_channel_profile_ids = true
       } else {
+        // Custom selection (could be empty [] for "no profiles" or specific ids)
         request.channel_profile_ids = bulkEditProfileIds
       }
     }
@@ -1806,20 +1808,39 @@ export function EventGroups() {
                     setBulkEditProfilesEnabled(!!checked)
                     if (!checked) {
                       setBulkEditProfileIds([])
-                      setBulkEditClearProfiles(false)
+                      setBulkEditUseDefaultProfiles(true)
                     }
                   }}
                 />
                 <label className="text-sm font-medium">Channel Profiles</label>
               </div>
               {bulkEditProfilesEnabled && (
-                <ChannelProfileSelector
-                  selectedIds={bulkEditProfileIds}
-                  onChange={(ids) => {
-                    setBulkEditProfileIds(ids)
-                    setBulkEditClearProfiles(false)
-                  }}
-                />
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={bulkEditUseDefaultProfiles}
+                      onCheckedChange={(checked) => {
+                        setBulkEditUseDefaultProfiles(!!checked)
+                        if (checked) {
+                          setBulkEditProfileIds([])
+                        }
+                      }}
+                    />
+                    <label className="text-sm font-normal cursor-pointer">
+                      Use default channel profiles
+                    </label>
+                  </div>
+                  <ChannelProfileSelector
+                    selectedIds={bulkEditProfileIds}
+                    onChange={setBulkEditProfileIds}
+                    disabled={bulkEditUseDefaultProfiles}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {bulkEditUseDefaultProfiles
+                      ? "Using default profiles from global settings"
+                      : "Select specific profiles for these groups"}
+                  </p>
+                </div>
               )}
             </div>
 
