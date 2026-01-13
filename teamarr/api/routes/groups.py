@@ -293,6 +293,8 @@ class BulkGroupUpdateRequest(BaseModel):
     template_id: int | None = None
     channel_group_id: int | None = None
     channel_profile_ids: list[int] | None = None
+    channel_sort_order: str | None = None
+    overlap_handling: str | None = None
     # Clear flags for nullable fields
     clear_template: bool = False
     clear_channel_group_id: bool = False
@@ -667,6 +669,12 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
     """
     from teamarr.database.groups import get_group, update_group
 
+    # Validate fields
+    validate_group_fields(
+        channel_sort_order=request.channel_sort_order,
+        overlap_handling=request.overlap_handling,
+    )
+
     results: list[BulkGroupUpdateResult] = []
     total_updated = 0
     total_failed = 0
@@ -694,6 +702,8 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     template_id=request.template_id,
                     channel_group_id=request.channel_group_id,
                     channel_profile_ids=request.channel_profile_ids,
+                    channel_sort_order=request.channel_sort_order,
+                    overlap_handling=request.overlap_handling,
                     clear_template=request.clear_template,
                     clear_channel_group_id=request.clear_channel_group_id,
                     clear_channel_profile_ids=request.clear_channel_profile_ids,

@@ -214,6 +214,10 @@ export function EventGroups() {
   const [bulkEditProfilesEnabled, setBulkEditProfilesEnabled] = useState(false)
   const [bulkEditProfileIds, setBulkEditProfileIds] = useState<number[]>([])
   const [bulkEditClearProfiles, setBulkEditClearProfiles] = useState(false)
+  const [bulkEditSortOrderEnabled, setBulkEditSortOrderEnabled] = useState(false)
+  const [bulkEditSortOrder, setBulkEditSortOrder] = useState<string>("time")
+  const [bulkEditOverlapHandlingEnabled, setBulkEditOverlapHandlingEnabled] = useState(false)
+  const [bulkEditOverlapHandling, setBulkEditOverlapHandling] = useState<string>("add_stream")
 
   // Column sorting state
   type SortColumn = "name" | "sport" | "template" | "matched" | "status" | null
@@ -673,6 +677,10 @@ export function EventGroups() {
     setBulkEditProfilesEnabled(false)
     setBulkEditProfileIds([])
     setBulkEditClearProfiles(false)
+    setBulkEditSortOrderEnabled(false)
+    setBulkEditSortOrder("time")
+    setBulkEditOverlapHandlingEnabled(false)
+    setBulkEditOverlapHandling("add_stream")
   }
 
   const handleBulkEdit = async () => {
@@ -685,6 +693,8 @@ export function EventGroups() {
       template_id?: number | null
       channel_group_id?: number | null
       channel_profile_ids?: number[]
+      channel_sort_order?: string
+      overlap_handling?: string
       clear_template?: boolean
       clear_channel_group_id?: boolean
       clear_channel_profile_ids?: boolean
@@ -713,6 +723,12 @@ export function EventGroups() {
       } else {
         request.channel_profile_ids = bulkEditProfileIds
       }
+    }
+    if (bulkEditSortOrderEnabled) {
+      request.channel_sort_order = bulkEditSortOrder
+    }
+    if (bulkEditOverlapHandlingEnabled) {
+      request.overlap_handling = bulkEditOverlapHandling
     }
 
     try {
@@ -1806,6 +1822,51 @@ export function EventGroups() {
                 />
               )}
             </div>
+
+            {/* Channel Sort Order (multi-league only) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={bulkEditSortOrderEnabled}
+                  onCheckedChange={(checked) => setBulkEditSortOrderEnabled(!!checked)}
+                />
+                <label className="text-sm font-medium">Channel Sort Order</label>
+                <span className="text-xs text-muted-foreground">(multi-league groups)</span>
+              </div>
+              {bulkEditSortOrderEnabled && (
+                <Select
+                  value={bulkEditSortOrder}
+                  onChange={(e) => setBulkEditSortOrder(e.target.value)}
+                >
+                  <option value="time">Time</option>
+                  <option value="sport_time">Sport → Time</option>
+                  <option value="league_time">League → Time</option>
+                </Select>
+              )}
+            </div>
+
+            {/* Overlap Handling (multi-league only) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={bulkEditOverlapHandlingEnabled}
+                  onCheckedChange={(checked) => setBulkEditOverlapHandlingEnabled(!!checked)}
+                />
+                <label className="text-sm font-medium">Overlap Handling</label>
+                <span className="text-xs text-muted-foreground">(multi-league groups)</span>
+              </div>
+              {bulkEditOverlapHandlingEnabled && (
+                <Select
+                  value={bulkEditOverlapHandling}
+                  onChange={(e) => setBulkEditOverlapHandling(e.target.value)}
+                >
+                  <option value="add_stream">Add stream to existing channel</option>
+                  <option value="add_only">Add only (skip if no existing)</option>
+                  <option value="create_all">Create all (ignore overlap)</option>
+                  <option value="skip">Skip overlapping streams</option>
+                </Select>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBulkEdit(false)}>
@@ -1813,7 +1874,7 @@ export function EventGroups() {
             </Button>
             <Button
               onClick={handleBulkEdit}
-              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled)}
+              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled && !bulkEditSortOrderEnabled && !bulkEditOverlapHandlingEnabled)}
             >
               {bulkUpdateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Apply to {selectedIds.size} groups
