@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.32.0" \
     pydantic>=2.0.0 \
+    python-multipart>=0.0.9 \
     rapidfuzz>=3.0.0 \
     croniter>=2.0.0 \
     unidecode>=1.3.0
