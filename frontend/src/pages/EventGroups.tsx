@@ -51,18 +51,11 @@ import {
 } from "@/hooks/useGroups"
 import { useTemplates } from "@/hooks/useTemplates"
 import type { EventGroup, PreviewGroupResponse, TeamFilterEntry } from "@/api/types"
+import { getLeagues } from "@/api/teams"
 import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
-import { getUniqueSports, filterLeaguesBySport } from "@/lib/utils"
-
-// Fetch leagues for logo lookup, sport mapping, and display alias
-async function fetchLeagues(): Promise<{ slug: string; name: string; logo_url: string | null; sport: string | null; league_alias: string | null; import_enabled: boolean }[]> {
-  const response = await fetch("/api/v1/cache/leagues")
-  if (!response.ok) return []
-  const data = await response.json()
-  return data.leagues || []
-}
+import { getUniqueSports, filterLeaguesBySport, getLeagueDisplayName } from "@/lib/utils"
 
 // Fetch Dispatcharr channel groups for name lookup
 async function fetchChannelGroups(): Promise<{ id: number; name: string }[]> {
@@ -137,7 +130,8 @@ export function EventGroups() {
   const navigate = useNavigate()
   const { data, isLoading, error, refetch } = useGroups(true)
   const { data: templates } = useTemplates()
-  const { data: cachedLeagues } = useQuery({ queryKey: ["leagues"], queryFn: fetchLeagues })
+  const { data: leaguesResponse } = useQuery({ queryKey: ["leagues"], queryFn: () => getLeagues() })
+  const cachedLeagues = leaguesResponse?.leagues
   const { data: channelGroups } = useQuery({ queryKey: ["dispatcharr-channel-groups"], queryFn: fetchChannelGroups })
   const deleteMutation = useDeleteGroup()
   const toggleMutation = useToggleGroup()
@@ -562,7 +556,7 @@ export function EventGroups() {
     const map = new Map<string, string>()
     for (const league of cachedLeagues ?? []) {
       // {league} variable uses league_alias if available, otherwise name
-      map.set(league.slug, league.league_alias || league.name)
+      map.set(league.slug, getLeagueDisplayName(league, true))
     }
     return (slug: string | null | undefined) => {
       if (!slug) return "-"
@@ -1604,7 +1598,7 @@ export function EventGroups() {
                   <option value="">Select league...</option>
                   {aliasFilteredLeagues.map((league) => (
                     <option key={league.slug} value={league.slug}>
-                      {league.league_alias || league.name}
+                      {getLeagueDisplayName(league, true)}
                     </option>
                   ))}
                 </Select>

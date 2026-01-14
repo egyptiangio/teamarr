@@ -36,7 +36,7 @@ import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RichTooltip } from "@/components/ui/rich-tooltip"
 import { FilterSelect } from "@/components/ui/filter-select"
-import { cn } from "@/lib/utils"
+import { cn, getLeagueDisplayName } from "@/lib/utils"
 import {
   useTeams,
   useUpdateTeam,
@@ -44,6 +44,7 @@ import {
 } from "@/hooks/useTeams"
 import { useTemplates } from "@/hooks/useTemplates"
 import type { Team } from "@/api/teams"
+import { getLeagues } from "@/api/teams"
 import { statsApi } from "@/api/stats"
 import { useQuery } from "@tanstack/react-query"
 
@@ -61,14 +62,6 @@ const SPORT_EMOJIS: Record<string, string> = {
 
 function getSportEmoji(sport: string): string {
   return SPORT_EMOJIS[sport.toLowerCase()] || SPORT_EMOJIS.default
-}
-
-// Fetch leagues for logo and alias lookup
-async function fetchLeagues(): Promise<{ slug: string; logo_url: string | null; league_alias: string | null; name: string }[]> {
-  const response = await fetch("/api/v1/cache/leagues")
-  if (!response.ok) return []
-  const data = await response.json()
-  return data.leagues || []
 }
 
 type ActiveFilter = "" | "active" | "inactive"
@@ -198,7 +191,8 @@ export function Teams() {
   const navigate = useNavigate()
   const { data: teams, isLoading, error, refetch } = useTeams()
   const { data: templates } = useTemplates()
-  const { data: cachedLeagues } = useQuery({ queryKey: ["leagues"], queryFn: fetchLeagues })
+  const { data: leaguesResponse } = useQuery({ queryKey: ["leagues"], queryFn: () => getLeagues() })
+  const cachedLeagues = leaguesResponse?.leagues
   const { data: liveStats } = useQuery({
     queryKey: ["stats", "live", "team"],
     queryFn: () => statsApi.getLiveStats("team"),
@@ -215,7 +209,7 @@ export function Teams() {
           logos[league.slug] = league.logo_url
         }
         // league_alias if set, else name (display_name), else slug uppercase
-        aliases[league.slug] = league.league_alias || league.name || league.slug.toUpperCase()
+        aliases[league.slug] = getLeagueDisplayName(league, true) || league.slug.toUpperCase()
       }
     }
     return { logos, aliases }

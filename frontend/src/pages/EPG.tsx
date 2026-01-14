@@ -55,6 +55,7 @@ import {
 import { getLeagues } from "@/api/teams"
 import type { FailedMatch, MatchedStream, EventSearchResult, CorrectableStream } from "@/api/epg"
 import type { CachedLeague } from "@/api/teams"
+import { getLeagueDisplayName } from "@/lib/utils"
 
 function formatDuration(ms: number | null): string {
   if (!ms) return "-"
@@ -182,7 +183,7 @@ export function EPG() {
     const map = new Map<string, string>()
     if (leaguesData?.leagues) {
       for (const league of leaguesData.leagues) {
-        map.set(league.slug, league.league_alias || league.name)
+        map.set(league.slug, getLeagueDisplayName(league, true))
       }
     }
     return (code: string | null) => code ? (map.get(code) ?? code) : "-"
@@ -1094,7 +1095,7 @@ export function EPG() {
                       <optgroup key={sport} label={sport}>
                         {leagues.map((league) => (
                           <option key={league.slug} value={league.slug}>
-                            {league.name}
+                            {getLeagueDisplayName(league)}
                           </option>
                         ))}
                       </optgroup>

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { cn, getSportDisplayName } from "@/lib/utils"
+import { cn, getSportDisplayName, getLeagueDisplayName } from "@/lib/utils"
 import type { CachedLeague } from "@/api/teams"
 import { getLeagues } from "@/api/teams"
 
@@ -187,7 +187,7 @@ export function LeaguePicker({
                 {league?.logo_url && (
                   <img src={league.logo_url} alt="" className="h-3 w-3 object-contain" />
                 )}
-                {league?.league_alias || league?.name || slug}
+                {league ? getLeagueDisplayName(league, true) : slug}
                 <button onClick={() => selectLeague(slug)} className="ml-1 hover:bg-muted rounded">
                   <X className="h-3 w-3" />
                 </button>
@@ -334,7 +334,7 @@ export function LeaguePicker({
                           {league.logo_url && (
                             <img src={league.logo_url} alt="" className="h-4 w-4 object-contain" />
                           )}
-                          <span className="truncate">{league.league_alias || league.name}</span>
+                          <span className="truncate">{getLeagueDisplayName(league, true)}</span>
                         </div>
                       )
                     })}

@@ -35,6 +35,22 @@ export function getSportDisplayName(sport: string): string {
 }
 
 /**
+ * Get display name for a league.
+ * @param league - League object with name and optional league_alias
+ * @param short - If true, prefer league_alias for short display (e.g., "EPL" instead of "English Premier League")
+ * @returns Display name string
+ */
+export function getLeagueDisplayName(
+  league: { name: string; league_alias?: string | null },
+  short = false
+): string {
+  if (short && league.league_alias) {
+    return league.league_alias
+  }
+  return league.name
+}
+
+/**
  * Get unique sports from leagues, normalized and sorted alphabetically.
  */
 export function getUniqueSports(leagues: { sport: string | null }[]): string[] {

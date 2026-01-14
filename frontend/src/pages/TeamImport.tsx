@@ -4,23 +4,14 @@ import { api } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
+import { cn, getLeagueDisplayName } from "@/lib/utils"
 import { toast } from "sonner"
+import type { CachedLeague } from "@/api/teams"
+import { getLeagues } from "@/api/teams"
 import { ChevronRight, Loader2, Check, Search, X } from "lucide-react"
 import { useThemedLogo } from "@/hooks/useTheme"
 
 // Types
-interface League {
-  slug: string
-  name: string | null
-  sport: string
-  logo_url: string | null
-  logo_url_dark: string | null
-  team_count: number
-  provider: string
-  import_enabled: boolean
-}
-
 interface CacheTeam {
   id: number
   team_name: string
@@ -37,17 +28,6 @@ interface ImportedTeam {
   provider_team_id: string
   sport: string
   leagues: string[]
-}
-
-// Fetch leagues from cache (import-enabled only)
-async function fetchLeagues(): Promise<League[]> {
-  const data = await api.get<{ count: number; leagues: League[] }>("/cache/leagues?import_only=true")
-  // Defensive: ensure we have a valid response with leagues array
-  if (!data || !Array.isArray(data.leagues)) {
-    console.error("Invalid leagues response:", data)
-    return []
-  }
-  return data.leagues
 }
 
 // Fetch teams for a league
@@ -103,12 +83,12 @@ async function searchTeams(query: string, league?: string): Promise<CacheTeam[]>
 }
 
 // Helper to get display name for league (use slug if name is null)
-function getLeagueName(league: League): string {
-  return league.name || league.slug.toUpperCase()
+function getLeagueName(league: CachedLeague): string {
+  return getLeagueDisplayName(league) || league.slug.toUpperCase()
 }
 
 // Theme-aware league logo component
-function LeagueLogo({ league, className }: { league: League; className?: string }) {
+function LeagueLogo({ league, className }: { league: CachedLeague; className?: string }) {
   const logoUrl = useThemedLogo(league.logo_url, league.logo_url_dark)
   if (!logoUrl) return null
   return <img src={logoUrl} alt="" className={className} />
@@ -160,17 +140,17 @@ function groupTeamsByProvider(teams: CacheTeam[], importedSet: Set<string>): Gro
 
 export function TeamImport() {
   const queryClient = useQueryClient()
-  const [selectedLeague, setSelectedLeague] = useState<League | null>(null)
+  const [selectedLeague, setSelectedLeague] = useState<CachedLeague | null>(null)
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set())
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState("")
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
 
-  // Fetch leagues
+  // Fetch leagues (import-enabled only)
   const leaguesQuery = useQuery({
     queryKey: ["cache-leagues"],
-    queryFn: fetchLeagues,
+    queryFn: () => getLeagues(true).then(r => r.leagues),
   })
 
   // Fetch teams for selected league
@@ -215,7 +195,7 @@ export function TeamImport() {
   const leaguesBySport = useMemo(() => {
     if (!leaguesQuery.data) return {}
 
-    const grouped: Record<string, League[]> = {}
+    const grouped: Record<string, CachedLeague[]> = {}
     leaguesQuery.data.forEach((league) => {
       // Only show leagues with import_enabled flag
       if (!league.import_enabled) {
@@ -299,7 +279,7 @@ export function TeamImport() {
     })
   }
 
-  const selectLeague = (league: League) => {
+  const selectLeague = (league: CachedLeague) => {
     setSelectedLeague(league)
     setSelectedTeamIds(new Set())
     setSearchQuery("")

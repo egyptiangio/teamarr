@@ -47,6 +47,7 @@ import {
   executeResetChannels,
 } from "@/api/channels"
 import type { ManagedChannel, ResetChannelInfo } from "@/api/channels"
+import { getLeagueDisplayName } from "@/lib/utils"
 
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "-"
@@ -192,7 +193,7 @@ export function Channels() {
     const map = new Map<string, string>()
     for (const league of leaguesData?.leagues ?? []) {
       // {league} variable uses league_alias if available, otherwise display_name (name field)
-      map.set(league.slug, league.league_alias || league.name)
+      map.set(league.slug, getLeagueDisplayName(league, true))
     }
     return (slug: string | null | undefined) => {
       if (!slug) return "-"
