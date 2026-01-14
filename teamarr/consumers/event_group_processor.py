@@ -1320,14 +1320,20 @@ class EventGroupProcessor:
 
         # Log filtering results
         filtered_total = (
-            result.filtered_include + result.filtered_exclude + result.filtered_not_event
+            result.filtered_stale + result.filtered_include +
+            result.filtered_exclude + result.filtered_not_event
         )
         if filtered_total > 0:
             logger.info(
-                f"Filtered streams for group '{group.name}': "
-                f"{result.total_input} input → {result.passed_count} passed "
-                f"(not_event: -{result.filtered_not_event}, "
-                f"include: -{result.filtered_include}, exclude: -{result.filtered_exclude})"
+                "[FILTER] Group '%s': %d input → %d passed "
+                "(stale: -%d, not_event: -%d, include: -%d, exclude: -%d)",
+                group.name,
+                result.total_input,
+                result.passed_count,
+                result.filtered_stale,
+                result.filtered_not_event,
+                result.filtered_include,
+                result.filtered_exclude,
             )
 
         return result.passed, result
@@ -1510,8 +1516,17 @@ class EventGroupProcessor:
         for match in matched_streams:
             event = match.get("event")
             if event:
+                old_status = event.status.state if event.status else "N/A"
                 # Refresh event status from provider (invalidates cache, fetches fresh)
                 refreshed = self._service.refresh_event_status(event)
+                new_status = refreshed.status.state if refreshed.status else "N/A"
+                if old_status != new_status:
+                    logger.debug(
+                        "[ENRICH] event=%s status changed: %s → %s",
+                        event.id,
+                        old_status,
+                        new_status,
+                    )
                 enriched.append({
                     "stream": match.get("stream"),
                     "event": refreshed,

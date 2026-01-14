@@ -298,6 +298,12 @@ class ChannelLifecycleService:
                     stream_id = stream.get("id")
 
                     # Check if event should be excluded based on timing
+                    logger.debug(
+                        "[LIFECYCLE] Checking stream '%s' for event %s (status=%s)",
+                        stream_name[:40],
+                        event_id,
+                        event.status.state if event.status else "N/A",
+                    )
                     excluded_reason = self._timing_manager.categorize_event_timing(event)
                     if excluded_reason:
                         result.excluded.append(
@@ -427,8 +433,12 @@ class ChannelLifecycleService:
 
                     if channel_result.success:
                         logger.info(
-                            f"Created channel {channel_result.dispatcharr_channel_id} "
-                            f"(#{channel_result.channel_number}): {stream_name}"
+                            "[CHANNEL_CREATE] id=%s (#%s) stream='%s' event=%s status=%s",
+                            channel_result.dispatcharr_channel_id,
+                            channel_result.channel_number,
+                            stream_name[:40],
+                            event_id,
+                            event.status.state if event.status else "N/A",
                         )
                         result.created.append(
                             {

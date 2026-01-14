@@ -225,6 +225,11 @@ class StreamFilter:
 
             # Stale filter: skip streams marked as stale in Dispatcharr
             if stream.get("is_stale", False):
+                logger.debug(
+                    "[FILTER] Skipping stale stream: %s (id=%s)",
+                    name[:50],
+                    stream.get("id"),
+                )
                 result.filtered_stale += 1
                 continue
 

@@ -260,8 +260,10 @@ class SportsDataService:
         fresh_event = self.get_event(event.id, event.league)
         if fresh_event:
             logger.debug(
-                f"Refreshed event {event.id}: "
-                f"status {event.status.state} -> {fresh_event.status.state}"
+                "[REFRESH] event=%s status: %s → %s",
+                event.id,
+                event.status.state if event.status else "N/A",
+                fresh_event.status.state if fresh_event.status else "N/A",
             )
             return fresh_event
 

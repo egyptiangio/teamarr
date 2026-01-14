@@ -258,6 +258,21 @@ class M3UManager:
         if limit:
             streams = streams[:limit]
 
+        # Log stale stream count for debugging
+        stale_count = sum(1 for s in streams if s.is_stale)
+        if stale_count > 0:
+            logger.info(
+                "[M3U] Fetched %d streams (%d marked stale) from Dispatcharr",
+                len(streams),
+                stale_count,
+            )
+        elif streams:
+            # Check if API even returns is_stale field by looking at raw data
+            logger.debug(
+                "[M3U] Fetched %d streams (0 stale - verify Dispatcharr version >= 0.6.0)",
+                len(streams),
+            )
+
         return streams
 
     def get_group_with_streams(

@@ -272,6 +272,19 @@ class ChannelLifecycleManager:
         delete_threshold = self._calculate_delete_threshold(event)
         create_threshold = self._calculate_create_threshold(event) if self.create_timing != "stream_available" else None
 
+        # Detailed logging for debugging lifecycle timing issues
+        event_end = self.get_event_end_time(event)
+        status_state = event.status.state if event.status else "N/A"
+        logger.debug(
+            "[LIFECYCLE] event=%s start=%s end=%s status=%s delete_threshold=%s now=%s",
+            event.id,
+            event.start_time.strftime("%m/%d %H:%M") if event.start_time else "N/A",
+            event_end.strftime("%m/%d %H:%M") if event_end else "N/A",
+            status_state,
+            delete_threshold.strftime("%m/%d %H:%M") if delete_threshold else "N/A",
+            now.strftime("%m/%d %H:%M"),
+        )
+
         # Check if we're past delete threshold (event lifecycle is over)
         if delete_threshold and now >= delete_threshold:
             logger.debug("[EXCLUDED] event=%s: past lifecycle window (EVENT_PAST)", event.id)
@@ -287,20 +300,36 @@ class ChannelLifecycleManager:
 
         # Use unified final status check
         final = is_event_final(event)
+        final_source = "status" if final else None
 
         # Time-based fallback: if event end + 2hr buffer is in past, treat as final
         # This catches stale cached events that still show old status
         if not final:
-            event_end = self.get_event_end_time(event)
             event_end_with_buffer = event_end + timedelta(hours=2)
             if now > event_end_with_buffer:
                 final = True
+                final_source = "time_fallback"
+                logger.debug(
+                    "[LIFECYCLE] event=%s: time fallback triggered (end+2hr=%s < now=%s)",
+                    event.id,
+                    event_end_with_buffer.strftime("%m/%d %H:%M"),
+                    now.strftime("%m/%d %H:%M"),
+                )
 
         # Final events within lifecycle window → honor include_final_events setting
         if final and not self.include_final_events:
-            logger.debug("[EXCLUDED] event=%s: event is final (EVENT_FINAL)", event.id)
+            logger.debug(
+                "[EXCLUDED] event=%s: event is final via %s (EVENT_FINAL)",
+                event.id,
+                final_source,
+            )
             return ExcludedReason.EVENT_FINAL
 
         # Event is within lifecycle window and passes all checks
-        logger.debug("[INCLUDED] event=%s: within lifecycle window, eligible", event.id)
+        logger.debug(
+            "[INCLUDED] event=%s: within lifecycle window, eligible (final=%s, include_final=%s)",
+            event.id,
+            final,
+            self.include_final_events,
+        )
         return None
