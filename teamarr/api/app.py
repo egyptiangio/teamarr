@@ -240,7 +240,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Teamarr API",
         description="Sports EPG generation service - V2 Architecture",
-        version="2.0.0",
+        version="2.0.1",
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
