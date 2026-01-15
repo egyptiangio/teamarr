@@ -291,7 +291,9 @@ export function EPG() {
         correct_event_id: null,
         correct_league: null,
       })
-      toast.success("Stream marked as 'no event' - will be skipped")
+      toast.success("Stream marked as 'no event'", {
+        description: "Changes will apply on next EPG generation",
+      })
       setEventMatcherOpen(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to mark as no event")
@@ -329,7 +331,9 @@ export function EPG() {
         correct_event_id: selectedEventId,
         correct_league: matcherLeague,
       })
-      toast.success("Stream matched to event successfully")
+      toast.success("Stream matched to event", {
+        description: "Changes will apply on next EPG generation",
+      })
       setEventMatcherOpen(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to apply correction")
