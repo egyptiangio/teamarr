@@ -1,0 +1,100 @@
+{
+  "generated_at": "2026-01-03T12:00:00.000000Z",
+  "generated_with": "premium_key",
+  "note": "Rugby (NRL, Super Rugby) and Cricket (IPL, BBL, SA20). Hockey moved to HockeyTech.",
+  "leagues": [
+    {
+      "code": "nrl",
+      "provider_league_id": "4416",
+      "provider_league_name": "Australian National Rugby League",
+      "sport": "Rugby League",
+      "team_count": 17
+    },
+    {
+      "code": "super-rugby",
+      "provider_league_id": "4551",
+      "provider_league_name": "Super Rugby",
+      "sport": "Rugby Union",
+      "team_count": 11
+    },
+    {
+      "code": "ipl",
+      "provider_league_id": "4460",
+      "provider_league_name": "Indian Premier League",
+      "sport": "Cricket",
+      "team_count": 10
+    },
+    {
+      "code": "bbl",
+      "provider_league_id": "4461",
+      "provider_league_name": "Australian Big Bash League",
+      "sport": "Cricket",
+      "team_count": 8
+    },
+    {
+      "code": "sa20",
+      "provider_league_id": "5532",
+      "provider_league_name": "SA20",
+      "sport": "Cricket",
+      "team_count": 6
+    }
+  ],
+  "teams": [
+    {"provider_team_id": "135191", "team_name": "Brisbane Broncos", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/dnj6uw1646347648.png"},
+    {"provider_team_id": "135186", "team_name": "Canberra Raiders", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/wmlzo81646347671.png"},
+    {"provider_team_id": "135187", "team_name": "Canterbury Bankstown Bulldogs", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vaq0n31646347699.png"},
+    {"provider_team_id": "135184", "team_name": "Cronulla Sharks", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/qn3n5r1552073088.png"},
+    {"provider_team_id": "147022", "team_name": "Dolphins", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/tyoy421672068536.png"},
+    {"provider_team_id": "135194", "team_name": "Gold Coast Titans", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/4qqmp81646347724.png"},
+    {"provider_team_id": "135188", "team_name": "Manly Sea Eagles", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/1ok3661646347740.png"},
+    {"provider_team_id": "135190", "team_name": "Melbourne Storm", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/hpdn401646347751.png"},
+    {"provider_team_id": "135193", "team_name": "New Zealand Warriors", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/w8b9kw1646347767.png"},
+    {"provider_team_id": "135198", "team_name": "Newcastle Knights", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/aes2o51646347790.png"},
+    {"provider_team_id": "135196", "team_name": "North Queensland Cowboys", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/q6xu7c1646347820.png"},
+    {"provider_team_id": "135183", "team_name": "Parramatta Eels", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/5tvma21646347846.png"},
+    {"provider_team_id": "135197", "team_name": "Penrith Panthers", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/239jb41552073712.png"},
+    {"provider_team_id": "135185", "team_name": "South Sydney Rabbitohs", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/0m4unp1552072677.png"},
+    {"provider_team_id": "135195", "team_name": "St. George Illawara Dragons", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/2dcs6y1646347870.png"},
+    {"provider_team_id": "135192", "team_name": "Sydney Roosters", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/by299w1646347883.png"},
+    {"provider_team_id": "135189", "team_name": "Wests Tigers", "team_abbrev": "", "league": "nrl", "sport": "Rugby League", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/cs6i6f1646347894.png"},
+
+    {"provider_team_id": "136661", "team_name": "Blues Super Rugby", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/w8kypi1555143121.png"},
+    {"provider_team_id": "136656", "team_name": "Brumbies", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/0r9shp1555144049.png"},
+    {"provider_team_id": "136662", "team_name": "Chiefs Super Rugby", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ut9cpz1555142819.png"},
+    {"provider_team_id": "136663", "team_name": "Crusaders Super Rugby", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/8nj0g71592726411.png"},
+    {"provider_team_id": "137390", "team_name": "Fijian Drua", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/hwkiae1642447086.png"},
+    {"provider_team_id": "144952", "team_name": "Moana Pasifika", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/369q921642447525.png"},
+    {"provider_team_id": "136660", "team_name": "New South Wales Waratahs", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/yx31xh1555683522.png"},
+    {"provider_team_id": "136664", "team_name": "Otago Highlanders", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/p3fghu1554410255.png"},
+    {"provider_team_id": "136658", "team_name": "Queensland Reds", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/q499dj1554411648.png"},
+    {"provider_team_id": "136665", "team_name": "Wellington Hurricanes", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/rl0dh31554410874.png"},
+    {"provider_team_id": "137391", "team_name": "Western Force", "team_abbrev": "", "league": "super-rugby", "sport": "Rugby Union", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/pwelh51573084191.png"},
+
+    {"provider_team_id": "135800", "team_name": "Chennai Super Kings", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/okceh51487601098.png"},
+    {"provider_team_id": "135792", "team_name": "Delhi Capitals", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/dg4g0z1587334054.png"},
+    {"provider_team_id": "145834", "team_name": "Gujarat Titans", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6qw4r71654174508.png"},
+    {"provider_team_id": "135794", "team_name": "Kolkata Knight Riders", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ows99r1487678296.png"},
+    {"provider_team_id": "145835", "team_name": "Lucknow Super Giants", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/4tzmfa1647445839.png"},
+    {"provider_team_id": "135795", "team_name": "Mumbai Indians", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/l40j8p1487678631.png"},
+    {"provider_team_id": "135793", "team_name": "Punjab Kings", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/r1tcie1630697821.png"},
+    {"provider_team_id": "135801", "team_name": "Rajasthan Royals", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/lehnfw1487601864.png"},
+    {"provider_team_id": "135796", "team_name": "Royal Challengers Bangalore", "team_abbrev": "", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/kynj5v1588331757.png"},
+    {"provider_team_id": "135797", "team_name": "Sunrisers Hyderabad", "team_abbrev": "SRH", "league": "ipl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/sc7m161487419327.png"},
+
+    {"provider_team_id": "135748", "team_name": "Adelaide Strikers", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/c36k301492606884.png"},
+    {"provider_team_id": "135749", "team_name": "Brisbane Heat", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/6r5cly1492606239.png"},
+    {"provider_team_id": "135750", "team_name": "Hobart Hurricanes", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/vdcla41492606553.png"},
+    {"provider_team_id": "135751", "team_name": "Melbourne Renegades", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/fy0wik1492607045.png"},
+    {"provider_team_id": "135752", "team_name": "Melbourne Stars", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/l0t7v31715269757.png"},
+    {"provider_team_id": "135753", "team_name": "Perth Scorchers", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/ithlp51546681732.png"},
+    {"provider_team_id": "135754", "team_name": "Sydney Sixers", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/jtkm601492607206.png"},
+    {"provider_team_id": "135755", "team_name": "Sydney Thunder", "team_abbrev": "", "league": "bbl", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/t0tooq1492606384.png"},
+
+    {"provider_team_id": "150064", "team_name": "Durban's Super Giants", "team_abbrev": "", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/oe6ikv1734183540.png"},
+    {"provider_team_id": "150065", "team_name": "Joburg Super Kings", "team_abbrev": "JSK", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/bvjydr1734183753.png"},
+    {"provider_team_id": "150066", "team_name": "MI Cape Town", "team_abbrev": "", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/s146kh1734183906.png"},
+    {"provider_team_id": "150067", "team_name": "Paarl Royals", "team_abbrev": "", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/41azkk1734184030.png"},
+    {"provider_team_id": "150068", "team_name": "Pretoria Capitals", "team_abbrev": "", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/brbk561734184169.png"},
+    {"provider_team_id": "150069", "team_name": "Sunrisers Eastern Cape", "team_abbrev": "", "league": "sa20", "sport": "Cricket", "logo_url": "https://r2.thesportsdb.com/images/media/team/badge/us5vei1734184224.png"}
+  ]
+}
