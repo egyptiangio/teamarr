@@ -84,6 +84,7 @@ class TeamMatcher:
         service: SportsDataService,
         cache: StreamMatchCache,
         db_factory: Any = None,
+        days_ahead: int = 3,
     ):
         """Initialize matcher.
 
@@ -91,11 +92,13 @@ class TeamMatcher:
             service: Sports data service for event/team lookups
             cache: Stream match cache
             db_factory: Optional database factory for alias lookups
+            days_ahead: Days to look ahead for events (default 3)
         """
         self._service = service
         self._cache = cache
         self._db = db_factory
         self._fuzzy = get_matcher()
+        self._days_ahead = days_ahead
 
     def match_single_league(
         self,
@@ -150,15 +153,15 @@ class TeamMatcher:
         if cache_result:
             return cache_result
 
-        # Fetch events from MATCH_WINDOW_DAYS back to today
-        # - Today: fetch from API (ESPN only)
+        # Fetch events from MATCH_WINDOW_DAYS back to days_ahead
+        # - Today + future: fetch from API (ESPN)
         # - Past: always use cache
         # - TSDB leagues: always cache-only
         is_tsdb = self._service.get_provider_name(league) == "tsdb"
         events = []
-        for offset in range(-MATCH_WINDOW_DAYS, 1):
+        for offset in range(-MATCH_WINDOW_DAYS, self._days_ahead + 1):
             fetch_date = target_date + timedelta(days=offset)
-            # Today: fetch fresh; Past: always use cache
+            # Today and future: fetch from API; Past/TSDB: cache only
             cache_only = is_tsdb or offset < 0
             events.extend(self._service.get_events(league, fetch_date, cache_only=cache_only))
 
@@ -275,9 +278,9 @@ class TeamMatcher:
             # Fallback: fetch events per-stream (slower, used when no prefetch)
             for league in leagues_to_search:
                 is_tsdb = self._service.get_provider_name(league) == "tsdb"
-                for offset in range(-MATCH_WINDOW_DAYS, 1):
+                for offset in range(-MATCH_WINDOW_DAYS, self._days_ahead + 1):
                     fetch_date = target_date + timedelta(days=offset)
-                    # Today: fetch fresh; Past: always use cache
+                    # Today and future: fetch from API; Past/TSDB: cache only
                     cache_only = is_tsdb or offset < 0
                     events = self._service.get_events(league, fetch_date, cache_only=cache_only)
                     for event in events:

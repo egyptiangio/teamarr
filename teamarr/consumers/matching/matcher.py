@@ -163,6 +163,7 @@ class StreamMatcher:
         custom_regex_date_enabled: bool = False,
         custom_regex_time: str | None = None,
         custom_regex_time_enabled: bool = False,
+        days_ahead: int | None = None,
     ):
         """Initialize the matcher.
 
@@ -182,6 +183,7 @@ class StreamMatcher:
             custom_regex_date_enabled: Whether custom regex for date is enabled
             custom_regex_time: Custom regex pattern for extracting time
             custom_regex_time_enabled: Whether custom regex for time is enabled
+            days_ahead: Days to look ahead for events (if None, loaded from settings)
         """
         self._service = service
         self._db_factory = db_factory
@@ -191,6 +193,15 @@ class StreamMatcher:
         self._include_final_events = include_final_events
         self._sport_durations = sport_durations or {}
         self._user_tz = user_tz or get_user_timezone()
+
+        # Load days_ahead from settings if not provided
+        if days_ahead is None:
+            with db_factory() as conn:
+                row = conn.execute(
+                    "SELECT event_match_days_ahead FROM settings WHERE id = 1"
+                ).fetchone()
+                days_ahead = row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
+        self._days_ahead = days_ahead
 
         # Custom regex configuration - create if any pattern is enabled
         has_custom_regex = (
@@ -214,7 +225,7 @@ class StreamMatcher:
         self._generation_provided = generation is not None
 
         # Initialize sub-matchers
-        self._team_matcher = TeamMatcher(service, self._cache)
+        self._team_matcher = TeamMatcher(service, self._cache, days_ahead=self._days_ahead)
         self._event_matcher = EventCardMatcher(service, self._cache)
 
         # League event types cache
@@ -308,8 +319,8 @@ class StreamMatcher:
         Instead, fetch all events ONCE and reuse for all streams.
 
         Strategy:
-        - Today: always fetch from API (ESPN only)
-        - Past dates: use full 30-day cache for matching
+        - Past dates (up to MATCH_WINDOW_DAYS back): use cache for stats tracking
+        - Today + days_ahead: fetch from API (ESPN) or cache (TSDB)
         - TSDB leagues: always cache-only
         """
         self._prefetched_events = {}
@@ -319,9 +330,10 @@ class StreamMatcher:
             league_events: list[Event] = []
             is_tsdb = self._service.get_provider_name(league) == "tsdb"
 
-            for offset in range(-MATCH_WINDOW_DAYS, 1):
+            # Range: from -MATCH_WINDOW_DAYS to +days_ahead (inclusive)
+            for offset in range(-MATCH_WINDOW_DAYS, self._days_ahead + 1):
                 fetch_date = target_date + timedelta(days=offset)
-                # Today: fetch fresh; Past: always use cache
+                # Today and future: fetch from API (ESPN); Past/TSDB: cache only
                 cache_only = is_tsdb or offset < 0
                 events = self._service.get_events(league, fetch_date, cache_only=cache_only)
                 league_events.extend(events)
@@ -332,7 +344,7 @@ class StreamMatcher:
 
         logger.debug(
             f"Prefetched {total_events} events from {len(self._prefetched_events)} leagues "
-            f"(window: -{MATCH_WINDOW_DAYS} to 0 days)"
+            f"(window: -{MATCH_WINDOW_DAYS} to +{self._days_ahead} days)"
         )
 
     def _match_single(
