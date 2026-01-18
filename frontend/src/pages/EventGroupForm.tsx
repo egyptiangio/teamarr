@@ -1271,7 +1271,7 @@ export function EventGroupForm() {
                                 exclude_teams: [],
                               })
                             }}
-                            className="text-primary"
+                            className="accent-primary"
                           />
                           <span className="text-sm">Include only selected teams</span>
                         </label>
@@ -1291,7 +1291,7 @@ export function EventGroupForm() {
                                 include_teams: [],
                               })
                             }}
-                            className="text-primary"
+                            className="accent-primary"
                           />
                           <span className="text-sm">Exclude selected teams</span>
                         </label>
