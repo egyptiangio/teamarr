@@ -475,15 +475,16 @@ export function Channels() {
               )}
               )
             </CardTitle>
-            <label className="flex items-center gap-2 text-sm font-normal">
-              <input
-                type="checkbox"
+            <div
+              className="flex items-center gap-2 text-sm font-normal cursor-pointer"
+              onClick={() => setIncludeDeleted(!includeDeleted)}
+            >
+              <Checkbox
                 checked={includeDeleted}
-                onChange={(e) => setIncludeDeleted(e.target.checked)}
-                className="rounded"
+                onCheckedChange={(checked) => setIncludeDeleted(!!checked)}
               />
-              Show deleted
-            </label>
+              <span>Show deleted</span>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

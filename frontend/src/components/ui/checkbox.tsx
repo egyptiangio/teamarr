@@ -34,6 +34,7 @@ const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
           className
         )}
         onClick={(e) => {
+          e.stopPropagation() // Prevent double-toggle when wrapped in clickable label/div
           onClick?.(e)
           onCheckedChange?.(!checked)
         }}
