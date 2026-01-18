@@ -818,8 +818,9 @@ def classify_stream(
                 )
 
             # Step 4: Try custom regex for team extraction (if configured)
+            # Uses ORIGINAL stream name (not normalized) for intuitive pattern matching
             elif custom_regex and custom_regex.teams_enabled:
-                team1, team2, success = extract_teams_with_custom_regex(text, custom_regex)
+                team1, team2, success = extract_teams_with_custom_regex(stream_name, custom_regex)
                 if success:
                     result = ClassifiedStream(
                         category=StreamCategory.TEAM_VS_TEAM,
