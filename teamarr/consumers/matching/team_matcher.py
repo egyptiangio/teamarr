@@ -114,7 +114,23 @@ class TeamMatcher:
         self._fuzzy = get_matcher()
         self._days_ahead = days_ahead
         # Load user-defined aliases from database
+        # Forward cache: (alias, league) -> canonical
         self._user_aliases: UserAliasCache = self._load_user_aliases()
+        # Reverse cache: alias -> [(canonical, league), ...]
+        # Enables finding canonical name without knowing league first
+        self._reverse_aliases: dict[str, list[tuple[str, str]]] = self._build_reverse_cache()
+
+    def reload_aliases(self) -> None:
+        """Reload aliases from database.
+
+        Call this after alias CRUD operations to update the in-memory caches.
+        Rebuilds both the forward cache (alias, league) -> canonical and
+        the reverse cache alias -> [(canonical, league), ...].
+        """
+        self._user_aliases = self._load_user_aliases()
+        self._reverse_aliases = self._build_reverse_cache()
+        logger.info("[ALIAS] Reloaded aliases: %d forward, %d reverse entries",
+                    len(self._user_aliases), len(self._reverse_aliases))
 
     def match_single_league(
         self,
@@ -314,6 +330,13 @@ class TeamMatcher:
 
         # Try to match against all events
         result = self._match_against_multi_league_events(ctx, all_events)
+
+        # If match failed with NO_EVENT_FOUND, try reverse alias resolution
+        # This handles cases where classifier couldn't detect league but user has aliases
+        if result.is_failed and result.failed_reason == FailedReason.NO_EVENT_FOUND:
+            retry_result = self._try_reverse_alias_match(ctx, all_events, leagues_to_search)
+            if retry_result and retry_result.is_matched:
+                result = retry_result
 
         # Cache successful matches
         if result.is_matched and result.event:
@@ -886,6 +909,159 @@ class TeamMatcher:
         except Exception as e:
             logger.warning("[ALIAS] Failed to load user aliases from database: %s", e)
             return {}
+
+    def _build_reverse_cache(self) -> dict[str, list[tuple[str, str]]]:
+        """Build reverse alias lookup: alias_text -> [(canonical, league), ...]
+
+        Enables finding canonical name without knowing league first.
+        This is critical for multi-league groups where the classifier can't
+        detect the league from the stream name.
+
+        Returns:
+            Dict mapping normalized alias to list of (canonical_name, league) tuples
+        """
+        reverse: dict[str, list[tuple[str, str]]] = {}
+        for (alias, league), canonical in self._user_aliases.items():
+            if alias not in reverse:
+                reverse[alias] = []
+            reverse[alias].append((canonical, league))
+
+        if reverse:
+            logger.debug(
+                "[ALIAS] Built reverse cache with %d unique aliases",
+                len(reverse),
+            )
+        return reverse
+
+    def _reverse_resolve_alias(self, team_name: str) -> list[tuple[str, str | None]]:
+        """Resolve team name to ALL canonical forms via reverse lookup.
+
+        Returns all matching aliases across all leagues, enabling the caller
+        to try matching against each candidate. This is the key to solving
+        the multi-league matching problem when league_hint is None.
+
+        Args:
+            team_name: Extracted team name to check
+
+        Returns:
+            List of (canonical_name, league) tuples. League is None for built-in aliases.
+            Empty list if no alias found.
+        """
+        if not team_name:
+            return []
+
+        results: list[tuple[str, str | None]] = []
+        normalized = team_name.lower()
+
+        # Check built-in aliases first (already league-agnostic)
+        canonical = TEAM_ALIASES.get(normalized)
+        if canonical:
+            results.append((canonical, None))
+
+        # Check reverse cache - returns ALL leagues where this alias exists
+        if self._reverse_aliases:
+            matches = self._reverse_aliases.get(normalized, [])
+            results.extend(matches)
+
+        return results
+
+    def _try_reverse_alias_match(
+        self,
+        ctx: MatchContext,
+        events: list[tuple[str, Event]],
+        enabled_leagues: list[str],
+    ) -> MatchOutcome | None:
+        """Try matching with reverse alias resolution.
+
+        When initial matching fails and we don't know the league, check if either
+        team name is a user-defined alias. If so, we get both the canonical name
+        AND the league from the alias, then retry matching with that information.
+
+        Args:
+            ctx: Match context with team names
+            events: List of (league, event) tuples to match against
+            enabled_leagues: List of enabled league codes
+
+        Returns:
+            Successful MatchOutcome if reverse alias helps, None otherwise
+        """
+        if not ctx.team1 and not ctx.team2:
+            return None
+
+        # Try reverse alias resolution for both teams
+        team1_aliases = self._reverse_resolve_alias(ctx.team1) if ctx.team1 else []
+        team2_aliases = self._reverse_resolve_alias(ctx.team2) if ctx.team2 else []
+
+        if not team1_aliases and not team2_aliases:
+            return None
+
+        # Collect candidate leagues from aliases (only those that are enabled)
+        candidate_leagues: set[str] = set()
+        for canonical, league in team1_aliases + team2_aliases:
+            if league and league.lower() in [l.lower() for l in enabled_leagues]:
+                candidate_leagues.add(league.lower())
+
+        logger.debug(
+            "[REVERSE_ALIAS] team1=%s → %s, team2=%s → %s, candidates=%s",
+            ctx.team1,
+            team1_aliases,
+            ctx.team2,
+            team2_aliases,
+            candidate_leagues,
+        )
+
+        if not candidate_leagues and not any(lg is None for _, lg in team1_aliases + team2_aliases):
+            # No enabled leagues from aliases and no built-in aliases
+            return None
+
+        # Filter events to candidate leagues (if any league-specific aliases found)
+        if candidate_leagues:
+            league_events = [(lg, ev) for lg, ev in events if lg.lower() in candidate_leagues]
+        else:
+            league_events = events
+
+        if not league_events:
+            return None
+
+        # Try each alias combination until one matches
+        # Use original team name if no alias, otherwise try each alias
+        team1_candidates = team1_aliases if team1_aliases else [(ctx.team1, None)]
+        team2_candidates = team2_aliases if team2_aliases else [(ctx.team2, None)]
+
+        for canonical1, league1 in team1_candidates:
+            for canonical2, league2 in team2_candidates:
+                # Build retry context with resolved names
+                retry_ctx = MatchContext(
+                    stream_name=ctx.stream_name,
+                    stream_id=ctx.stream_id,
+                    group_id=ctx.group_id,
+                    target_date=ctx.target_date,
+                    generation=ctx.generation,
+                    user_tz=ctx.user_tz,
+                    classified=ctx.classified,
+                    team1=canonical1,
+                    team2=canonical2,
+                    sport_durations=ctx.sport_durations,
+                )
+
+                retry_result = self._match_against_multi_league_events(retry_ctx, league_events)
+
+                if retry_result.is_matched:
+                    logger.info(
+                        "[REVERSE_ALIAS_MATCH] stream_id=%d '%s/%s' → '%s/%s' in %s",
+                        ctx.stream_id,
+                        ctx.team1,
+                        ctx.team2,
+                        canonical1,
+                        canonical2,
+                        retry_result.detected_league,
+                    )
+                    # Update parsed team info to show original stream names
+                    retry_result.parsed_team1 = ctx.team1
+                    retry_result.parsed_team2 = ctx.team2
+                    return retry_result
+
+        return None
 
     def _lookup_user_alias(self, team_name: str, league: str) -> str | None:
         """Look up a team name in user-defined aliases.
