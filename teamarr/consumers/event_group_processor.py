@@ -881,11 +881,38 @@ class EventGroupProcessor:
             # Step 4: Add matched streams to parent's channels
             matched_streams = self._build_matched_stream_list(streams, match_result)
 
+            # Build event lookup BEFORE team filtering (for cleanup)
+            all_matched_events = {
+                m.get("event").id: m.get("event")
+                for m in matched_streams
+                if m.get("event") and hasattr(m.get("event"), "id")
+            }
+
             # Apply team include/exclude filtering (inherits from parent if not set)
             matched_streams, filtered_team_count = self._filter_by_teams(
                 matched_streams, group, conn
             )
             result.filtered_team = filtered_team_count
+
+            # Build set of event IDs that passed the filter
+            passed_event_ids = {
+                m.get("event").id
+                for m in matched_streams
+                if m.get("event") and hasattr(m.get("event"), "id")
+            }
+
+            # Cleanup existing channels that no longer pass team filter
+            # Note: Child groups add streams to PARENT channels, so cleanup here
+            # removes channels that were created for events now excluded.
+            cleanup_count = self._cleanup_team_filtered_channels(
+                group, conn, all_matched_events, passed_event_ids
+            )
+            if cleanup_count > 0:
+                result.channels_deleted = cleanup_count
+                logger.info(
+                    "[EVENT_EPG] Child group cleanup: %d channels due to team filter",
+                    cleanup_count,
+                )
 
             if matched_streams:
                 child_processor = self._get_child_processor()
@@ -1166,11 +1193,36 @@ class EventGroupProcessor:
             # This ensures lifecycle filtering uses current final status
             matched_streams = self._enrich_matched_events(matched_streams)
 
+            # Build event lookup BEFORE team filtering (for cleanup of existing channels)
+            all_matched_events = {
+                m.get("event").id: m.get("event")
+                for m in matched_streams
+                if m.get("event") and hasattr(m.get("event"), "id")
+            }
+
             # Apply team include/exclude filtering
             matched_streams, filtered_team_count = self._filter_by_teams(
                 matched_streams, group, conn
             )
             result.filtered_team = filtered_team_count
+
+            # Build set of event IDs that passed the filter
+            passed_event_ids = {
+                m.get("event").id
+                for m in matched_streams
+                if m.get("event") and hasattr(m.get("event"), "id")
+            }
+
+            # Cleanup existing channels that no longer pass team filter
+            # (handles both include and exclude modes, global and per-group)
+            cleanup_count = self._cleanup_team_filtered_channels(
+                group, conn, all_matched_events, passed_event_ids
+            )
+            if cleanup_count > 0:
+                result.channels_deleted = cleanup_count
+                logger.info(
+                    "[EVENT_EPG] Cleaned up %d channels due to team filter", cleanup_count
+                )
 
             # Build stream dict for cleanup (fingerprint-based content change detection)
             current_streams = {s.get("id"): s for s in streams if s.get("id")}
@@ -1750,6 +1802,134 @@ class EventGroupProcessor:
                 else:
                     return True
         return False
+
+    def _cleanup_team_filtered_channels(
+        self,
+        group: "EventEPGGroup",
+        conn: Connection,
+        all_matched_events: dict[str, "Event"],
+        passed_event_ids: set[str],
+    ) -> int:
+        """Delete existing channels that don't pass team filter.
+
+        When teams are added to exclude list (or removed from include list),
+        existing channels for those teams should be deleted.
+
+        This handles both include and exclude modes:
+        - Include mode: channels for teams NOT in include list are deleted
+        - Exclude mode: channels for teams IN exclude list are deleted
+
+        Works for both global and per-group team filters.
+
+        Args:
+            group: The event group
+            conn: Database connection
+            all_matched_events: Dict of event_id -> Event for all matched events
+                               (before team filtering was applied)
+            passed_event_ids: Set of event IDs that passed the team filter
+
+        Returns:
+            Number of channels deleted
+        """
+        from teamarr.database.channels import get_managed_channels_for_group
+
+        # Get effective team filter (group -> parent -> global)
+        include_teams, exclude_teams, mode = self._get_effective_team_filter(group, conn)
+
+        if not include_teams and not exclude_teams:
+            return 0  # No filter configured
+
+        # Get all existing channels for this group
+        channels = get_managed_channels_for_group(conn, group.id)
+
+        deleted_count = 0
+        for channel in channels:
+            event_id = channel.event_id
+
+            # Only process channels whose events were matched in this run
+            # (meaning the event is for today's date and we have the team info)
+            if event_id not in all_matched_events:
+                continue
+
+            # If the event passed the filter, keep the channel
+            if event_id in passed_event_ids:
+                continue
+
+            # Event was matched but didn't pass filter - delete the channel
+            success = self._delete_channel_for_team_filter(
+                conn, channel, reason="team_filter"
+            )
+            if success:
+                deleted_count += 1
+                logger.info(
+                    "[EVENT_EPG] Deleted channel '%s' (event_id=%s) - team excluded by filter",
+                    channel.channel_name,
+                    event_id,
+                )
+
+        return deleted_count
+
+    def _delete_channel_for_team_filter(
+        self,
+        conn: Connection,
+        channel,
+        reason: str,
+    ) -> bool:
+        """Delete a managed channel due to team filter.
+
+        Args:
+            conn: Database connection
+            channel: ManagedChannel to delete
+            reason: Deletion reason
+
+        Returns:
+            True if deleted successfully
+        """
+        from teamarr.database.channels import (
+            log_channel_history,
+            mark_channel_deleted,
+        )
+
+        try:
+            # Soft delete in our database
+            mark_channel_deleted(conn, channel.id, reason=reason)
+
+            # Log the history
+            log_channel_history(
+                conn=conn,
+                managed_channel_id=channel.id,
+                change_type="deleted",
+                change_source="team_filter",
+                notes=f"Channel deleted: {reason}",
+            )
+
+            # Delete from Dispatcharr if connected
+            if self._dispatcharr_client and channel.dispatcharr_channel_id:
+                try:
+                    lifecycle_service = create_lifecycle_service(
+                        self._db_factory,
+                        self._service,
+                        self._dispatcharr_client,
+                    )
+                    if lifecycle_service._channel_manager:
+                        lifecycle_service._channel_manager.delete_channel(
+                            channel.dispatcharr_channel_id
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "[EVENT_EPG] Failed to delete channel %d from Dispatcharr: %s",
+                        channel.dispatcharr_channel_id,
+                        e,
+                    )
+
+            return True
+        except Exception as e:
+            logger.error(
+                "[EVENT_EPG] Failed to delete channel %d for team filter: %s",
+                channel.id,
+                e,
+            )
+            return False
 
     def _sort_matched_streams(
         self,
