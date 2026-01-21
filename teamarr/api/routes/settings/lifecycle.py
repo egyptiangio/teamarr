@@ -114,6 +114,10 @@ def get_scheduler_settings():
 @router.put("/settings/scheduler", response_model=SchedulerSettingsModel)
 def update_scheduler_settings(update: SchedulerSettingsModel):
     """Update scheduler settings."""
+    from teamarr.consumers.scheduler import (
+        start_lifecycle_scheduler,
+        stop_lifecycle_scheduler,
+    )
     from teamarr.database.settings import (
         get_scheduler_settings,
         update_scheduler_settings,
@@ -131,6 +135,11 @@ def update_scheduler_settings(update: SchedulerSettingsModel):
             enabled=update.enabled,
             interval_minutes=update.interval_minutes,
         )
+
+    # Apply scheduler state change immediately
+    stop_lifecycle_scheduler()
+    if update.enabled:
+        start_lifecycle_scheduler(get_db)
 
     with get_db() as conn:
         settings = get_scheduler_settings(conn)
