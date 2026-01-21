@@ -984,6 +984,7 @@ class ChannelLifecycleService:
             )
 
             # Add stream to managed_channel_streams
+            # Use default priority - final ordering happens after all matching complete
             add_stream_to_channel(
                 conn=conn,
                 managed_channel_id=managed_channel_id,
@@ -992,6 +993,8 @@ class ChannelLifecycleService:
                 priority=0,
                 exception_keyword=matched_keyword,
                 m3u_account_id=stream.get("m3u_account_id"),
+                m3u_account_name=group_config.get("m3u_account_name"),
+                source_group_id=group_id,
             )
 
             # Commit immediately so next channel number query sees this channel
@@ -1238,9 +1241,7 @@ class ChannelLifecycleService:
         | event_id            | tvg_id              | Ensures EPG matching        |
         """
         from teamarr.database.channels import (
-            get_ordered_stream_ids,
             log_channel_history,
-            reorder_channel_streams,
             update_managed_channel,
         )
 
@@ -1311,25 +1312,11 @@ class ChannelLifecycleService:
                     db_updates["dispatcharr_stream_id"] = stream_id
                     changes_made.append(f"streams: added {stream_id}")
 
-            # 5. Enforce stream ordering based on rules
-            # Reorder streams in DB based on ordering rules, then sync to Dispatcharr
-            reordered_count = reorder_channel_streams(conn, existing.id)
-            if reordered_count > 0:
-                changes_made.append(f"streams: reordered {reordered_count}")
+            # Note: Stream ordering is applied as a final step after all matching
+            # See generation.py Step 3b - this ensures all streams from all groups
+            # are considered together when computing final order
 
-            # Get the correctly ordered stream IDs from our DB
-            ordered_stream_ids = get_ordered_stream_ids(conn, existing.id)
-            if ordered_stream_ids:
-                # Compare with Dispatcharr's current order
-                ch_streams = current_channel.streams
-                dispatcharr_order = list(ch_streams) if ch_streams else []
-                if ordered_stream_ids != dispatcharr_order:
-                    # Order differs - push our ordered list to Dispatcharr
-                    update_data["streams"] = ordered_stream_ids
-                    if "streams: reordered" not in str(changes_made):
-                        changes_made.append("streams: order synced")
-
-            # 6. Check tvg_id
+            # 5. Check tvg_id
             expected_tvg_id = existing.tvg_id
             if expected_tvg_id != current_channel.tvg_id:
                 update_data["tvg_id"] = expected_tvg_id

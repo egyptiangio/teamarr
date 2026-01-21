@@ -191,6 +191,7 @@ class KeywordEnforcer:
                             reason=f"Moved to {target_name} channel",
                         )
 
+                        # Use sequential priority - final ordering after all matching
                         priority = get_next_stream_priority(conn, target_channel.id)
                         add_stream_to_channel(
                             conn=conn,
@@ -201,6 +202,7 @@ class KeywordEnforcer:
                             source_group_id=stream.source_group_id,
                             source_group_type=stream.source_group_type,
                             exception_keyword=expected_keyword,
+                            m3u_account_name=stream.m3u_account_name,
                         )
 
                         # Sync to Dispatcharr

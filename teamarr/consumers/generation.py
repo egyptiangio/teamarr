@@ -45,6 +45,7 @@ class GenerationResult:
 
     # Sub-task results
     m3u_refresh: dict = field(default_factory=dict)
+    stream_ordering: dict = field(default_factory=dict)
     epg_refresh: dict = field(default_factory=dict)
     epg_association: dict = field(default_factory=dict)
     deletions: dict = field(default_factory=dict)
@@ -306,6 +307,103 @@ def run_full_generation(
                                     )
                         if synced:
                             logger.info("[GENERATION] Synced %d channel numbers to Dispatcharr", synced)
+
+        # Step 3b: Apply stream ordering rules to all channels (93-95%)
+        update_progress("ordering", 93, "Applying stream ordering rules...")
+        from teamarr.database.channels import (
+            get_all_managed_channels,
+            get_ordered_stream_ids,
+        )
+
+        reorder_result = {"channels_reordered": 0, "streams_reordered": 0}
+        try:
+            from teamarr.database.settings import get_stream_ordering_settings
+            from teamarr.services.stream_ordering import StreamOrderingService
+            from teamarr.database.channels import get_channel_streams, update_stream_priority
+
+            with db_factory() as conn:
+                # Load ordering rules once
+                ordering_settings = get_stream_ordering_settings(conn)
+                if not ordering_settings.rules:
+                    logger.debug("[ORDERING] No stream ordering rules configured, skipping")
+                else:
+                    # Create ordering service once with rules
+                    ordering_service = StreamOrderingService(
+                        rules=ordering_settings.rules, conn=conn
+                    )
+                    logger.info(
+                        "[ORDERING] Applying %d ordering rule(s)", len(ordering_settings.rules)
+                    )
+
+                    # Setup Dispatcharr channel manager once if available
+                    channel_mgr = None
+                    if dispatcharr_client:
+                        from teamarr.dispatcharr.factory import DispatcharrConnection
+                        from teamarr.dispatcharr.managers import ChannelManager
+                        raw_client = (
+                            dispatcharr_client.client
+                            if isinstance(dispatcharr_client, DispatcharrConnection)
+                            else dispatcharr_client
+                        )
+                        channel_mgr = ChannelManager(raw_client)
+
+                    # Get all active channels
+                    all_channels = get_all_managed_channels(conn, include_deleted=False)
+                    total_channels = len(all_channels)
+
+                    for idx, channel in enumerate(all_channels):
+                        # Get streams for this channel
+                        streams = get_channel_streams(conn, channel.id)
+                        if not streams:
+                            continue
+
+                        # Compute new priorities using the shared ordering service
+                        reordered_count = 0
+                        for stream in streams:
+                            new_priority = ordering_service.compute_priority(stream)
+                            if stream.priority != new_priority:
+                                update_stream_priority(conn, stream.id, new_priority)
+                                reordered_count += 1
+
+                        if reordered_count > 0:
+                            reorder_result["channels_reordered"] += 1
+                            reorder_result["streams_reordered"] += reordered_count
+
+                            # Sync ordered streams to Dispatcharr
+                            if channel_mgr and channel.dispatcharr_channel_id:
+                                ordered_ids = get_ordered_stream_ids(conn, channel.id)
+                                if ordered_ids:
+                                    sync_result = channel_mgr.update_channel(
+                                        channel.dispatcharr_channel_id,
+                                        {"streams": ordered_ids}
+                                    )
+                                    if not sync_result.success:
+                                        logger.warning(
+                                            "[ORDERING] Failed to sync channel %s to Dispatcharr: %s",
+                                            channel.channel_name,
+                                            sync_result.error
+                                        )
+
+                        # Update progress every 10 channels or at end
+                        if (idx + 1) % 10 == 0 or idx == total_channels - 1:
+                            pct = 93 + int(((idx + 1) / total_channels) * 2)
+                            update_progress(
+                                "ordering", pct,
+                                f"Ordering streams ({idx + 1}/{total_channels})",
+                                idx + 1, total_channels, channel.channel_name
+                            )
+
+                    if reorder_result["channels_reordered"] > 0:
+                        logger.info(
+                            "[ORDERING] Reordered %d streams across %d channels",
+                            reorder_result["streams_reordered"],
+                            reorder_result["channels_reordered"]
+                        )
+        except Exception as e:
+            logger.warning("[ORDERING] Stream ordering failed: %s", e)
+            reorder_result["error"] = str(e)
+
+        result.stream_ordering = reorder_result
 
         # Step 4: Merge and save XMLTV (95-96%)
         update_progress("saving", 95, "Saving XMLTV...")

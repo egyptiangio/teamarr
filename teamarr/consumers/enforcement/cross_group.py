@@ -192,6 +192,7 @@ class CrossGroupEnforcer:
                                 ):
                                     continue  # Already on target
 
+                                # Use sequential priority - final ordering after all matching
                                 priority = get_next_stream_priority(conn, target_channel.id)
                                 add_stream_to_channel(
                                     conn=conn,
@@ -202,6 +203,7 @@ class CrossGroupEnforcer:
                                     source_group_id=group_id,
                                     source_group_type="cross_group",
                                     exception_keyword=stream.exception_keyword,
+                                    m3u_account_name=stream.m3u_account_name,
                                 )
                                 moved_count += 1
 

@@ -212,6 +212,7 @@ class ChildStreamProcessor:
                         continue
 
                     # Add stream to database
+                    # Use sequential priority - final ordering happens after all matching
                     priority = get_next_stream_priority(conn, parent_channel.id)
                     add_stream_to_channel(
                         conn=conn,
