@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS settings (
     default_include_teams JSON,                  -- Global include filter [{"provider":"espn","team_id":"33","league":"nfl"}, ...]
     default_exclude_teams JSON,                  -- Global exclude filter (same format)
     default_team_filter_mode TEXT DEFAULT 'include' CHECK(default_team_filter_mode IN ('include', 'exclude')),
+    team_filter_enabled BOOLEAN DEFAULT 1,       -- Master toggle to enable/disable team filtering
 
     -- Scheduled Generation
     cron_expression TEXT DEFAULT '0 * * * *',    -- Cron for auto EPG generation
