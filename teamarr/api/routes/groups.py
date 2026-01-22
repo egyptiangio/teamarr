@@ -6,9 +6,11 @@ Provides REST API for:
 - M3U group discovery from Dispatcharr
 """
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from teamarr.database import get_db
 import logging
@@ -21,6 +23,35 @@ router = APIRouter()
 # =============================================================================
 # PYDANTIC MODELS
 # =============================================================================
+
+
+def _validate_profile_ids(v: Any) -> list[str | int] | None:
+    """Validate channel_profile_ids accepts mixed int/str types.
+
+    Pydantic v2 union validation can fail on mixed types when the first
+    element is an int (it infers list[int] and rejects subsequent strings).
+    This validator explicitly handles the mixed case.
+    """
+    if v is None:
+        return None
+    if not isinstance(v, list):
+        return v
+    result: list[str | int] = []
+    for item in v:
+        if isinstance(item, int):
+            result.append(item)
+        elif isinstance(item, str):
+            # Keep wildcards as strings, convert numeric strings to int
+            if item in ("{sport}", "{league}"):
+                result.append(item)
+            elif item.isdigit():
+                result.append(int(item))
+            else:
+                result.append(item)
+        else:
+            # Let Pydantic handle invalid types
+            result.append(item)
+    return result
 
 
 class TeamFilterEntry(BaseModel):
@@ -47,7 +78,7 @@ class GroupCreate(BaseModel):
     channel_start_number: int | None = Field(None, ge=1)
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] | None = None  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -77,6 +108,11 @@ class GroupCreate(BaseModel):
     overlap_handling: str = "add_stream"
     enabled: bool = True
 
+    @field_validator("channel_profile_ids", mode="before")
+    @classmethod
+    def validate_profile_ids(cls, v: Any) -> list[str | int] | None:
+        return _validate_profile_ids(v)
+
 
 class GroupUpdate(BaseModel):
     """Update event EPG group request."""
@@ -90,7 +126,7 @@ class GroupUpdate(BaseModel):
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str | None = None  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] | None = None  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     duplicate_event_handling: str | None = None
     channel_assignment_mode: str | None = None
     sort_order: int | None = None
@@ -139,6 +175,11 @@ class GroupUpdate(BaseModel):
     clear_include_teams: bool = False
     clear_exclude_teams: bool = False
 
+    @field_validator("channel_profile_ids", mode="before")
+    @classmethod
+    def validate_profile_ids(cls, v: Any) -> list[str | int] | None:
+        return _validate_profile_ids(v)
+
 
 class GroupResponse(BaseModel):
     """Event EPG group response."""
@@ -153,7 +194,7 @@ class GroupResponse(BaseModel):
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] = []  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] = []  # IDs or "{sport}", "{league}"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -202,6 +243,12 @@ class GroupResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     channel_count: int | None = None
+
+    @field_validator("channel_profile_ids", mode="before")
+    @classmethod
+    def validate_profile_ids(cls, v: Any) -> list[str | int]:
+        result = _validate_profile_ids(v)
+        return result if result is not None else []
 
 
 class GroupListResponse(BaseModel):
@@ -253,11 +300,16 @@ class BulkGroupSettings(BaseModel):
     template_id: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] | None = None  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     duplicate_event_handling: str = "consolidate"
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
     enabled: bool = True
+
+    @field_validator("channel_profile_ids", mode="before")
+    @classmethod
+    def validate_profile_ids(cls, v: Any) -> list[str | int] | None:
+        return _validate_profile_ids(v)
 
 
 class BulkGroupCreateRequest(BaseModel):
@@ -324,13 +376,18 @@ class ClearCacheResponse(BaseModel):
     template_id: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str | None = None  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] | None = None  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     channel_sort_order: str | None = None
     overlap_handling: str | None = None
     # Clear flags for nullable fields
     clear_template: bool = False
     clear_channel_group_id: bool = False
     clear_channel_profile_ids: bool = False
+
+    @field_validator("channel_profile_ids", mode="before")
+    @classmethod
+    def validate_profile_ids(cls, v: Any) -> list[str | int] | None:
+        return _validate_profile_ids(v)
 
 
 class BulkGroupUpdateResult(BaseModel):
