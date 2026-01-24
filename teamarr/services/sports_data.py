@@ -153,11 +153,11 @@ class SportsDataService:
         for provider in self._providers:
             if provider.supports_league(league):
                 events = provider.get_events(league, target_date)
-                if events:
-                    ttl = get_events_cache_ttl(target_date)
-                    # Serialize to dict before caching
-                    self._cache.set(cache_key, [event_to_dict(e) for e in events], ttl)
-                    return events
+                ttl = get_events_cache_ttl(target_date)
+                # Cache ALL results including empty lists to avoid repeated API calls
+                # for leagues with no events on a given day
+                self._cache.set(cache_key, [event_to_dict(e) for e in events], ttl)
+                return events
         return []
 
     def get_team_schedule(
@@ -217,6 +217,11 @@ class SportsDataService:
 
         Uses shorter TTL (30min) since this is called for fresh scores/odds.
         """
+        # Guard against empty event_id which would cause malformed API requests
+        if not event_id:
+            logger.warning("[SPORTS_DATA] get_event called with empty event_id for league %s", league)
+            return None
+
         cache_key = make_cache_key("event", league, event_id)
 
         # Check cache (deserialize from dict)
