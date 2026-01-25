@@ -158,14 +158,19 @@ class UFCParserMixin:
                         logo_url = headshots[size].get("href")
                         break
 
+        display_name = athlete.get("displayName", "")
         short_name = athlete.get("shortName", "")
+
+        # For fighters, use last name as abbreviation (e.g., "Allen", "Silva")
+        # This works better with templates like "{away_team_abbrev} @ {home_team_abbrev}"
+        last_name = display_name.split()[-1] if display_name else short_name
 
         return Team(
             id=str(athlete.get("id", "")),
             provider=self.name,
-            name=athlete.get("displayName", ""),
+            name=display_name,
             short_name=short_name,
-            abbreviation=short_name.replace(".", "").replace(" ", ""),
+            abbreviation=last_name,
             league="ufc",
             sport="mma",  # Lowercase code; display name from sports table
             logo_url=logo_url,
