@@ -947,6 +947,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 37 (custom_regex_league)")
         current_version = 37
 
+    # Version 38: Fix unique constraint for 'separate' duplicate handling mode
+    # Add primary_stream_id to unique index so each stream can have its own channel
+    if current_version < 38:
+        # Drop old index and create new one with primary_stream_id
+        conn.execute("DROP INDEX IF EXISTS idx_mc_unique_event")
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_unique_event
+            ON managed_channels(
+                event_epg_group_id, event_id, event_provider,
+                COALESCE(exception_keyword, ''), primary_stream_id
+            ) WHERE deleted_at IS NULL
+        """)
+        conn.execute("UPDATE settings SET schema_version = 38 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 38 (separate mode unique constraint fix)")
+        current_version = 38
+
 
 def _migrate_to_v35(conn: sqlite3.Connection) -> None:
     """Restructure exception keywords table: keywords -> match_terms, display_name -> label.
@@ -1528,7 +1544,7 @@ def _remove_tvg_id_unique_constraint(conn: sqlite3.Connection) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_unique_event
             ON managed_channels(
                 event_epg_group_id, event_id, event_provider,
-                COALESCE(exception_keyword, '')
+                COALESCE(exception_keyword, ''), primary_stream_id
             ) WHERE deleted_at IS NULL
         """)
 
@@ -1769,7 +1785,7 @@ def _recreate_managed_channels_without_unique_constraint(
         CREATE INDEX IF NOT EXISTS idx_managed_channels_sync ON managed_channels(sync_status);
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_unique_event
-            ON managed_channels(event_epg_group_id, event_id, event_provider, COALESCE(exception_keyword, ''))
+            ON managed_channels(event_epg_group_id, event_id, event_provider, COALESCE(exception_keyword, ''), primary_stream_id)
             WHERE deleted_at IS NULL;
 
         CREATE TRIGGER IF NOT EXISTS update_managed_channels_timestamp

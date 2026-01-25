@@ -207,4 +207,4 @@ class AllSettings:
         default_factory=StreamOrderingSettings
     )
     epg_generation_counter: int = 0
-    schema_version: int = 37
+    schema_version: int = 38

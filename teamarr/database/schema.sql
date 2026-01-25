@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS settings (
     stream_ordering_rules JSON DEFAULT '[]',
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 37
+    schema_version INTEGER DEFAULT 38
 );
 
 -- Insert default settings
@@ -490,9 +490,11 @@ CREATE INDEX IF NOT EXISTS idx_managed_channels_dispatcharr ON managed_channels(
 CREATE INDEX IF NOT EXISTS idx_managed_channels_tvg ON managed_channels(tvg_id);
 CREATE INDEX IF NOT EXISTS idx_managed_channels_sync ON managed_channels(sync_status);
 
--- Unique constraint for event channels (allows different exception_keywords for same event)
+-- Unique constraint for event channels
+-- Includes primary_stream_id to support 'separate' duplicate handling mode
+-- (allows multiple channels per event when each has a different primary stream)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_unique_event
-    ON managed_channels(event_epg_group_id, event_id, event_provider, COALESCE(exception_keyword, ''))
+    ON managed_channels(event_epg_group_id, event_id, event_provider, COALESCE(exception_keyword, ''), primary_stream_id)
     WHERE deleted_at IS NULL;
 
 CREATE TRIGGER IF NOT EXISTS update_managed_channels_timestamp
