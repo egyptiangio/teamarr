@@ -309,8 +309,19 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
             return logos[0].get("href")
         return None
 
+    # Leagues without summary endpoint support
+    # These leagues only have scoreboard data - no per-event detail endpoint
+    # When get_event() is called for these, we return None immediately to avoid 404s
+    LEAGUES_WITHOUT_SUMMARY = {"ufc"}
+
     def get_event(self, event_id: str, league: str) -> Event | None:
         """Fetch single event with full details from summary endpoint."""
+        # Some leagues don't have summary endpoints - scoreboard is the only source
+        # See LEAGUES_WITHOUT_SUMMARY for the list
+        if league in self.LEAGUES_WITHOUT_SUMMARY:
+            logger.debug("[ESPN] Summary endpoint not available for %s (league=%s)", event_id, league)
+            return None
+
         # Get sport/league from database config
         sport_league = self._get_sport_league_from_db(league)
 
