@@ -168,6 +168,7 @@ class DevUpdateChecker(UpdateChecker):
         owner: str = "pharaoh-labs",
         image: str = "teamarr",
         dev_tag: str = "dev",
+        db_factory=None,
         **kwargs,
     ):
         """Initialize dev update checker.
@@ -177,12 +178,14 @@ class DevUpdateChecker(UpdateChecker):
             owner: GitHub repository owner
             image: Container image name
             dev_tag: Docker tag to check (default: "dev")
+            db_factory: Database factory for digest persistence (optional)
             **kwargs: Additional arguments passed to UpdateChecker
         """
         super().__init__(current_version, **kwargs)
         self.owner = owner
         self.image = image
         self.dev_tag = dev_tag
+        self.db_factory = db_factory
 
     def _extract_sha_from_version(self, version: str) -> str | None:
         """Extract commit SHA from version string.
@@ -198,25 +201,15 @@ class DevUpdateChecker(UpdateChecker):
         return None
 
     def _fetch_update_info(self) -> UpdateInfo:
-        """Fetch latest dev build from GHCR.
+        """Fetch latest dev build from GHCR and compare with stored digest.
 
-        LIMITATION: This implementation cannot reliably detect if updates are available
-        for dev builds. It fetches the manifest digest but always returns
-        update_available=false because:
-        1. We don't persist the previous digest to compare against
-        2. Build timestamps aren't directly comparable without image metadata
-        3. Digest comparison would require storing state
-
-        A full implementation would need to:
-        - Store the last seen digest in database
-        - Compare current manifest digest with stored digest
-        - Or parse image labels/metadata for build timestamps
-
-        For now, this provides visibility into the latest dev build but doesn't
-        actively notify of updates. Users can manually check the digest changes.
+        Now properly detects updates by:
+        1. Fetching the latest manifest digest from GHCR
+        2. Comparing with the stored digest in database
+        3. Updating stored digest if user is on the latest
+        4. Returning update_available=true if digests don't match
         """
-        # For dev builds, we check the manifest of the configured tag
-        # A more sophisticated approach would compare digests
+        # Fetch the latest manifest digest from GHCR
         url = f"https://ghcr.io/v2/{self.owner}/{self.image}/manifests/{self.dev_tag}"
 
         headers = {
@@ -230,8 +223,46 @@ class DevUpdateChecker(UpdateChecker):
             # Get the digest from the Docker-Content-Digest header
             latest_digest = response.headers.get("Docker-Content-Digest", "")
 
-        # Conservative: don't claim updates unless we can reliably detect them
+        # Get stored digest from database (if available)
+        stored_digest = None
         update_available = False
+
+        if self.db_factory:
+            try:
+                with self.db_factory() as conn:
+                    from teamarr.database.update_tracker import get_current_dev_digest
+                    stored_digest = get_current_dev_digest(conn)
+            except Exception as e:
+                logger.warning("[UPDATE_CHECKER] Failed to read stored digest: %s", e)
+
+        # Compare digests to detect updates
+        if latest_digest and stored_digest:
+            # We have both digests - can detect if update is available
+            update_available = latest_digest != stored_digest
+            logger.debug(
+                "[UPDATE_CHECKER] Digest comparison: stored=%s, latest=%s, update=%s",
+                stored_digest[:12],
+                latest_digest[:12],
+                update_available,
+            )
+        elif latest_digest and not stored_digest:
+            # First time checking - store the current digest
+            # Don't claim update is available on first check
+            if self.db_factory:
+                try:
+                    with self.db_factory() as conn:
+                        from teamarr.database.update_tracker import update_dev_digest
+                        update_dev_digest(conn, latest_digest)
+                        logger.info(
+                            "[UPDATE_CHECKER] Stored initial dev digest: %s",
+                            latest_digest[:12],
+                        )
+                except Exception as e:
+                    logger.warning("[UPDATE_CHECKER] Failed to store digest: %s", e)
+            update_available = False
+        else:
+            # Couldn't fetch digest or no database - conservative approach
+            update_available = False
 
         return UpdateInfo(
             current_version=self.current_version,
@@ -251,6 +282,7 @@ def create_update_checker(
     ghcr_image: str | None = None,
     dev_tag: str = "dev",
     cache_duration_hours: int = 6,
+    db_factory=None,
 ) -> UpdateChecker:
     """Factory function to create appropriate update checker.
 
@@ -262,6 +294,7 @@ def create_update_checker(
         ghcr_image: GHCR image name for dev builds (defaults to repo)
         dev_tag: Docker tag to check for dev builds (default: "dev")
         cache_duration_hours: How long to cache results
+        db_factory: Database factory for digest persistence (dev builds only)
 
     Returns:
         StableUpdateChecker for stable releases, DevUpdateChecker for dev builds
@@ -285,6 +318,7 @@ def create_update_checker(
             image=ghcr_image,
             dev_tag=dev_tag,
             cache_duration_hours=cache_duration_hours,
+            db_factory=db_factory,
         )
     else:
         return StableUpdateChecker(

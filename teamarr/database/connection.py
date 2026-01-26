@@ -1032,6 +1032,21 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         _add_column_if_not_exists(
             conn, "settings", "update_dev_tag", "TEXT DEFAULT 'dev'"
         )
+
+        # Create table to track dev build digests for update detection
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS update_tracker (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                current_dev_digest TEXT,
+                last_checked_at TIMESTAMP,
+                last_notified_at TIMESTAMP
+            )
+        """)
+        # Initialize with single row
+        conn.execute("""
+            INSERT OR IGNORE INTO update_tracker (id) VALUES (1)
+        """)
+
         conn.execute("UPDATE settings SET schema_version = 44 WHERE id = 1")
         logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
         current_version = 44

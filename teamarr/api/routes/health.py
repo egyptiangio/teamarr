@@ -38,6 +38,7 @@ def health_check() -> dict:
                     ghcr_image=update_settings.ghcr_image,
                     dev_tag=update_settings.dev_tag,
                     cache_duration_hours=update_settings.check_interval_hours,
+                    db_factory=get_db,  # Pass database factory for digest persistence
                 )
                 # Don't force - use cached result if available
                 result = checker.check_for_updates(force=False)
