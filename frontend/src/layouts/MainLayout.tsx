@@ -1,8 +1,10 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
 import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Toaster } from "sonner"
+import { Toaster, toast } from "sonner"
 import { useQuery } from "@tanstack/react-query"
+import { getUpdateStatus, type UpdateInfo } from "@/api/updates"
+import { Badge } from "@/components/ui/badge"
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard" },
@@ -31,13 +33,62 @@ export function MainLayout() {
     staleTime: Infinity, // Version won't change during session
   })
 
+  // Query update status to show "Update Available" badge
+  const { data: updateInfo } = useQuery<UpdateInfo>({
+    queryKey: ["update-status"],
+    queryFn: () => getUpdateStatus(false),
+    staleTime: Infinity, // Don't auto-refetch, only manual refresh
+    retry: 1,
+  })
+
   const version = healthQuery.data?.version || "v2.0.0"
+  // Show badge when update is available, regardless of notification settings
+  const updateAvailable = updateInfo?.update_available
 
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark")
     document.documentElement.classList.add(theme)
     localStorage.setItem("theme", theme)
   }, [theme])
+
+  // Show toast notification on page load if update is available and settings allow
+  useEffect(() => {
+    if (!updateInfo?.update_available || !updateInfo.latest_version) {
+      return
+    }
+
+    // Only notify if notification settings are enabled
+    if (!updateInfo.settings.enabled) {
+      return
+    }
+
+    // Check notification preferences for build type
+    if (updateInfo.build_type === "dev" && !updateInfo.settings.notify_dev_updates) {
+      return
+    }
+
+    if (updateInfo.build_type === "stable" && !updateInfo.settings.notify_stable_updates) {
+      return
+    }
+
+    const isDevBuild = updateInfo.build_type === "dev"
+    
+    let message: string
+    if (isDevBuild) {
+      // Extract current and latest SHAs for dev builds
+      const currentSha = updateInfo.current_version.split('+')[1] || updateInfo.current_version
+      const latestSha = updateInfo.latest_dev || updateInfo.latest_version
+      
+      message = `Dev build update available: ${currentSha} → ${latestSha}`
+    } else {
+      message = `New version available: ${updateInfo.current_version} → ${updateInfo.latest_version}`
+    }
+
+    // Show simple toast notification with 10 second duration
+    toast.success(message, {
+      duration: 10000, // 10 seconds
+    })
+  }, [updateInfo])
 
   const toggleTheme = () => {
     setTheme((t) => (t === "dark" ? "light" : "dark"))
@@ -90,9 +141,16 @@ export function MainLayout() {
 
             {/* Right side */}
             <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                {version}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                  {version}
+                </span>
+                {updateAvailable && (
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-transparent border border-green-500 text-green-600 dark:text-green-400 pointer-events-none">
+                    Update Available
+                  </Badge>
+                )}
+              </div>
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-md hover:bg-accent transition-colors"
@@ -126,7 +184,14 @@ export function MainLayout() {
                 e.currentTarget.style.display = "none"
               }}
             />
-            <span>Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}{window.location.port && ` | Port ${window.location.port}`}</span>
+            <span className="flex items-center gap-2">
+              Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}{window.location.port && ` | Port ${window.location.port}`}
+              {updateAvailable && (
+                <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-transparent border border-green-500 text-green-600 dark:text-green-400 ml-1 pointer-events-none">
+                  Update Available
+                </Badge>
+              )}
+            </span>
           </div>
         </div>
       </footer>

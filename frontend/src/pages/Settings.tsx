@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 import cronstrue from "cronstrue"
 import { getSportDisplayName } from "@/lib/utils"
 import {
@@ -32,6 +33,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   useSettings,
   useUpdateDispatcharrSettings,
@@ -52,6 +54,8 @@ import {
   useDeleteExceptionKeyword,
   useChannelNumberingSettings,
   useUpdateChannelNumberingSettings,
+  useUpdateCheckStatus,
+  useUpdateCheckSettings,
 } from "@/hooks/useSettings"
 import { TeamPicker } from "@/components/TeamPicker"
 import { SortPriorityManager } from "@/components/SortPriorityManager"
@@ -109,6 +113,287 @@ function CronPreview({ expression }: { expression: string }) {
     <p className="text-xs text-muted-foreground">
       {humanReadable}
     </p>
+  )
+}
+
+function UpdateCheckSettingsSection() {
+  const { data: updateStatus, refetch } = useUpdateCheckStatus()
+  const updateSettings = useUpdateCheckSettings()
+  const [isChecking, setIsChecking] = useState(false)
+  const [localSettings, setLocalSettings] = useState({
+    enabled: true,
+    notify_stable_updates: true,
+    notify_dev_updates: true,
+    github_owner: "Pharaoh-Labs",
+    github_repo: "teamarr",
+    dev_branch: "dev",
+  })
+
+  // Update local state when API data loads
+  useEffect(() => {
+    if (updateStatus?.settings) {
+      setLocalSettings(updateStatus.settings)
+    }
+  }, [updateStatus])
+
+  const handleSave = async () => {
+    try {
+      await updateSettings.mutateAsync(localSettings)
+      toast.success("Update check settings saved")
+    } catch (error) {
+      toast.error("Failed to save settings")
+    }
+  }
+
+  const queryClient = useQueryClient()
+  
+  const handleCheckNow = async () => {
+    setIsChecking(true)
+    try {
+      // Force a fresh check by calling the API with force=true
+      const response = await fetch("/api/v1/updates/status?force=true")
+      if (response.ok) {
+        // Invalidate all update status queries - this automatically triggers refetch
+        await queryClient.invalidateQueries({ queryKey: ["update-status"] })
+        
+        toast.success("Update check complete")
+      } else {
+        throw new Error("Check failed")
+      }
+    } catch (error) {
+      toast.error("Failed to check for updates")
+    } finally {
+      setIsChecking(false)
+    }
+  }
+
+  const isDirty = updateStatus?.settings && JSON.stringify(localSettings) !== JSON.stringify(updateStatus.settings)
+
+  return (
+    <div className="space-y-4">
+      {/* Update Status Display */}
+      {updateStatus && (
+        <div className="rounded-md bg-muted/50 p-4 space-y-2">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium">Version Information</h4>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCheckNow}
+              disabled={isChecking || !localSettings.enabled}
+            >
+              {isChecking ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <TestTube className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Check Now
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Current Version</span>
+            <code className="text-xs bg-background px-2 py-0.5 rounded">
+              {updateStatus.current_version}
+            </code>
+          </div>
+
+          {updateStatus.latest_stable && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Latest Stable</span>
+              <code className="text-xs bg-background px-2 py-0.5 rounded">
+                {updateStatus.latest_stable}
+              </code>
+            </div>
+          )}
+
+          {updateStatus.latest_dev && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Latest Dev Build</span>
+              <code className="text-xs bg-background px-2 py-0.5 rounded">
+                {updateStatus.latest_dev}
+              </code>
+            </div>
+          )}
+
+          {updateStatus.latest_version && !updateStatus.latest_stable && !updateStatus.latest_dev && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Latest Version</span>
+              <code className="text-xs bg-background px-2 py-0.5 rounded">
+                {updateStatus.latest_version}
+              </code>
+            </div>
+          )}
+
+          {updateStatus.update_available && (
+            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+              <CheckCircle className="h-4 w-4" />
+              <span>Update available!</span>
+            </div>
+          )}
+          {updateStatus.checked_at && (
+            <div className="text-xs text-muted-foreground">
+              Last checked: {formatRelativeTime(updateStatus.checked_at)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Settings */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="update-enabled" className="text-sm font-medium">
+            Enable Update Checking
+          </Label>
+          <Switch
+            id="update-enabled"
+            checked={localSettings.enabled}
+            onCheckedChange={(enabled) =>
+              setLocalSettings({ ...localSettings, enabled })
+            }
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="notify-stable" className="text-sm font-medium">
+              Notify for Stable Releases
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Show notification when new stable versions are released
+            </p>
+          </div>
+          <Switch
+            id="notify-stable"
+            checked={localSettings.notify_stable_updates}
+            onCheckedChange={(notify_stable_updates) =>
+              setLocalSettings({ ...localSettings, notify_stable_updates })
+            }
+            disabled={!localSettings.enabled}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="notify-dev" className="text-sm font-medium">
+              Notify for Dev Builds
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Show notification when new dev builds are available
+            </p>
+          </div>
+          <Switch
+            id="notify-dev"
+            checked={localSettings.notify_dev_updates}
+            onCheckedChange={(notify_dev_updates) =>
+              setLocalSettings({ ...localSettings, notify_dev_updates })
+            }
+            disabled={!localSettings.enabled}
+          />
+        </div>
+      </div>
+
+      {/* Advanced Repository Settings */}
+      <details className="rounded-md border border-border">
+        <summary className="cursor-pointer p-3 text-sm font-medium hover:bg-muted/50">
+          Advanced: Repository Configuration
+        </summary>
+        <div className="p-3 pt-0 space-y-3 text-sm">
+          <p className="text-xs text-muted-foreground">
+            Configure custom repositories for forks or alternative registries
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="github-owner" className="text-xs">
+                GitHub Owner
+              </Label>
+              <Input
+                id="github-owner"
+                value={localSettings.github_owner}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    github_owner: e.target.value,
+                  })
+                }
+                placeholder="Pharaoh-Labs"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="github-repo" className="text-xs">
+                GitHub Repo
+              </Label>
+              <Input
+                id="github-repo"
+                value={localSettings.github_repo}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    github_repo: e.target.value,
+                  })
+                }
+                placeholder="teamarr"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="auto-detect-dev-branch"
+                  checked={localSettings.auto_detect_dev_branch}
+                  onCheckedChange={(checked) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      auto_detect_dev_branch: checked as boolean,
+                    })
+                  }
+                />
+                <Label
+                  htmlFor="auto-detect-dev-branch"
+                  className="text-xs cursor-pointer"
+                >
+                  Auto-detect dev branch from version
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically extract branch name from version string (e.g., "2.0.11-dev+abc123" → "dev")
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dev-branch" className="text-xs">
+                Dev Branch
+              </Label>
+              <Input
+                id="dev-branch"
+                value={localSettings.dev_branch}
+                onChange={(e) =>
+                  setLocalSettings({
+                    ...localSettings,
+                    dev_branch: e.target.value,
+                  })
+                }
+                placeholder="dev"
+                disabled={localSettings.auto_detect_dev_branch}
+              />
+              <p className="text-xs text-muted-foreground">
+                Git branch to check for dev build commits (disabled when auto-detect is enabled)
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      {/* Save Button */}
+      {isDirty && (
+        <Button onClick={handleSave} disabled={updateSettings.isPending}>
+          {updateSettings.isPending && (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          )}
+          <Save className="h-4 w-4 mr-2" />
+          Save Update Settings
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -2035,6 +2320,17 @@ export function Settings() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Update Check Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Update Notifications</CardTitle>
+          <CardDescription>Configure update checking for stable releases and dev builds</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <UpdateCheckSettingsSection />
         </CardContent>
       </Card>
       </>

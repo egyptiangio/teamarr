@@ -31,6 +31,7 @@ from .types import (
     StreamOrderingRule,
     StreamOrderingSettings,
     TeamFilterSettings,
+    UpdateCheckSettings,
 )
 from .update import (
     increment_epg_generation_counter,
@@ -44,6 +45,7 @@ from .update import (
     update_scheduler_settings,
     update_stream_ordering_rules,
     update_team_filter_settings,
+    update_update_check_settings,
 )
 
 __all__ = [
@@ -52,6 +54,7 @@ __all__ = [
     "LifecycleSettings",
     "ReconciliationSettings",
     "SchedulerSettings",
+    "UpdateCheckSettings",
     "EPGSettings",
     "DurationSettings",
     "DisplaySettings",
@@ -84,5 +87,6 @@ __all__ = [
     "update_stream_ordering_rules",
     "update_team_filter_settings",
     "update_channel_numbering_settings",
+    "update_update_check_settings",
     "increment_epg_generation_counter",
 ]

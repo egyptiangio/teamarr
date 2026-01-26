@@ -21,6 +21,7 @@ from .types import (
     StreamOrderingRule,
     StreamOrderingSettings,
     TeamFilterSettings,
+    UpdateCheckSettings,
 )
 
 # Single source of truth for defaults - the dataclass itself
@@ -98,6 +99,29 @@ def get_all_settings(conn: Connection) -> AllSettings:
         scheduler=SchedulerSettings(
             enabled=bool(row["scheduler_enabled"]),
             interval_minutes=row["scheduler_interval_minutes"] or 15,
+        ),
+        update_check=UpdateCheckSettings(
+            enabled=bool(row["update_check_enabled"])
+            if "update_check_enabled" in row.keys() and row["update_check_enabled"] is not None
+            else True,
+            notify_stable_updates=bool(row["update_notify_stable"])
+            if "update_notify_stable" in row.keys() and row["update_notify_stable"] is not None
+            else True,
+            notify_dev_updates=bool(row["update_notify_dev"])
+            if "update_notify_dev" in row.keys() and row["update_notify_dev"] is not None
+            else True,
+            github_owner=row["update_github_owner"]
+            if "update_github_owner" in row.keys() and row["update_github_owner"]
+            else "Pharaoh-Labs",
+            github_repo=row["update_github_repo"]
+            if "update_github_repo" in row.keys() and row["update_github_repo"]
+            else "teamarr",
+            dev_branch=row["update_dev_branch"]
+            if "update_dev_branch" in row.keys() and row["update_dev_branch"]
+            else "dev",
+            auto_detect_dev_branch=bool(row["update_auto_detect_dev_branch"])
+            if "update_auto_detect_dev_branch" in row.keys() and row["update_auto_detect_dev_branch"] is not None
+            else True,
         ),
         epg=EPGSettings(
             team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,

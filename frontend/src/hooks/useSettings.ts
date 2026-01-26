@@ -309,3 +309,45 @@ export function useUpdateStreamOrderingSettings() {
   })
 }
 
+export function useUpdateCheckStatus() {
+  return useQuery({
+    queryKey: ["update-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/v1/updates/status")
+      if (!response.ok) throw new Error("Failed to fetch update status")
+      return response.json()
+    },
+    refetchInterval: 6 * 60 * 60 * 1000, // 6 hours
+    staleTime: 6 * 60 * 60 * 1000,
+  })
+}
+
+export function useUpdateCheckSettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: {
+      enabled?: boolean
+      check_interval_hours?: number
+      notify_stable_updates?: boolean
+      notify_dev_updates?: boolean
+      github_owner?: string
+      github_repo?: string
+      ghcr_owner?: string
+      ghcr_image?: string
+      dev_tag?: string
+    }) => {
+      const response = await fetch("/api/v1/updates/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) throw new Error("Failed to update settings")
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["update-status"] })
+    },
+  })
+}
+

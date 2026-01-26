@@ -27,6 +27,7 @@ from teamarr.api.routes import (
     stats,
     teams,
     templates,
+    updates,
     variables,
 )
 from teamarr.api.startup_state import StartupPhase, get_startup_state
@@ -353,6 +354,7 @@ def create_app() -> FastAPI:
     app.include_router(dispatcharr.router, prefix="/api/v1", tags=["Dispatcharr"])
     app.include_router(migration.router, prefix="/api/v1", tags=["Migration"])
     app.include_router(backup.router, prefix="/api/v1", tags=["Backup"])
+    app.include_router(updates.router, prefix="/api/v1", tags=["Updates"])
 
     # Serve React UI static files
     frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

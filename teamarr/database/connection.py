@@ -1003,6 +1003,118 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 43 (legacy column cleanup)")
         current_version = 43
 
+    # Version 44: Add update check settings
+    if current_version < 44:
+        # Check if settings table exists first
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
+        )
+        if not cursor.fetchone():
+            logger.warning("[MIGRATE] Settings table not found, skipping version 44 migration")
+        else:
+            try:
+                # Add columns one by one - _add_column_if_not_exists checks existence first
+                _add_column_if_not_exists(
+                    conn, "settings", "update_check_enabled", "INTEGER DEFAULT 1"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_check_interval_hours", "INTEGER DEFAULT 24"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_notify_stable", "INTEGER DEFAULT 1"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_notify_dev", "INTEGER DEFAULT 1"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_github_owner", "TEXT DEFAULT 'Pharaoh-Labs'"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_github_repo", "TEXT DEFAULT 'teamarr'"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_dev_branch", "TEXT DEFAULT 'dev'"
+                )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_auto_detect_dev_branch", "INTEGER DEFAULT 1"
+                )
+
+                # Create table to track dev build digests for update detection
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS update_tracker (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        current_dev_digest TEXT,
+                        last_checked_at TIMESTAMP,
+                        last_notified_at TIMESTAMP
+                    )
+                """)
+                # Initialize with single row
+                conn.execute("""
+                    INSERT OR IGNORE INTO update_tracker (id) VALUES (1)
+                """)
+
+                # Verify all columns were added successfully before updating version
+                cursor = conn.execute("PRAGMA table_info(settings)")
+                existing_columns = {row["name"] for row in cursor.fetchall()}
+                required_columns = {
+                    "update_check_enabled",
+                    "update_check_interval_hours",
+                    "update_notify_stable",
+                    "update_notify_dev",
+                    "update_github_owner",
+                    "update_github_repo",
+                    "update_dev_branch",
+                    "update_auto_detect_dev_branch",
+                }
+                
+                if required_columns.issubset(existing_columns):
+                    conn.execute("UPDATE settings SET schema_version = 44 WHERE id = 1")
+                    logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
+                    current_version = 44
+                else:
+                    missing = required_columns - existing_columns
+                    logger.error(
+                        "[MIGRATE] Version 44 migration incomplete - missing columns: %s", missing
+                    )
+                    logger.warning("[MIGRATE] Update notification features may not work correctly")
+            except sqlite3.Error as e:
+                logger.error("[MIGRATE] Error during version 44 migration: %s", e)
+                logger.warning("[MIGRATE] Update notification features may not work correctly")
+                # Don't increment version - will retry on next startup
+
+    # Fix for databases that ran the OLD version 44 migration (which was incomplete)
+    # The original version 44 migration in commit 3ddef11 only added 4 columns,
+    # later commits added update_github_owner, update_github_repo, update_dev_branch, and update_auto_detect_dev_branch
+    # This ensures databases that already marked themselves as v44 get the missing columns
+    if current_version >= 44:
+        try:
+            # Add missing columns if they don't exist (idempotent operation)
+            _add_column_if_not_exists(
+                conn, "settings", "update_github_owner", "TEXT DEFAULT 'Pharaoh-Labs'"
+            )
+            _add_column_if_not_exists(
+                conn, "settings", "update_github_repo", "TEXT DEFAULT 'teamarr'"
+            )
+            _add_column_if_not_exists(
+                conn, "settings", "update_dev_branch", "TEXT DEFAULT 'dev'"
+            )
+            _add_column_if_not_exists(
+                conn, "settings", "update_auto_detect_dev_branch", "INTEGER DEFAULT 1"
+            )
+            
+            # Ensure update_tracker table exists
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS update_tracker (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    current_dev_digest TEXT,
+                    last_checked_at TIMESTAMP,
+                    last_notified_at TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT OR IGNORE INTO update_tracker (id) VALUES (1)")
+        except sqlite3.Error as e:
+            logger.warning("[MIGRATE] Could not add missing v44 columns: %s", e)
+
 
 def _migrate_cleanup_legacy_columns(conn: sqlite3.Connection) -> None:
     """Clean up erroneous columns from buggy v40 migration.
@@ -2035,6 +2147,7 @@ def _add_column_if_not_exists(
     columns = {row["name"] for row in cursor.fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+        logger.info("[MIGRATE] Added %s.%s", table, column)
 
 
 def _recreate_managed_channels_without_unique_constraint(

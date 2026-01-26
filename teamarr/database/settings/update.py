@@ -554,3 +554,64 @@ def update_stream_ordering_rules(
         logger.info("[STREAM_ORDER] Updated %d rules", len(validated_rules))
         return True
     return False
+
+
+def update_update_check_settings(
+    conn: Connection,
+    enabled: bool | None = None,
+    notify_stable_updates: bool | None = None,
+    notify_dev_updates: bool | None = None,
+    github_owner: str | None = None,
+    github_repo: str | None = None,
+    dev_branch: str | None = None,
+    auto_detect_dev_branch: bool | None = None,
+) -> bool:
+    """Update update check settings.
+
+    Args:
+        conn: Database connection
+        enabled: Enable/disable update checking
+        notify_stable_updates: Notify for stable version updates
+        notify_dev_updates: Notify for dev build updates
+        github_owner: GitHub repository owner
+        github_repo: GitHub repository name
+        dev_branch: Git branch to check for dev builds (default: "dev")
+        auto_detect_dev_branch: Auto-detect dev branch from version string
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    values = []
+
+    if enabled is not None:
+        updates.append("update_check_enabled = ?")
+        values.append(int(enabled))
+    if notify_stable_updates is not None:
+        updates.append("update_notify_stable = ?")
+        values.append(int(notify_stable_updates))
+    if notify_dev_updates is not None:
+        updates.append("update_notify_dev = ?")
+        values.append(int(notify_dev_updates))
+    if github_owner is not None:
+        updates.append("update_github_owner = ?")
+        values.append(github_owner)
+    if github_repo is not None:
+        updates.append("update_github_repo = ?")
+        values.append(github_repo)
+    if dev_branch is not None:
+        updates.append("update_dev_branch = ?")
+        values.append(dev_branch)
+    if auto_detect_dev_branch is not None:
+        updates.append("update_auto_detect_dev_branch = ?")
+        values.append(int(auto_detect_dev_branch))
+
+    if not updates:
+        return False
+
+    query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+    cursor = conn.execute(query, values)
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] Update check settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
