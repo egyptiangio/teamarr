@@ -28,7 +28,6 @@ class UpdateInfo:
     download_url: str | None = None
     latest_stable: str | None = None
     latest_dev: str | None = None
-    commits_behind: int | None = None  # For dev builds: how many commits behind
 
 
 class ComprehensiveUpdateChecker:
@@ -108,14 +107,14 @@ class ComprehensiveUpdateChecker:
             logger.debug("[UPDATE_CHECKER] Failed to fetch stable release: %s", e)
             return None
 
-    def _fetch_latest_dev_sha_from_branch(self, branch: str) -> tuple[str, str] | tuple[None, None]:
+    def _fetch_latest_dev_sha_from_branch(self, branch: str) -> str | None:
         """Fetch latest commit SHA from specified branch.
 
         Args:
             branch: Branch name to fetch from
             
         Returns:
-            Tuple of (short_sha, full_sha) or (None, None) if failed
+            Short SHA (7 chars) or None if failed
         """
         try:
             encoded_branch = quote(branch, safe='')
@@ -125,41 +124,9 @@ class ComprehensiveUpdateChecker:
                 response.raise_for_status()
                 data = response.json()
                 full_sha = data.get("sha", "")
-                return (full_sha[:7], full_sha) if full_sha else (None, None)
+                return full_sha[:7] if full_sha else None
         except Exception as e:
             logger.warning("[UPDATE_CHECKER] Failed to fetch latest commit from branch '%s': %s", branch, e)
-            return (None, None)
-
-    def _fetch_commits_behind(self, current_sha: str, latest_sha: str) -> int | None:
-        """Calculate how many commits behind the current SHA is from latest.
-
-        Args:
-            current_sha: Current commit SHA
-            latest_sha: Latest commit SHA
-
-        Returns:
-            Number of commits behind, or None if cannot be determined
-        """
-        try:
-            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/compare/{current_sha}...{latest_sha}"
-            with httpx.Client(timeout=10) as client:
-                response = client.get(url)
-                response.raise_for_status()
-                data = response.json()
-                
-                status = data.get("status", "")
-                
-                if status == "behind":
-                    return data.get("behind_by", 0)
-                elif status == "diverged":
-                    return data.get("ahead_by", 0)
-                elif status == "identical":
-                    return 0
-                elif status == "ahead":
-                    return 0
-                
-                return None
-        except Exception:
             return None
 
     def _fetch_update_info(self) -> UpdateInfo:
@@ -169,25 +136,21 @@ class ComprehensiveUpdateChecker:
             UpdateInfo with complete stable and dev version details
         """
         latest_stable = self._fetch_latest_stable()
-        latest_dev_sha_short, latest_dev_sha_full = self._fetch_latest_dev_sha_from_branch(self.dev_branch)
+        latest_dev_sha = self._fetch_latest_dev_sha_from_branch(self.dev_branch)
 
         # Determine update availability based on build type
         update_available = False
         build_type = "dev" if self.is_dev else "stable"
-        commits_behind = None
         
         if self.is_dev:
             current_sha = self._extract_sha(self.current_version)
-            latest_current_branch_sha_short, latest_current_branch_sha_full = self._fetch_latest_dev_sha_from_branch(self.dev_branch)
+            latest_current_branch_sha = self._fetch_latest_dev_sha_from_branch(self.dev_branch)
             
-            if current_sha and latest_current_branch_sha_short:
-                min_len = min(len(current_sha), len(latest_current_branch_sha_short))
-                update_available = latest_current_branch_sha_short[:min_len].lower() != current_sha[:min_len].lower()
-                # Use full SHA for commits-behind calculation
-                if latest_current_branch_sha_full:
-                    commits_behind = self._fetch_commits_behind(current_sha, latest_current_branch_sha_full)
+            if current_sha and latest_current_branch_sha:
+                min_len = min(len(current_sha), len(latest_current_branch_sha))
+                update_available = latest_current_branch_sha[:min_len].lower() != current_sha[:min_len].lower()
             
-            latest_version = latest_current_branch_sha_short if latest_current_branch_sha_short else "unknown"
+            latest_version = latest_current_branch_sha if latest_current_branch_sha else "unknown"
             download_url = f"https://github.com/{self.owner}/{self.repo}/tree/{self.dev_branch}"
         else:
             if latest_stable:
@@ -205,8 +168,7 @@ class ComprehensiveUpdateChecker:
             build_type=build_type,
             download_url=download_url,
             latest_stable=latest_stable,
-            latest_dev=latest_dev_sha_short,
-            commits_behind=commits_behind,
+            latest_dev=latest_dev_sha,
         )
 
     @staticmethod

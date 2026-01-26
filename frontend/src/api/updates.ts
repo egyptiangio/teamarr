@@ -12,7 +12,6 @@ export interface UpdateInfo {
   settings: UpdateSettings
   latest_stable: string | null
   latest_dev: string | null
-  commits_behind: number | null
 }
 
 export interface UpdateSettings {
