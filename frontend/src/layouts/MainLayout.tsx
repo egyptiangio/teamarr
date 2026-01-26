@@ -1,9 +1,8 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
 import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Toaster } from "sonner"
+import { Toaster, toast } from "sonner"
 import { useQuery } from "@tanstack/react-query"
-import { UpdateNotification } from "@/components/UpdateNotification"
 import { getUpdateStatus, type UpdateInfo } from "@/api/updates"
 import { Badge } from "@/components/ui/badge"
 
@@ -52,6 +51,62 @@ export function MainLayout() {
     document.documentElement.classList.add(theme)
     localStorage.setItem("theme", theme)
   }, [theme])
+
+  // Show toast notification when update is available
+  useEffect(() => {
+    if (!updateInfo?.update_available || !updateInfo.latest_version) {
+      return
+    }
+
+    // Check if user already dismissed this version
+    const dismissedVersion = localStorage.getItem("update-dismissed-version")
+    if (dismissedVersion === updateInfo.latest_version) {
+      return
+    }
+
+    // Check notification settings only if enabled
+    if (updateInfo.settings.enabled) {
+      // Don't notify for dev updates if disabled
+      if (
+        updateInfo.build_type === "dev" &&
+        !updateInfo.settings.notify_dev_updates
+      ) {
+        return
+      }
+
+      // Don't notify for stable updates if disabled
+      if (
+        updateInfo.build_type === "stable" &&
+        !updateInfo.settings.notify_stable_updates
+      ) {
+        return
+      }
+    }
+
+    const isDevBuild = updateInfo.build_type === "dev"
+    const message = isDevBuild
+      ? `Dev build update available: ${updateInfo.current_version} → ${updateInfo.latest_version}`
+      : `New version available: ${updateInfo.current_version} → ${updateInfo.latest_version}`
+
+    // Show toast with action button
+    toast.success(message, {
+      duration: Infinity, // Keep toast until manually dismissed
+      action: updateInfo.download_url
+        ? {
+            label: isDevBuild ? "Pull Image" : "View Release",
+            onClick: () => {
+              window.open(updateInfo.download_url!, "_blank", "noopener,noreferrer")
+              // Mark as dismissed when user clicks the action
+              localStorage.setItem("update-dismissed-version", updateInfo.latest_version!)
+            },
+          }
+        : undefined,
+      onDismiss: () => {
+        // Mark as dismissed when user manually dismisses the toast
+        localStorage.setItem("update-dismissed-version", updateInfo.latest_version!)
+      },
+    })
+  }, [updateInfo])
 
   const toggleTheme = () => {
     setTheme((t) => (t === "dark" ? "light" : "dark"))
@@ -129,9 +184,6 @@ export function MainLayout() {
           </div>
         </div>
       </nav>
-
-      {/* Update Notification Banner */}
-      <UpdateNotification />
 
       {/* Main Content */}
       <main className="max-w-[1440px] mx-auto px-4 py-4">
