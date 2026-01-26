@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
+from urllib.parse import quote
 
 import httpx
 
@@ -126,7 +127,9 @@ class ComprehensiveUpdateChecker:
             Latest commit SHA (short, 7 chars) or None if failed
         """
         try:
-            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/commits/{branch}"
+            # URL-encode the branch name to handle slashes and special characters
+            encoded_branch = quote(branch, safe='')
+            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/commits/{encoded_branch}"
             logger.debug("[UPDATE_CHECKER] Fetching latest commit from branch: %s (URL: %s)", branch, url)
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 response = client.get(url)
