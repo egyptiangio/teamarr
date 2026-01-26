@@ -156,9 +156,8 @@ function UpdateCheckSettingsSection() {
         // Clear localStorage dismissal so notification banner appears if update is found
         localStorage.removeItem("update-dismissed-version")
         
-        // Invalidate and refetch all update status queries to trigger banner
+        // Invalidate all update status queries - this automatically triggers refetch
         await queryClient.invalidateQueries({ queryKey: ["update-status"] })
-        await refetch()
         
         toast.success("Update check complete")
       } else {

@@ -1005,6 +1005,8 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
 
     # Version 44: Add update check settings
     if current_version < 44:
+        # Note: Each column addition is independent - if one fails, others can still succeed
+        # This is safe for SQLite ALTER TABLE ADD COLUMN operations
         try:
             _add_column_if_not_exists(
                 conn, "settings", "update_check_enabled", "INTEGER DEFAULT 1"
@@ -1045,10 +1047,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE settings SET schema_version = 44 WHERE id = 1")
             logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
             current_version = 44
-        except sqlite3.OperationalError as e:
-            logger.error("[MIGRATE] Failed to upgrade to version 44: %s", e)
-            # Don't increment version if migration failed
-            raise
+        except sqlite3.Error as e:
+            # Log error but don't fail startup - partial migration is acceptable
+            # Individual column additions in _add_column_if_not_exists check for existence first
+            logger.error("[MIGRATE] Error during version 44 migration: %s", e)
+            logger.warning("[MIGRATE] Update notification features may not work correctly")
+            # Don't increment version - will retry on next startup
 
 
 def _migrate_cleanup_legacy_columns(conn: sqlite3.Connection) -> None:
