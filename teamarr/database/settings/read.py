@@ -119,14 +119,8 @@ def get_all_settings(conn: Connection) -> AllSettings:
             github_repo=row["update_github_repo"]
             if "update_github_repo" in row.keys() and row["update_github_repo"]
             else "teamarr",
-            ghcr_owner=row["update_ghcr_owner"]
-            if "update_ghcr_owner" in row.keys() and row["update_ghcr_owner"]
-            else "pharaoh-labs",
-            ghcr_image=row["update_ghcr_image"]
-            if "update_ghcr_image" in row.keys() and row["update_ghcr_image"]
-            else "teamarr",
-            dev_tag=row["update_dev_tag"]
-            if "update_dev_tag" in row.keys() and row["update_dev_tag"]
+            dev_branch=row["update_dev_branch"]
+            if "update_dev_branch" in row.keys() and row["update_dev_branch"]
             else "dev",
         ),
         epg=EPGSettings(

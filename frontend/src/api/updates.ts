@@ -22,9 +22,7 @@ export interface UpdateSettings {
   notify_dev_updates: boolean
   github_owner: string
   github_repo: string
-  ghcr_owner: string
-  ghcr_image: string
-  dev_tag: string
+  dev_branch: string
 }
 
 export interface UpdateSettingsRequest {
@@ -34,9 +32,7 @@ export interface UpdateSettingsRequest {
   notify_dev_updates?: boolean
   github_owner?: string
   github_repo?: string
-  ghcr_owner?: string
-  ghcr_image?: string
-  dev_tag?: string
+  dev_branch?: string
 }
 
 /**

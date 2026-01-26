@@ -1024,13 +1024,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             conn, "settings", "update_github_repo", "TEXT DEFAULT 'teamarr'"
         )
         _add_column_if_not_exists(
-            conn, "settings", "update_ghcr_owner", "TEXT DEFAULT 'pharaoh-labs'"
-        )
-        _add_column_if_not_exists(
-            conn, "settings", "update_ghcr_image", "TEXT DEFAULT 'teamarr'"
-        )
-        _add_column_if_not_exists(
-            conn, "settings", "update_dev_tag", "TEXT DEFAULT 'dev'"
+            conn, "settings", "update_dev_branch", "TEXT DEFAULT 'dev'"
         )
 
         # Create table to track dev build digests for update detection

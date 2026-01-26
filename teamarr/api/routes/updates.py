@@ -38,9 +38,7 @@ class UpdateCheckSettingsRequest(BaseModel):
     notify_dev_updates: bool | None = None
     github_owner: str | None = None
     github_repo: str | None = None
-    ghcr_owner: str | None = None
-    ghcr_image: str | None = None
-    dev_tag: str | None = None
+    dev_branch: str | None = None
 
 
 @router.get("/updates/status")
@@ -76,9 +74,7 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
                 "notify_dev_updates": update_settings.notify_dev_updates,
                 "github_owner": update_settings.github_owner,
                 "github_repo": update_settings.github_repo,
-                "ghcr_owner": update_settings.ghcr_owner,
-                "ghcr_image": update_settings.ghcr_image,
-                "dev_tag": update_settings.dev_tag,
+                "dev_branch": update_settings.dev_branch,
             },
         )
 
@@ -87,11 +83,8 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
         version=VERSION,
         owner=update_settings.github_owner,
         repo=update_settings.github_repo,
-        ghcr_owner=update_settings.ghcr_owner,
-        ghcr_image=update_settings.ghcr_image,
-        dev_tag=update_settings.dev_tag,
+        dev_branch=update_settings.dev_branch if hasattr(update_settings, 'dev_branch') else "dev",
         cache_duration_hours=update_settings.check_interval_hours,
-        db_factory=get_db,  # Pass database factory for digest persistence
     )
     update_info = checker.check_for_updates(force=force)
 
@@ -114,9 +107,7 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
                 "notify_dev_updates": update_settings.notify_dev_updates,
                 "github_owner": update_settings.github_owner,
                 "github_repo": update_settings.github_repo,
-                "ghcr_owner": update_settings.ghcr_owner,
-                "ghcr_image": update_settings.ghcr_image,
-                "dev_tag": update_settings.dev_tag,
+                "dev_branch": update_settings.dev_branch,
             },
         )
     else:
@@ -138,9 +129,7 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
                 "notify_dev_updates": update_settings.notify_dev_updates,
                 "github_owner": update_settings.github_owner,
                 "github_repo": update_settings.github_repo,
-                "ghcr_owner": update_settings.ghcr_owner,
-                "ghcr_image": update_settings.ghcr_image,
-                "dev_tag": update_settings.dev_tag,
+                "dev_branch": update_settings.dev_branch,
             },
         )
 
@@ -164,9 +153,7 @@ def update_settings(request: UpdateCheckSettingsRequest) -> dict:
             notify_dev_updates=request.notify_dev_updates,
             github_owner=request.github_owner,
             github_repo=request.github_repo,
-            ghcr_owner=request.ghcr_owner,
-            ghcr_image=request.ghcr_image,
-            dev_tag=request.dev_tag,
+            dev_branch=request.dev_branch,
         )
 
         if updated:

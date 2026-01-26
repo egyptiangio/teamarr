@@ -169,12 +169,9 @@ class DevUpdateChecker(UpdateChecker):
     def __init__(
         self,
         current_version: str,
-        owner: str = "pharaoh-labs",
+        owner: str = "Pharaoh-Labs",
         repo: str = "teamarr",
         dev_branch: str = "dev",
-        ghcr_image: str = "teamarr",
-        dev_tag: str = "dev",
-        db_factory=None,
         **kwargs,
     ):
         """Initialize dev update checker.
@@ -184,18 +181,12 @@ class DevUpdateChecker(UpdateChecker):
             owner: GitHub repository owner
             repo: GitHub repository name
             dev_branch: Branch to check for latest commit (default: "dev")
-            ghcr_image: Container image name (for fallback)
-            dev_tag: Docker tag to check (default: "dev")
-            db_factory: Database factory for digest persistence (optional, for fallback)
             **kwargs: Additional arguments passed to UpdateChecker
         """
         super().__init__(current_version, **kwargs)
         self.owner = owner
         self.repo = repo
         self.dev_branch = dev_branch
-        self.ghcr_image = ghcr_image
-        self.dev_tag = dev_tag
-        self.db_factory = db_factory
 
     def _extract_sha_from_version(self, version: str) -> str | None:
         """Extract commit SHA from version string.
@@ -232,172 +223,235 @@ class DevUpdateChecker(UpdateChecker):
             return None
 
     def _fetch_update_info(self) -> UpdateInfo:
-        """Fetch latest dev build info using commit comparison (primary) or digest (fallback).
+        """Fetch latest dev build info using GitHub commit comparison.
 
-        Primary Method: Compare commit SHAs
+        Method: Compare commit SHAs
         1. Extract SHA from current version (e.g., "2.0.11-dev+abc123" → "abc123")
         2. Fetch latest commit SHA from GitHub dev branch
         3. Compare: if different → update available
-
-        Fallback Method: Compare GHCR manifest digests
-        1. Fetch manifest digest from GHCR
-        2. Compare with stored digest in database
-        3. If different → update available
 
         Returns:
             UpdateInfo with update availability status
         """
         current_sha = self._extract_sha_from_version(self.current_version)
-        latest_sha = None
+        latest_sha = self._fetch_latest_commit_sha()
         update_available = False
-        method_used = "unknown"
 
-        # Primary method: Compare commit SHAs from GitHub
-        if current_sha:
-            latest_sha = self._fetch_latest_commit_sha()
-            if latest_sha:
-                method_used = "github-commit"
-                # Compare SHAs (case-insensitive, handle different lengths)
-                # current_sha might be 6 chars, latest_sha is 7 chars
-                min_len = min(len(current_sha), len(latest_sha))
-                update_available = latest_sha[:min_len].lower() != current_sha[:min_len].lower()
-                logger.debug(
-                    "[UPDATE_CHECKER] Commit comparison (%s): current=%s, latest=%s, update=%s",
-                    method_used,
-                    current_sha,
-                    latest_sha,
-                    update_available,
-                )
-            else:
-                logger.debug("[UPDATE_CHECKER] Failed to fetch latest commit, falling back to digest comparison")
+        if current_sha and latest_sha:
+            # Compare SHAs (case-insensitive, handle different lengths)
+            # current_sha might be 6 chars, latest_sha is 7 chars
+            min_len = min(len(current_sha), len(latest_sha))
+            update_available = latest_sha[:min_len].lower() != current_sha[:min_len].lower()
+            logger.debug(
+                "[UPDATE_CHECKER] Commit comparison: current=%s, latest=%s, update=%s",
+                current_sha,
+                latest_sha,
+                update_available,
+            )
+        elif not current_sha:
+            logger.warning("[UPDATE_CHECKER] No commit SHA in current version: %s", self.current_version)
+        elif not latest_sha:
+            logger.warning("[UPDATE_CHECKER] Failed to fetch latest commit from GitHub")
 
-        # Fallback method: Use GHCR manifest digest comparison
-        if latest_sha is None:
-            method_used = "ghcr-digest"
-            try:
-                url = f"https://ghcr.io/v2/{self.owner}/{self.ghcr_image}/manifests/{self.dev_tag}"
-                headers = {
-                    "Accept": "application/vnd.docker.distribution.manifest.v2+json",
-                }
-
-                with httpx.Client(timeout=self.timeout_seconds) as client:
-                    response = client.get(url, headers=headers, follow_redirects=True)
-                    response.raise_for_status()
-                    latest_digest = response.headers.get("Docker-Content-Digest", "")
-
-                # Get stored digest from database (if available)
-                stored_digest = None
-                if self.db_factory:
-                    try:
-                        with self.db_factory() as conn:
-                            from teamarr.database.update_tracker import get_current_dev_digest
-                            stored_digest = get_current_dev_digest(conn)
-                    except Exception as e:
-                        logger.warning("[UPDATE_CHECKER] Failed to read stored digest: %s", e)
-
-                # Compare digests to detect updates
-                if latest_digest and stored_digest:
-                    update_available = latest_digest != stored_digest
-                    logger.debug(
-                        "[UPDATE_CHECKER] Digest comparison (%s): stored=%s, latest=%s, update=%s",
-                        method_used,
-                        stored_digest[:12],
-                        latest_digest[:12],
-                        update_available,
-                    )
-                elif latest_digest and not stored_digest:
-                    # First time checking - store the digest
-                    if self.db_factory:
-                        try:
-                            with self.db_factory() as conn:
-                                from teamarr.database.update_tracker import update_dev_digest
-                                update_dev_digest(conn, latest_digest)
-                                logger.info(
-                                    "[UPDATE_CHECKER] Stored initial dev digest: %s",
-                                    latest_digest[:12],
-                                )
-                        except Exception as e:
-                            logger.warning("[UPDATE_CHECKER] Failed to store digest: %s", e)
-                    update_available = False
-                else:
-                    update_available = False
-
-                latest_sha = latest_digest[:12] if latest_digest else None
-            except Exception as e:
-                logger.warning("[UPDATE_CHECKER] Digest fallback also failed: %s", e)
-                latest_sha = None
-
-        # If we still don't have latest info, return conservative result
-        if latest_sha is None:
-            latest_sha = "unknown"
-            update_available = False
+        # Use "unknown" if we couldn't fetch the latest SHA
+        display_sha = latest_sha if latest_sha else "unknown"
 
         return UpdateInfo(
             current_version=self.current_version,
-            latest_version=f"{self.dev_branch} ({latest_sha})",
+            latest_version=f"{self.dev_branch} ({display_sha})",
             update_available=update_available,
             checked_at=datetime.now(UTC),
             build_type="dev",
-            download_url=f"https://ghcr.io/{self.owner}/{self.ghcr_image}:{self.dev_tag}",
+            download_url=f"https://github.com/{self.owner}/{self.repo}/tree/{self.dev_branch}",
             latest_stable=None,
-            latest_dev=latest_sha,
+            latest_dev=display_sha,
         )
+
+
+class ComprehensiveUpdateChecker(UpdateChecker):
+    """Check for both stable and dev updates, providing complete information."""
+
+    def __init__(
+        self,
+        current_version: str,
+        owner: str = "Pharaoh-Labs",
+        repo: str = "teamarr",
+        dev_branch: str = "dev",
+        **kwargs,
+    ):
+        """Initialize comprehensive update checker.
+
+        Args:
+            current_version: Current application version
+            owner: GitHub repository owner (default: "Pharaoh-Labs")
+            repo: GitHub repository name (default: "teamarr")
+            dev_branch: Git branch to check for dev builds (default: "dev")
+            **kwargs: Additional arguments passed to UpdateChecker
+        """
+        super().__init__(current_version, **kwargs)
+        self.owner = owner
+        self.repo = repo
+        self.dev_branch = dev_branch
+        
+        # Detect current build type
+        self.is_dev = "-" in current_version and "+" in current_version
+
+    def _fetch_latest_stable(self) -> str | None:
+        """Fetch latest stable release version from GitHub.
+
+        Returns:
+            Latest stable version (e.g., "2.0.11") or None if failed
+        """
+        try:
+            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/releases/latest"
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                data = response.json()
+                return data["tag_name"].lstrip("v")
+        except Exception as e:
+            logger.debug("[UPDATE_CHECKER] Failed to fetch latest stable release: %s", e)
+            return None
+
+    def _fetch_latest_dev_sha(self) -> str | None:
+        """Fetch latest commit SHA from dev branch.
+
+        Returns:
+            Latest commit SHA (short, 7 chars) or None if failed
+        """
+        try:
+            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/commits/{self.dev_branch}"
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                data = response.json()
+                full_sha = data.get("sha", "")
+                return full_sha[:7] if full_sha else None
+        except Exception as e:
+            logger.debug("[UPDATE_CHECKER] Failed to fetch latest dev commit: %s", e)
+            return None
+
+    def _extract_sha_from_version(self, version: str) -> str | None:
+        """Extract commit SHA from version string.
+
+        Args:
+            version: Version string (e.g., "2.0.11-dev+abc123")
+
+        Returns:
+            Commit SHA if found, None otherwise
+        """
+        if "+" in version:
+            return version.split("+")[-1]
+        return None
+
+    def _compare_versions(self, current: str, latest: str) -> bool:
+        """Compare semantic versions.
+
+        Args:
+            current: Current version (e.g., "2.0.11")
+            latest: Latest version (e.g., "2.0.12")
+
+        Returns:
+            True if latest > current
+        """
+        try:
+            current_parts = [int(x) for x in current.split(".")]
+            latest_parts = [int(x) for x in latest.split(".")]
+
+            # Pad to same length
+            max_len = max(len(current_parts), len(latest_parts))
+            current_parts += [0] * (max_len - len(current_parts))
+            latest_parts += [0] * (max_len - len(latest_parts))
+
+            return latest_parts > current_parts
+        except (ValueError, AttributeError):
+            return False
+
+    def _fetch_update_info(self) -> UpdateInfo:
+        """Fetch both stable and dev update information.
+
+        Returns:
+            UpdateInfo with complete stable and dev version details
+        """
+        # Fetch both stable and dev info
+        latest_stable = self._fetch_latest_stable()
+        latest_dev_sha = self._fetch_latest_dev_sha()
+
+        # Determine update availability based on build type
+        update_available = False
+        build_type = "dev" if self.is_dev else "stable"
+        
+        if self.is_dev:
+            # Dev build - check against latest dev commit
+            current_sha = self._extract_sha_from_version(self.current_version)
+            if current_sha and latest_dev_sha:
+                min_len = min(len(current_sha), len(latest_dev_sha))
+                update_available = latest_dev_sha[:min_len].lower() != current_sha[:min_len].lower()
+                logger.debug(
+                    "[UPDATE_CHECKER] Dev commit comparison: current=%s, latest=%s, update=%s",
+                    current_sha,
+                    latest_dev_sha,
+                    update_available,
+                )
+            
+            latest_version = f"{self.dev_branch} ({latest_dev_sha if latest_dev_sha else 'unknown'})"
+            download_url = f"https://github.com/{self.owner}/{self.repo}/tree/{self.dev_branch}"
+            release_notes_url = None
+        else:
+            # Stable build - check against latest stable release
+            if latest_stable:
+                current_clean = self.current_version.split("-")[0].lstrip("v")
+                update_available = self._compare_versions(current_clean, latest_stable)
+                logger.debug(
+                    "[UPDATE_CHECKER] Stable version comparison: current=%s, latest=%s, update=%s",
+                    current_clean,
+                    latest_stable,
+                    update_available,
+                )
+            
+            latest_version = latest_stable if latest_stable else "unknown"
+            download_url = f"https://github.com/{self.owner}/{self.repo}/releases/latest"
+            release_notes_url = download_url
+
+        return UpdateInfo(
+            current_version=self.current_version,
+            latest_version=latest_version,
+            update_available=update_available,
+            checked_at=datetime.now(UTC),
+            build_type=build_type,
+            download_url=download_url,
+            release_notes_url=release_notes_url,
+            latest_stable=latest_stable,
+            latest_dev=latest_dev_sha,
+        )
+
 
 
 def create_update_checker(
     version: str,
     owner: str = "Pharaoh-Labs",
     repo: str = "teamarr",
-    ghcr_owner: str | None = None,
-    ghcr_image: str | None = None,
-    dev_tag: str = "dev",
     dev_branch: str = "dev",
     cache_duration_hours: int = 6,
-    db_factory=None,
 ) -> UpdateChecker:
     """Factory function to create appropriate update checker.
 
+    Always fetches both stable and dev information for comprehensive visibility.
+
     Args:
         version: Current application version
-        owner: GitHub repository owner for stable releases (default: "Pharaoh-Labs")
+        owner: GitHub repository owner (default: "Pharaoh-Labs")
         repo: GitHub repository name (default: "teamarr")
-        ghcr_owner: GHCR repository owner for dev builds (defaults to "pharaoh-labs")
-        ghcr_image: GHCR image name for dev builds (defaults to repo)
-        dev_tag: Docker tag to check for dev builds (default: "dev")
         dev_branch: Git branch to check for dev builds (default: "dev")
         cache_duration_hours: How long to cache results
-        db_factory: Database factory for digest persistence (dev builds only, fallback)
 
     Returns:
-        StableUpdateChecker for stable releases, DevUpdateChecker for dev builds
+        ComprehensiveUpdateChecker that fetches both stable and dev info
     """
-    # Use lowercase for GHCR if not specified (Docker registry is case-sensitive lowercase)
-    if ghcr_owner is None:
-        ghcr_owner = "pharaoh-labs"
-    if ghcr_image is None:
-        ghcr_image = repo
-
-    # Detect build type from version string
-    # Stable: X.Y.Z (e.g., "2.0.11")
-    # Dev: X.Y.Z-branch+sha (e.g., "2.0.11-dev+abc123", "2.0.11-feature/xyz+def456")
-    # The presence of both "-" and "+" indicates a dev build with branch and commit info
-    is_dev = "-" in version and "+" in version
-
-    if is_dev:
-        return DevUpdateChecker(
-            current_version=version,
-            owner=owner,  # Use GitHub owner for commit API
-            repo=repo,  # Use GitHub repo for commit API
-            dev_branch=dev_branch,
-            ghcr_image=ghcr_image,
-            dev_tag=dev_tag,
-            cache_duration_hours=cache_duration_hours,
-            db_factory=db_factory,
-        )
-    else:
-        return StableUpdateChecker(
-            current_version=version,
-            owner=owner,
-            repo=repo,
-            cache_duration_hours=cache_duration_hours,
-        )
+    return ComprehensiveUpdateChecker(
+        current_version=version,
+        owner=owner,
+        repo=repo,
+        dev_branch=dev_branch,
+        cache_duration_hours=cache_duration_hours,
+    )

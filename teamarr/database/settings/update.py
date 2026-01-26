@@ -564,9 +564,7 @@ def update_update_check_settings(
     notify_dev_updates: bool | None = None,
     github_owner: str | None = None,
     github_repo: str | None = None,
-    ghcr_owner: str | None = None,
-    ghcr_image: str | None = None,
-    dev_tag: str | None = None,
+    dev_branch: str | None = None,
 ) -> bool:
     """Update update check settings.
 
@@ -576,11 +574,9 @@ def update_update_check_settings(
         check_interval_hours: Hours between update checks
         notify_stable_updates: Notify for stable version updates
         notify_dev_updates: Notify for dev build updates
-        github_owner: GitHub repository owner for stable releases
-        github_repo: GitHub repository name for stable releases
-        ghcr_owner: GHCR repository owner for dev builds
-        ghcr_image: GHCR image name for dev builds
-        dev_tag: Docker tag to check for dev builds (default: "dev")
+        github_owner: GitHub repository owner
+        github_repo: GitHub repository name
+        dev_branch: Git branch to check for dev builds (default: "dev")
 
     Returns:
         True if updated
@@ -606,15 +602,9 @@ def update_update_check_settings(
     if github_repo is not None:
         updates.append("update_github_repo = ?")
         values.append(github_repo)
-    if ghcr_owner is not None:
-        updates.append("update_ghcr_owner = ?")
-        values.append(ghcr_owner)
-    if ghcr_image is not None:
-        updates.append("update_ghcr_image = ?")
-        values.append(ghcr_image)
-    if dev_tag is not None:
-        updates.append("update_dev_tag = ?")
-        values.append(dev_tag)
+    if dev_branch is not None:
+        updates.append("update_dev_branch = ?")
+        values.append(dev_branch)
 
     if not updates:
         return False

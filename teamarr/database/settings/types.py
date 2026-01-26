@@ -62,9 +62,7 @@ class UpdateCheckSettings:
     notify_dev_updates: bool = False
     github_owner: str = "Pharaoh-Labs"
     github_repo: str = "teamarr"
-    ghcr_owner: str = "pharaoh-labs"
-    ghcr_image: str = "teamarr"
-    dev_tag: str = "dev"
+    dev_branch: str = "dev"
 
 
 @dataclass

@@ -125,9 +125,7 @@ function UpdateCheckSettingsSection() {
     notify_dev_updates: false,
     github_owner: "Pharaoh-Labs",
     github_repo: "teamarr",
-    ghcr_owner: "pharaoh-labs",
-    ghcr_image: "teamarr",
-    dev_tag: "dev",
+    dev_branch: "dev",
   })
 
   // Update local state when API data loads
@@ -153,6 +151,8 @@ function UpdateCheckSettingsSection() {
       const response = await fetch("/api/v1/updates/status?force=true")
       if (response.ok) {
         await refetch()
+        // Clear localStorage dismissal so notification banner appears if update is found
+        localStorage.removeItem("update-dismissed-version")
         toast.success("Update check complete")
       } else {
         throw new Error("Check failed")
@@ -357,49 +357,23 @@ function UpdateCheckSettingsSection() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ghcr-owner" className="text-xs">
-                GHCR Owner
+              <Label htmlFor="dev-branch" className="text-xs">
+                Dev Branch
               </Label>
               <Input
-                id="ghcr-owner"
-                value={localSettings.ghcr_owner}
+                id="dev-branch"
+                value={localSettings.dev_branch}
                 onChange={(e) =>
                   setLocalSettings({
                     ...localSettings,
-                    ghcr_owner: e.target.value,
+                    dev_branch: e.target.value,
                   })
-                }
-                placeholder="pharaoh-labs"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ghcr-image" className="text-xs">
-                GHCR Image
-              </Label>
-              <Input
-                id="ghcr-image"
-                value={localSettings.ghcr_image}
-                onChange={(e) =>
-                  setLocalSettings({
-                    ...localSettings,
-                    ghcr_image: e.target.value,
-                  })
-                }
-                placeholder="teamarr"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dev-tag" className="text-xs">
-                Dev Tag
-              </Label>
-              <Input
-                id="dev-tag"
-                value={localSettings.dev_tag}
-                onChange={(e) =>
-                  setLocalSettings({ ...localSettings, dev_tag: e.target.value })
                 }
                 placeholder="dev"
               />
+              <p className="text-xs text-muted-foreground">
+                Git branch to check for dev build commits
+              </p>
             </div>
           </div>
         </div>
