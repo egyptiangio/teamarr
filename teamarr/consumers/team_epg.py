@@ -14,6 +14,7 @@ from datetime import timedelta
 from typing import Any
 
 from teamarr.core import Event, Programme, TemplateConfig
+from teamarr.consumers.event_epg import is_event_postponed, prepend_postponed_label
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
@@ -57,6 +58,11 @@ class TeamEPGOptions:
     # XMLTV generator metadata (for orchestrator-based generation)
     generator_name: str | None = None
     generator_url: str | None = None
+
+    # Postponed event label
+    # When True, prepends "Postponed: " to EPG title, subtitle, and description
+    # for events with status.state == "postponed"
+    prepend_postponed_label: bool = True
 
     # Backwards compatibility
     @property
@@ -390,6 +396,11 @@ class TeamEPGGenerator:
         if not description:
             description = self._resolver.resolve(options.template.description_format, context)
 
+        # Prepend "Postponed: " label if event is postponed and setting is enabled
+        title = prepend_postponed_label(title, event, options.prepend_postponed_label)
+        subtitle = prepend_postponed_label(subtitle, event, options.prepend_postponed_label)
+        description = prepend_postponed_label(description, event, options.prepend_postponed_label)
+
         # Icon: template program_art_url > channel logo > home team logo
         # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
         if options.template.program_art_url:
@@ -450,6 +461,7 @@ class TeamEPGGenerator:
             midnight_crossover_mode=options.midnight_crossover_mode,
             sport_durations=options.sport_durations,
             default_duration=options.default_duration_hours,
+            prepend_postponed_label=options.prepend_postponed_label,
         )
 
         # Load filler config from database if template_id is set

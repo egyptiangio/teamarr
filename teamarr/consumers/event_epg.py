@@ -51,6 +51,40 @@ class EventEPGOptions:
     generator_name: str | None = None
     generator_url: str | None = None
 
+    # Postponed event label
+    # When True, prepends "Postponed: " to EPG title, subtitle, and description
+    prepend_postponed_label: bool = True
+
+
+POSTPONED_LABEL = "Postponed: "
+
+
+def is_event_postponed(event: Event) -> bool:
+    """Check if an event is postponed based on its status."""
+    if not event.status:
+        return False
+    return event.status.state.lower() == "postponed"
+
+
+def prepend_postponed_label(text: str | None, event: Event, enabled: bool) -> str | None:
+    """Prepend 'POSTPONED | ' to text if event is postponed and setting is enabled.
+
+    Args:
+        text: The text to potentially modify (title, subtitle, description)
+        event: The event to check status
+        enabled: Whether the prepend_postponed_label setting is enabled
+
+    Returns:
+        Text with label prepended if applicable, otherwise unchanged
+    """
+    if not text:
+        return text
+    if not enabled:
+        return text
+    if not is_event_postponed(event):
+        return text
+    return f"{POSTPONED_LABEL}{text}"
+
 
 class EventEPGGenerator:
     """Generates EPG programmes for events from data providers."""
@@ -109,6 +143,10 @@ class EventEPGGenerator:
             # Generate channel name from template
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
+
+            # Prepend "Postponed: " to channel name if event is postponed and setting is enabled
+            if options.prepend_postponed_label and is_event_postponed(event):
+                channel_name = f"{POSTPONED_LABEL}{channel_name}"
 
             # Use template-configured logo if set (no fallback to team logo)
             # Resolve template variables in logo URL (e.g., {league_id}, {home_team_pascal})
@@ -221,6 +259,11 @@ class EventEPGGenerator:
         # Fallback to default description format
         if not description:
             description = self._resolver.resolve(options.template.description_format, context)
+
+        # Prepend "POSTPONED | " label if event is postponed and setting is enabled
+        title = prepend_postponed_label(title, event, options.prepend_postponed_label)
+        subtitle = prepend_postponed_label(subtitle, event, options.prepend_postponed_label)
+        description = prepend_postponed_label(description, event, options.prepend_postponed_label)
 
         # Icon: use template program_art_url if set (no fallback to team logo)
         # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
@@ -361,6 +404,10 @@ class EventEPGGenerator:
             # Generate channel name from template
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
             channel_name = self._resolver.resolve(options.template.channel_name_format, context)
+
+            # Prepend "Postponed: " to channel name if event is postponed and setting is enabled
+            if options.prepend_postponed_label and is_event_postponed(event):
+                channel_name = f"{POSTPONED_LABEL}{channel_name}"
 
             # Add segment display name to channel name for UFC segments
             if segment_display:

@@ -280,8 +280,13 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Rules evaluated in priority order; first match wins; non-matching streams get priority 999
     stream_ordering_rules JSON DEFAULT '[]',
 
+    -- Postponed Event Label
+    -- When true, prepends "Postponed: " to channel name, EPG title, subtitle, and description
+    -- for events with status.state = "postponed"
+    prepend_postponed_label BOOLEAN DEFAULT 1,
+
     -- Schema Version
-    schema_version INTEGER DEFAULT 40
+    schema_version INTEGER DEFAULT 42
 );
 
 -- Insert default settings

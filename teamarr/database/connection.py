@@ -978,13 +978,111 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 40 (channel_group_mode patterns)")
         current_version = 40
 
+    # Version 41: Add prepend_postponed_label setting
+    # When enabled, prepends "Postponed: " to channel name and EPG content for postponed events
+    if current_version < 41:
+        _migrate_add_prepend_postponed_label(conn)
+        conn.execute("UPDATE settings SET schema_version = 41 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 41 (prepend_postponed_label setting)")
+        current_version = 41
+
+    # Version 42: Fix invalid enum values in event_epg_groups (recovery migration)
+    # For users who got stuck on v40 migration with bad data
+    if current_version < 42:
+        _migrate_fix_invalid_enum_values(conn)
+        conn.execute("UPDATE settings SET schema_version = 42 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 42 (enum value fixes)")
+        current_version = 42
+
+
+def _migrate_fix_invalid_enum_values(conn: sqlite3.Connection) -> None:
+    """Fix invalid enum values in event_epg_groups.
+
+    Recovery migration for users who got stuck on broken v40 migration.
+    Converts old enum values to new format.
+    """
+    # Check if table exists
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='event_epg_groups'"
+    )
+    if not cursor.fetchone():
+        return  # No table to fix
+
+    cursor = conn.execute("PRAGMA table_info(event_epg_groups)")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    fixes_made = 0
+
+    # Fix channel_assignment_mode
+    if "channel_assignment_mode" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_assignment_mode = 'auto'
+            WHERE channel_assignment_mode NOT IN ('auto', 'manual')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix channel_sort_order
+    if "channel_sort_order" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_sort_order = 'time'
+            WHERE channel_sort_order NOT IN ('time', 'sport_time', 'league_time')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix overlap_handling
+    if "overlap_handling" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET overlap_handling = 'add_stream'
+            WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
+        """)
+        fixes_made += cursor.rowcount
+
+    # Fix channel_group_mode
+    if "channel_group_mode" in columns:
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{sport}'
+            WHERE channel_group_mode = 'sport'
+        """)
+        fixes_made += cursor.rowcount
+        cursor = conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{league}'
+            WHERE channel_group_mode = 'league'
+        """)
+        fixes_made += cursor.rowcount
+
+    if fixes_made > 0:
+        logger.info("[MIGRATE] Fixed %d invalid enum values in event_epg_groups", fixes_made)
+
+
+def _migrate_add_prepend_postponed_label(conn: sqlite3.Connection) -> None:
+    """Add prepend_postponed_label column to settings table.
+
+    Adds the column with default value of 1 (enabled).
+    """
+    # Check if column already exists
+    cursor = conn.execute("PRAGMA table_info(settings)")
+    columns = [row["name"] for row in cursor.fetchall()]
+
+    if "prepend_postponed_label" not in columns:
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN prepend_postponed_label BOOLEAN DEFAULT 1"
+        )
+        logger.info("[MIGRATE] Added prepend_postponed_label column to settings")
+
 
 def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
     """Convert channel_group_mode from enum to pattern strings.
 
     This migration:
-    1. Recreates event_epg_groups table WITHOUT the CHECK constraint
-    2. Converts 'sport' -> '{sport}' and 'league' -> '{league}'
+    1. Cleans up any partial previous migration attempts
+    2. Converts old enum values in the source table FIRST
+    3. Recreates event_epg_groups table WITHOUT the CHECK constraint
+    4. Copies data (now with valid values for CHECK constraints)
     """
     # Check if table exists
     cursor = conn.execute(
@@ -992,6 +1090,9 @@ def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
     )
     if not cursor.fetchone():
         return  # Fresh database, schema.sql will create correct table
+
+    # Clean up any leftover temp table from previous failed migration
+    conn.execute("DROP TABLE IF EXISTS event_epg_groups_new")
 
     logger.info("[MIGRATE] Converting channel_group_mode to pattern format")
 
@@ -1005,6 +1106,53 @@ def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
         if "channel_group_mode" not in columns:
             logger.debug("[MIGRATE] channel_group_mode column not found, skipping")
             return
+
+        # CRITICAL: Convert old values in source table BEFORE copying to new table
+        # This prevents CHECK constraint violations during INSERT
+
+        # Convert channel_group_mode: 'sport' -> '{sport}', 'league' -> '{league}'
+        conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{sport}'
+            WHERE channel_group_mode = 'sport'
+        """)
+        conn.execute("""
+            UPDATE event_epg_groups
+            SET channel_group_mode = '{league}'
+            WHERE channel_group_mode = 'league'
+        """)
+
+        # Convert channel_assignment_mode: 'one_per_event'/'one_per_stream' -> 'auto'/'manual'
+        # IMPORTANT: Convert specific values FIRST, then catch-all
+        if "channel_assignment_mode" in columns:
+            # First: 'one_per_stream' -> 'manual' (specific conversion)
+            conn.execute("""
+                UPDATE event_epg_groups
+                SET channel_assignment_mode = 'manual'
+                WHERE channel_assignment_mode = 'one_per_stream'
+            """)
+            # Second: 'one_per_event' and any other invalid values -> 'auto' (catch-all)
+            conn.execute("""
+                UPDATE event_epg_groups
+                SET channel_assignment_mode = 'auto'
+                WHERE channel_assignment_mode NOT IN ('auto', 'manual')
+            """)
+
+        # Convert channel_sort_order: 'start_time' -> 'time'
+        if "channel_sort_order" in columns:
+            conn.execute("""
+                UPDATE event_epg_groups
+                SET channel_sort_order = 'time'
+                WHERE channel_sort_order NOT IN ('time', 'sport_time', 'league_time')
+            """)
+
+        # Convert overlap_handling: 'allow' -> 'add_stream'
+        if "overlap_handling" in columns:
+            conn.execute("""
+                UPDATE event_epg_groups
+                SET overlap_handling = 'add_stream'
+                WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
+            """)
 
         # Build column list for copy (all columns)
         col_list = ", ".join(columns)
@@ -1026,8 +1174,8 @@ def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
                 channel_profile_ids TEXT,
                 duplicate_event_handling TEXT DEFAULT 'consolidate'
                     CHECK(duplicate_event_handling IN ('consolidate', 'separate', 'ignore')),
-                channel_assignment_mode TEXT DEFAULT 'one_per_event'
-                    CHECK(channel_assignment_mode IN ('one_per_event', 'one_per_stream')),
+                channel_assignment_mode TEXT DEFAULT 'auto'
+                    CHECK(channel_assignment_mode IN ('auto', 'manual')),
                 sort_order INTEGER DEFAULT 0,
                 total_stream_count INTEGER DEFAULT 0,
                 m3u_group_id INTEGER,
@@ -1065,30 +1213,20 @@ def _migrate_channel_group_mode_to_patterns(conn: sqlite3.Connection) -> None:
                 excluded_before_window INTEGER DEFAULT 0,
                 excluded_league_not_included INTEGER DEFAULT 0,
                 filtered_stale INTEGER DEFAULT 0,
-                channel_sort_order TEXT DEFAULT 'start_time',
-                overlap_handling TEXT DEFAULT 'allow',
+                channel_sort_order TEXT DEFAULT 'time'
+                    CHECK(channel_sort_order IN ('time', 'sport_time', 'league_time')),
+                overlap_handling TEXT DEFAULT 'add_stream'
+                    CHECK(overlap_handling IN ('add_stream', 'add_only', 'create_all', 'skip')),
                 enabled BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Copy data with conversion
+        # Copy data (values already converted above)
         conn.execute(f"""
             INSERT INTO event_epg_groups_new ({col_list})
             SELECT {col_list} FROM event_epg_groups
-        """)
-
-        # Convert enum values to patterns
-        conn.execute("""
-            UPDATE event_epg_groups_new
-            SET channel_group_mode = '{sport}'
-            WHERE channel_group_mode = 'sport'
-        """)
-        conn.execute("""
-            UPDATE event_epg_groups_new
-            SET channel_group_mode = '{league}'
-            WHERE channel_group_mode = 'league'
         """)
 
         # Drop old table and rename

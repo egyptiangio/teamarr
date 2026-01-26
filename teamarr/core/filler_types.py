@@ -110,3 +110,8 @@ class FillerOptions:
     # Pregame buffer (minutes) - gap between pregame filler end and game start
     # Set to 0 so pregame filler ends exactly when the game programme starts
     pregame_buffer_minutes: int = 0
+
+    # Postponed event label
+    # When True, prepends "Postponed: " to filler title, subtitle, and description
+    # if the relevant event (next for pregame, last for postgame) is postponed
+    prepend_postponed_label: bool = True

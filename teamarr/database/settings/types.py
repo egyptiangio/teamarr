@@ -66,6 +66,7 @@ class EPGSettings:
     include_final_events: bool = False
     midnight_crossover_mode: str = "postgame"
     cron_expression: str = "0 * * * *"
+    prepend_postponed_label: bool = True
 
 
 @dataclass
@@ -207,4 +208,4 @@ class AllSettings:
         default_factory=StreamOrderingSettings
     )
     epg_generation_counter: int = 0
-    schema_version: int = 40
+    schema_version: int = 42

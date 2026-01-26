@@ -12,6 +12,7 @@ from sqlite3 import Connection
 from typing import Any
 
 from teamarr.core import Event
+from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.templates import ContextBuilder, TemplateResolver
 
 from .dynamic_resolver import DynamicResolver
@@ -1074,6 +1075,9 @@ class ChannelLifecycleService:
         If not included and a keyword is present, it's auto-appended as
         "(Keyword)" to maintain backward compatibility.
 
+        Also prepends "Postponed: " to the channel name if the event is
+        postponed and the prepend_postponed_label setting is enabled.
+
         Args:
             event: Event data
             template: Can be dict, EventTemplateConfig dataclass, or None
@@ -1110,9 +1114,7 @@ class ChannelLifecycleService:
 
             # Auto-append keyword only if template didn't use {exception_keyword}
             if exception_keyword and not template_uses_keyword:
-                return f"{base_name} ({exception_keyword.title()})"
-
-            return base_name
+                base_name = f"{base_name} ({exception_keyword.title()})"
         else:
             # Default format: "Away @ Home"
             home_name = event.home_team.short_name if event.home_team else "Home"
@@ -1121,9 +1123,18 @@ class ChannelLifecycleService:
 
             # Append keyword if present (default format doesn't support template vars)
             if exception_keyword:
-                return f"{base_name} ({exception_keyword.title()})"
+                base_name = f"{base_name} ({exception_keyword.title()})"
 
-            return base_name
+        # Prepend "POSTPONED | " if event is postponed and setting is enabled
+        if is_event_postponed(event):
+            from teamarr.database.settings import get_epg_settings
+
+            with self._db_factory() as conn:
+                epg_settings = get_epg_settings(conn)
+                if epg_settings.prepend_postponed_label:
+                    base_name = f"{POSTPONED_LABEL}{base_name}"
+
+        return base_name
 
     def _clean_empty_wrappers(self, text: str) -> str:
         """Clean up empty wrappers left when variables resolve to empty string.

@@ -18,6 +18,7 @@ from datetime import date as date_type
 from datetime import datetime, timedelta
 
 from teamarr.core import Event, Programme, TeamStats
+from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.services import SportsDataService
 from teamarr.templates.context import GameContext, TeamChannelContext, TemplateContext
 from teamarr.templates.context_builder import ContextBuilder
@@ -305,6 +306,7 @@ class FillerGenerator:
                     config=config,
                     channel_id=channel_id,
                     logo_url=logo_url,
+                    next_event=first_game,
                 )
                 fillers.extend(pregame_progs)
 
@@ -422,6 +424,7 @@ class FillerGenerator:
                 logo_url=logo_url,
                 is_offseason=is_offseason,
                 last_event=last_past_event or prev_day_last_event,
+                next_event=next_future_event,
             )
             fillers.extend(idle_progs)
 
@@ -438,6 +441,7 @@ class FillerGenerator:
         logo_url: str | None,
         is_offseason: bool = False,
         last_event: Event | None = None,
+        next_event: Event | None = None,
     ) -> list[Programme]:
         """Create filler programmes aligned to 6-hour time blocks."""
         # Split into time-block-aligned chunks
@@ -454,6 +458,16 @@ class FillerGenerator:
             last_event=last_event,
         )
 
+        # Determine if we should prepend "Postponed: " label
+        # - For pregame: check if next_event is postponed
+        # - For postgame/idle: check if last_event is postponed
+        prepend_label = False
+        if self._options and self._options.prepend_postponed_label:
+            if filler_type == FillerType.PREGAME and next_event:
+                prepend_label = is_event_postponed(next_event)
+            elif filler_type in (FillerType.POSTGAME, FillerType.IDLE) and last_event:
+                prepend_label = is_event_postponed(last_event)
+
         programmes: list[Programme] = []
         for chunk_start, chunk_end in chunks:
             # Resolve templates
@@ -464,6 +478,14 @@ class FillerGenerator:
             subtitle = None
             if template.subtitle:
                 subtitle = self._resolver.resolve(template.subtitle, context)
+
+            # Prepend "Postponed: " label if applicable
+            if prepend_label:
+                title = f"{POSTPONED_LABEL}{title}"
+                if subtitle:
+                    subtitle = f"{POSTPONED_LABEL}{subtitle}"
+                if description:
+                    description = f"{POSTPONED_LABEL}{description}"
 
             # Resolve art URL if present
             # Unknown variables stay literal (e.g., {bad_var}) so user can identify issues
