@@ -164,13 +164,15 @@ class StableUpdateChecker(UpdateChecker):
 
 
 class DevUpdateChecker(UpdateChecker):
-    """Check for dev build updates via GitHub Container Registry."""
+    """Check for dev build updates via GitHub commit comparison."""
 
     def __init__(
         self,
         current_version: str,
         owner: str = "pharaoh-labs",
-        image: str = "teamarr",
+        repo: str = "teamarr",
+        dev_branch: str = "dev",
+        ghcr_image: str = "teamarr",
         dev_tag: str = "dev",
         db_factory=None,
         **kwargs,
@@ -180,14 +182,18 @@ class DevUpdateChecker(UpdateChecker):
         Args:
             current_version: Current application version with commit SHA
             owner: GitHub repository owner
-            image: Container image name
+            repo: GitHub repository name
+            dev_branch: Branch to check for latest commit (default: "dev")
+            ghcr_image: Container image name (for fallback)
             dev_tag: Docker tag to check (default: "dev")
-            db_factory: Database factory for digest persistence (optional)
+            db_factory: Database factory for digest persistence (optional, for fallback)
             **kwargs: Additional arguments passed to UpdateChecker
         """
         super().__init__(current_version, **kwargs)
         self.owner = owner
-        self.image = image
+        self.repo = repo
+        self.dev_branch = dev_branch
+        self.ghcr_image = ghcr_image
         self.dev_tag = dev_tag
         self.db_factory = db_factory
 
@@ -204,79 +210,137 @@ class DevUpdateChecker(UpdateChecker):
             return version.split("+")[-1]
         return None
 
-    def _fetch_update_info(self) -> UpdateInfo:
-        """Fetch latest dev build from GHCR and compare with stored digest.
+    def _fetch_latest_commit_sha(self) -> str | None:
+        """Fetch the latest commit SHA from GitHub for the dev branch.
 
-        Now properly detects updates by:
-        1. Fetching the latest manifest digest from GHCR
-        2. Comparing with the stored digest in database
-        3. Updating stored digest if user is on the latest
-        4. Returning update_available=true if digests don't match
+        Returns:
+            Latest commit SHA (short form, 6-7 chars) or None if failed
         """
-        # Fetch the latest manifest digest from GHCR
-        url = f"https://ghcr.io/v2/{self.owner}/{self.image}/manifests/{self.dev_tag}"
+        try:
+            url = f"https://api.github.com/repos/{self.owner}/{self.repo}/commits/{self.dev_branch}"
+            
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Get short SHA (first 7 characters to match git convention)
+                full_sha = data.get("sha", "")
+                return full_sha[:7] if full_sha else None
+        except Exception as e:
+            logger.debug("[UPDATE_CHECKER] Failed to fetch latest commit from GitHub: %s", e)
+            return None
 
-        headers = {
-            "Accept": "application/vnd.docker.distribution.manifest.v2+json",
-        }
+    def _fetch_update_info(self) -> UpdateInfo:
+        """Fetch latest dev build info using commit comparison (primary) or digest (fallback).
 
-        with httpx.Client(timeout=self.timeout_seconds) as client:
-            response = client.get(url, headers=headers, follow_redirects=True)
-            response.raise_for_status()
+        Primary Method: Compare commit SHAs
+        1. Extract SHA from current version (e.g., "2.0.11-dev+abc123" → "abc123")
+        2. Fetch latest commit SHA from GitHub dev branch
+        3. Compare: if different → update available
 
-            # Get the digest from the Docker-Content-Digest header
-            latest_digest = response.headers.get("Docker-Content-Digest", "")
+        Fallback Method: Compare GHCR manifest digests
+        1. Fetch manifest digest from GHCR
+        2. Compare with stored digest in database
+        3. If different → update available
 
-        # Get stored digest from database (if available)
-        stored_digest = None
+        Returns:
+            UpdateInfo with update availability status
+        """
+        current_sha = self._extract_sha_from_version(self.current_version)
+        latest_sha = None
         update_available = False
+        method_used = "unknown"
 
-        if self.db_factory:
+        # Primary method: Compare commit SHAs from GitHub
+        if current_sha:
+            latest_sha = self._fetch_latest_commit_sha()
+            if latest_sha:
+                method_used = "github-commit"
+                # Compare SHAs (case-insensitive, handle different lengths)
+                # current_sha might be 6 chars, latest_sha is 7 chars
+                min_len = min(len(current_sha), len(latest_sha))
+                update_available = latest_sha[:min_len].lower() != current_sha[:min_len].lower()
+                logger.debug(
+                    "[UPDATE_CHECKER] Commit comparison (%s): current=%s, latest=%s, update=%s",
+                    method_used,
+                    current_sha,
+                    latest_sha,
+                    update_available,
+                )
+            else:
+                logger.debug("[UPDATE_CHECKER] Failed to fetch latest commit, falling back to digest comparison")
+
+        # Fallback method: Use GHCR manifest digest comparison
+        if latest_sha is None:
+            method_used = "ghcr-digest"
             try:
-                with self.db_factory() as conn:
-                    from teamarr.database.update_tracker import get_current_dev_digest
-                    stored_digest = get_current_dev_digest(conn)
-            except Exception as e:
-                logger.warning("[UPDATE_CHECKER] Failed to read stored digest: %s", e)
+                url = f"https://ghcr.io/v2/{self.owner}/{self.ghcr_image}/manifests/{self.dev_tag}"
+                headers = {
+                    "Accept": "application/vnd.docker.distribution.manifest.v2+json",
+                }
 
-        # Compare digests to detect updates
-        if latest_digest and stored_digest:
-            # We have both digests - can detect if update is available
-            update_available = latest_digest != stored_digest
-            logger.debug(
-                "[UPDATE_CHECKER] Digest comparison: stored=%s, latest=%s, update=%s",
-                stored_digest[:12],
-                latest_digest[:12],
-                update_available,
-            )
-        elif latest_digest and not stored_digest:
-            # First time checking - store the current digest
-            # Don't claim update is available on first check
-            if self.db_factory:
-                try:
-                    with self.db_factory() as conn:
-                        from teamarr.database.update_tracker import update_dev_digest
-                        update_dev_digest(conn, latest_digest)
-                        logger.info(
-                            "[UPDATE_CHECKER] Stored initial dev digest: %s",
-                            latest_digest[:12],
-                        )
-                except Exception as e:
-                    logger.warning("[UPDATE_CHECKER] Failed to store digest: %s", e)
-            update_available = False
-        else:
-            # Couldn't fetch digest or no database - conservative approach
+                with httpx.Client(timeout=self.timeout_seconds) as client:
+                    response = client.get(url, headers=headers, follow_redirects=True)
+                    response.raise_for_status()
+                    latest_digest = response.headers.get("Docker-Content-Digest", "")
+
+                # Get stored digest from database (if available)
+                stored_digest = None
+                if self.db_factory:
+                    try:
+                        with self.db_factory() as conn:
+                            from teamarr.database.update_tracker import get_current_dev_digest
+                            stored_digest = get_current_dev_digest(conn)
+                    except Exception as e:
+                        logger.warning("[UPDATE_CHECKER] Failed to read stored digest: %s", e)
+
+                # Compare digests to detect updates
+                if latest_digest and stored_digest:
+                    update_available = latest_digest != stored_digest
+                    logger.debug(
+                        "[UPDATE_CHECKER] Digest comparison (%s): stored=%s, latest=%s, update=%s",
+                        method_used,
+                        stored_digest[:12],
+                        latest_digest[:12],
+                        update_available,
+                    )
+                elif latest_digest and not stored_digest:
+                    # First time checking - store the digest
+                    if self.db_factory:
+                        try:
+                            with self.db_factory() as conn:
+                                from teamarr.database.update_tracker import update_dev_digest
+                                update_dev_digest(conn, latest_digest)
+                                logger.info(
+                                    "[UPDATE_CHECKER] Stored initial dev digest: %s",
+                                    latest_digest[:12],
+                                )
+                        except Exception as e:
+                            logger.warning("[UPDATE_CHECKER] Failed to store digest: %s", e)
+                    update_available = False
+                else:
+                    update_available = False
+
+                latest_sha = latest_digest[:12] if latest_digest else None
+            except Exception as e:
+                logger.warning("[UPDATE_CHECKER] Digest fallback also failed: %s", e)
+                latest_sha = None
+
+        # If we still don't have latest info, return conservative result
+        if latest_sha is None:
+            latest_sha = "unknown"
             update_available = False
 
         return UpdateInfo(
             current_version=self.current_version,
-            latest_version=f"{self.dev_tag} ({latest_digest[:12] if latest_digest else 'unknown'})",
+            latest_version=f"{self.dev_branch} ({latest_sha})",
             update_available=update_available,
             checked_at=datetime.now(UTC),
             build_type="dev",
-            download_url=f"https://ghcr.io/{self.owner}/{self.image}:{self.dev_tag}",
-            latest_stable=None,  # Dev checker doesn't fetch stable info
-            latest_dev=latest_digest[:12] if latest_digest else None,
+            download_url=f"https://ghcr.io/{self.owner}/{self.ghcr_image}:{self.dev_tag}",
+            latest_stable=None,
+            latest_dev=latest_sha,
         )
 
 
@@ -287,6 +351,7 @@ def create_update_checker(
     ghcr_owner: str | None = None,
     ghcr_image: str | None = None,
     dev_tag: str = "dev",
+    dev_branch: str = "dev",
     cache_duration_hours: int = 6,
     db_factory=None,
 ) -> UpdateChecker:
@@ -299,8 +364,9 @@ def create_update_checker(
         ghcr_owner: GHCR repository owner for dev builds (defaults to "pharaoh-labs")
         ghcr_image: GHCR image name for dev builds (defaults to repo)
         dev_tag: Docker tag to check for dev builds (default: "dev")
+        dev_branch: Git branch to check for dev builds (default: "dev")
         cache_duration_hours: How long to cache results
-        db_factory: Database factory for digest persistence (dev builds only)
+        db_factory: Database factory for digest persistence (dev builds only, fallback)
 
     Returns:
         StableUpdateChecker for stable releases, DevUpdateChecker for dev builds
@@ -320,8 +386,10 @@ def create_update_checker(
     if is_dev:
         return DevUpdateChecker(
             current_version=version,
-            owner=ghcr_owner,
-            image=ghcr_image,
+            owner=owner,  # Use GitHub owner for commit API
+            repo=repo,  # Use GitHub repo for commit API
+            dev_branch=dev_branch,
+            ghcr_image=ghcr_image,
             dev_tag=dev_tag,
             cache_duration_hours=cache_duration_hours,
             db_factory=db_factory,
