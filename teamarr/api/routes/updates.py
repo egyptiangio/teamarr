@@ -30,6 +30,7 @@ def _build_settings_dict(update_settings) -> dict:
         "github_owner": update_settings.github_owner,
         "github_repo": update_settings.github_repo,
         "dev_branch": update_settings.dev_branch,
+        "auto_detect_dev_branch": update_settings.auto_detect_dev_branch,
     }
 
 
@@ -41,7 +42,6 @@ class UpdateStatusResponse(BaseModel):
     update_available: bool
     build_type: str
     download_url: str | None
-    release_notes_url: str | None
     checked_at: str | None
     settings: dict
     latest_stable: str | None = None  # Latest stable release version
@@ -58,6 +58,7 @@ class UpdateCheckSettingsRequest(BaseModel):
     github_owner: str | None = None
     github_repo: str | None = None
     dev_branch: str | None = None
+    auto_detect_dev_branch: bool | None = None
 
 
 @router.get("/updates/status")
@@ -82,17 +83,25 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
             update_available=False,
             build_type="unknown",
             download_url=None,
-            release_notes_url=None,
             checked_at=None,
             settings=_build_settings_dict(update_settings),
         )
 
     # Check for updates with configured repositories
+    # Auto-detect dev branch from version string if enabled
+    dev_branch = update_settings.dev_branch
+    if update_settings.auto_detect_dev_branch and "-" in VERSION and "+" in VERSION:
+        # Extract branch from version string (e.g., "2.0.11-copilot/add-update-notification-feature+051741")
+        detected_branch = VERSION.split("-")[1].split("+")[0]
+        if detected_branch:
+            dev_branch = detected_branch
+            logger.debug("[UPDATE_CHECKER] Auto-detected dev branch from version: %s", dev_branch)
+    
     checker = create_update_checker(
         version=VERSION,
         owner=update_settings.github_owner,
         repo=update_settings.github_repo,
-        dev_branch=update_settings.dev_branch if hasattr(update_settings, 'dev_branch') else "dev",
+        dev_branch=dev_branch,
     )
     update_info = checker.check_for_updates(force=force)
 
@@ -104,7 +113,6 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
             update_available=update_info.update_available,
             build_type=update_info.build_type,
             download_url=update_info.download_url,
-            release_notes_url=update_info.release_notes_url,
             checked_at=update_info.checked_at.isoformat(),
             latest_stable=update_info.latest_stable,
             latest_dev=update_info.latest_dev,
@@ -119,7 +127,6 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
             update_available=False,
             build_type="unknown",
             download_url=None,
-            release_notes_url=None,
             checked_at=None,
             latest_stable=None,
             latest_dev=None,
@@ -147,6 +154,7 @@ def update_settings(request: UpdateCheckSettingsRequest) -> dict:
             github_owner=request.github_owner,
             github_repo=request.github_repo,
             dev_branch=request.dev_branch,
+            auto_detect_dev_branch=request.auto_detect_dev_branch,
         )
 
         if updated:

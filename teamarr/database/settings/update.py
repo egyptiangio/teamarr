@@ -564,6 +564,7 @@ def update_update_check_settings(
     github_owner: str | None = None,
     github_repo: str | None = None,
     dev_branch: str | None = None,
+    auto_detect_dev_branch: bool | None = None,
 ) -> bool:
     """Update update check settings.
 
@@ -575,6 +576,7 @@ def update_update_check_settings(
         github_owner: GitHub repository owner
         github_repo: GitHub repository name
         dev_branch: Git branch to check for dev builds (default: "dev")
+        auto_detect_dev_branch: Auto-detect dev branch from version string
 
     Returns:
         True if updated
@@ -600,6 +602,9 @@ def update_update_check_settings(
     if dev_branch is not None:
         updates.append("update_dev_branch = ?")
         values.append(dev_branch)
+    if auto_detect_dev_branch is not None:
+        updates.append("update_auto_detect_dev_branch = ?")
+        values.append(int(auto_detect_dev_branch))
 
     if not updates:
         return False

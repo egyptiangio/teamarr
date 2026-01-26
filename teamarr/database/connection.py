@@ -1035,6 +1035,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                 _add_column_if_not_exists(
                     conn, "settings", "update_dev_branch", "TEXT DEFAULT 'dev'"
                 )
+                _add_column_if_not_exists(
+                    conn, "settings", "update_auto_detect_dev_branch", "INTEGER DEFAULT 1"
+                )
 
                 # Create table to track dev build digests for update detection
                 conn.execute("""
@@ -1061,6 +1064,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                     "update_github_owner",
                     "update_github_repo",
                     "update_dev_branch",
+                    "update_auto_detect_dev_branch",
                 }
                 
                 if required_columns.issubset(existing_columns):
@@ -1080,7 +1084,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
 
     # Fix for databases that ran the OLD version 44 migration (which was incomplete)
     # The original version 44 migration in commit 3ddef11 only added 4 columns,
-    # later commits added update_github_owner, update_github_repo, and update_dev_branch
+    # later commits added update_github_owner, update_github_repo, update_dev_branch, and update_auto_detect_dev_branch
     # This ensures databases that already marked themselves as v44 get the missing columns
     if current_version >= 44:
         try:
@@ -1093,6 +1097,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             )
             _add_column_if_not_exists(
                 conn, "settings", "update_dev_branch", "TEXT DEFAULT 'dev'"
+            )
+            _add_column_if_not_exists(
+                conn, "settings", "update_auto_detect_dev_branch", "INTEGER DEFAULT 1"
             )
             
             # Ensure update_tracker table exists

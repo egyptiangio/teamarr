@@ -8,7 +8,6 @@ export interface UpdateInfo {
   update_available: boolean
   build_type: "stable" | "dev" | "unknown"
   download_url: string | null
-  release_notes_url: string | null
   checked_at: string | null
   settings: UpdateSettings
   latest_stable: string | null
@@ -23,6 +22,7 @@ export interface UpdateSettings {
   github_owner: string
   github_repo: string
   dev_branch: string
+  auto_detect_dev_branch: boolean
 }
 
 export interface UpdateSettingsRequest {
@@ -32,6 +32,7 @@ export interface UpdateSettingsRequest {
   github_owner?: string
   github_repo?: string
   dev_branch?: string
+  auto_detect_dev_branch?: boolean
 }
 
 /**

@@ -62,6 +62,7 @@ class UpdateCheckSettings:
     github_owner: str = "Pharaoh-Labs"
     github_repo: str = "teamarr"
     dev_branch: str = "dev"
+    auto_detect_dev_branch: bool = True  # Auto-detect branch from version string
 
 
 @dataclass

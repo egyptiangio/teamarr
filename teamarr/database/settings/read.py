@@ -119,6 +119,9 @@ def get_all_settings(conn: Connection) -> AllSettings:
             dev_branch=row["update_dev_branch"]
             if "update_dev_branch" in row.keys() and row["update_dev_branch"]
             else "dev",
+            auto_detect_dev_branch=bool(row["update_auto_detect_dev_branch"])
+            if "update_auto_detect_dev_branch" in row.keys() and row["update_auto_detect_dev_branch"] is not None
+            else True,
         ),
         epg=EPGSettings(
             team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,

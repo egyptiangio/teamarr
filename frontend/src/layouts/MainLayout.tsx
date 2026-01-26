@@ -89,9 +89,9 @@ export function MainLayout() {
       message = `New version available: ${updateInfo.current_version} → ${updateInfo.latest_version}`
     }
 
-    // Show simple toast notification
+    // Show simple toast notification with 10 second duration
     toast.success(message, {
-      duration: Infinity, // Keep toast until manually dismissed
+      duration: 10000, // 10 seconds
     })
   }, [updateInfo])
 
@@ -151,7 +151,7 @@ export function MainLayout() {
                   {version}
                 </span>
                 {updateAvailable && (
-                  <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-transparent border border-green-500 text-green-600 dark:text-green-400">
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-transparent border border-green-500 text-green-600 dark:text-green-400 pointer-events-none">
                     Update Available
                   </Badge>
                 )}
@@ -192,7 +192,7 @@ export function MainLayout() {
             <span className="flex items-center gap-2">
               Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}{window.location.port && ` | Port ${window.location.port}`}
               {updateAvailable && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-transparent border border-green-500 text-green-600 dark:text-green-400 ml-1">
+                <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-transparent border border-green-500 text-green-600 dark:text-green-400 ml-1 pointer-events-none">
                   Update Available
                 </Badge>
               )}

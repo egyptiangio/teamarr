@@ -336,6 +336,29 @@ function UpdateCheckSettingsSection() {
               />
             </div>
             <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="auto-detect-dev-branch"
+                  checked={localSettings.auto_detect_dev_branch}
+                  onCheckedChange={(checked) =>
+                    setLocalSettings({
+                      ...localSettings,
+                      auto_detect_dev_branch: checked as boolean,
+                    })
+                  }
+                />
+                <Label
+                  htmlFor="auto-detect-dev-branch"
+                  className="text-xs cursor-pointer"
+                >
+                  Auto-detect dev branch from version
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically extract branch name from version string (e.g., "2.0.11-dev+abc123" → "dev")
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="dev-branch" className="text-xs">
                 Dev Branch
               </Label>
@@ -349,9 +372,10 @@ function UpdateCheckSettingsSection() {
                   })
                 }
                 placeholder="dev"
+                disabled={localSettings.auto_detect_dev_branch}
               />
               <p className="text-xs text-muted-foreground">
-                Git branch to check for dev build commits
+                Git branch to check for dev build commits (disabled when auto-detect is enabled)
               </p>
             </div>
           </div>

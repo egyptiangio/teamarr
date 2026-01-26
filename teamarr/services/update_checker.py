@@ -25,7 +25,6 @@ class UpdateInfo:
     checked_at: datetime
     build_type: Literal["stable", "dev", "unknown"]
     download_url: str | None = None
-    release_notes_url: str | None = None
     latest_stable: str | None = None
     latest_dev: str | None = None
     commits_behind: int | None = None  # For dev builds: how many commits behind
@@ -203,7 +202,6 @@ class ComprehensiveUpdateChecker:
             
             latest_version = latest_dev_sha if latest_dev_sha else "unknown"
             download_url = f"https://github.com/{self.owner}/{self.repo}/tree/{self.dev_branch}"
-            release_notes_url = None
         else:
             # Stable build - check against latest stable release
             if latest_stable:
@@ -218,7 +216,6 @@ class ComprehensiveUpdateChecker:
             
             latest_version = latest_stable if latest_stable else "unknown"
             download_url = f"https://github.com/{self.owner}/{self.repo}/releases/latest"
-            release_notes_url = download_url
 
         return UpdateInfo(
             current_version=self.current_version,
@@ -227,7 +224,6 @@ class ComprehensiveUpdateChecker:
             checked_at=datetime.now(UTC),
             build_type=build_type,
             download_url=download_url,
-            release_notes_url=release_notes_url,
             latest_stable=latest_stable,
             latest_dev=latest_dev_sha,
             commits_behind=commits_behind,
