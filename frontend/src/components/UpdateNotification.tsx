@@ -45,31 +45,32 @@ export function UpdateNotification() {
   // - No update info
   // - No update available
   // - User dismissed this version
-  // - Update checking is disabled
   if (
     !updateInfo ||
     !updateInfo.update_available ||
     !updateInfo.latest_version ||
-    dismissed === updateInfo.latest_version ||
-    !updateInfo.settings.enabled
+    dismissed === updateInfo.latest_version
   ) {
     return null
   }
 
-  // Don't show dev updates if notify_dev_updates is disabled
-  if (
-    updateInfo.build_type === "dev" &&
-    !updateInfo.settings.notify_dev_updates
-  ) {
-    return null
-  }
+  // Check notification settings only if enabled
+  if (updateInfo.settings.enabled) {
+    // Don't show dev updates if notify_dev_updates is disabled
+    if (
+      updateInfo.build_type === "dev" &&
+      !updateInfo.settings.notify_dev_updates
+    ) {
+      return null
+    }
 
-  // Don't show stable updates if notify_stable_updates is disabled
-  if (
-    updateInfo.build_type === "stable" &&
-    !updateInfo.settings.notify_stable_updates
-  ) {
-    return null
+    // Don't show stable updates if notify_stable_updates is disabled
+    if (
+      updateInfo.build_type === "stable" &&
+      !updateInfo.settings.notify_stable_updates
+    ) {
+      return null
+    }
   }
 
   const handleDismiss = () => {

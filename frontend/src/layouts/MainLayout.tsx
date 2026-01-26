@@ -44,7 +44,8 @@ export function MainLayout() {
   })
 
   const version = healthQuery.data?.version || "v2.0.0"
-  const updateAvailable = updateInfo?.update_available && updateInfo?.settings?.enabled
+  // Show badge when update is available, regardless of notification settings
+  const updateAvailable = updateInfo?.update_available
 
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark")
@@ -108,8 +109,8 @@ export function MainLayout() {
                   {version}
                 </span>
                 {updateAvailable && (
-                  <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-green-500 hover:bg-green-600 text-white">
-                    Update
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-transparent border border-green-500 text-green-600 dark:text-green-400">
+                    Update Available
                   </Badge>
                 )}
               </div>
@@ -152,7 +153,7 @@ export function MainLayout() {
             <span className="flex items-center gap-2">
               Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}{window.location.port && ` | Port ${window.location.port}`}
               {updateAvailable && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-green-500 hover:bg-green-600 text-white ml-1">
+                <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-transparent border border-green-500 text-green-600 dark:text-green-400 ml-1">
                   Update Available
                 </Badge>
               )}
