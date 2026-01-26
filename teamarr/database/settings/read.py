@@ -21,6 +21,7 @@ from .types import (
     StreamOrderingRule,
     StreamOrderingSettings,
     TeamFilterSettings,
+    UpdateCheckSettings,
 )
 
 # Single source of truth for defaults - the dataclass itself
@@ -98,6 +99,18 @@ def get_all_settings(conn: Connection) -> AllSettings:
         scheduler=SchedulerSettings(
             enabled=bool(row["scheduler_enabled"]),
             interval_minutes=row["scheduler_interval_minutes"] or 15,
+        ),
+        update_check=UpdateCheckSettings(
+            enabled=bool(row["update_check_enabled"])
+            if row.get("update_check_enabled") is not None
+            else True,
+            check_interval_hours=row.get("update_check_interval_hours") or 24,
+            notify_stable_updates=bool(row.get("update_notify_stable"))
+            if row.get("update_notify_stable") is not None
+            else True,
+            notify_dev_updates=bool(row.get("update_notify_dev"))
+            if row.get("update_notify_dev") is not None
+            else False,
         ),
         epg=EPGSettings(
             team_schedule_days_ahead=row["team_schedule_days_ahead"] or 30,

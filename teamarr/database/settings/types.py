@@ -53,6 +53,16 @@ class SchedulerSettings:
 
 
 @dataclass
+class UpdateCheckSettings:
+    """Update notification settings."""
+
+    enabled: bool = True
+    check_interval_hours: int = 24
+    notify_stable_updates: bool = True
+    notify_dev_updates: bool = False
+
+
+@dataclass
 class EPGSettings:
     """EPG generation settings."""
 
@@ -195,6 +205,7 @@ class AllSettings:
     lifecycle: LifecycleSettings = field(default_factory=LifecycleSettings)
     reconciliation: ReconciliationSettings = field(default_factory=ReconciliationSettings)
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
+    update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
     epg: EPGSettings = field(default_factory=EPGSettings)
     durations: DurationSettings = field(default_factory=DurationSettings)
     display: DisplaySettings = field(default_factory=DisplaySettings)
@@ -208,4 +219,4 @@ class AllSettings:
         default_factory=StreamOrderingSettings
     )
     epg_generation_counter: int = 0
-    schema_version: int = 43
+    schema_version: int = 44

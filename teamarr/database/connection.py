@@ -1003,6 +1003,24 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 43 (legacy column cleanup)")
         current_version = 43
 
+    # Version 44: Add update check settings
+    if current_version < 44:
+        _add_column_if_not_exists(
+            conn, "settings", "update_check_enabled", "INTEGER DEFAULT 1"
+        )
+        _add_column_if_not_exists(
+            conn, "settings", "update_check_interval_hours", "INTEGER DEFAULT 24"
+        )
+        _add_column_if_not_exists(
+            conn, "settings", "update_notify_stable", "INTEGER DEFAULT 1"
+        )
+        _add_column_if_not_exists(
+            conn, "settings", "update_notify_dev", "INTEGER DEFAULT 0"
+        )
+        conn.execute("UPDATE settings SET schema_version = 44 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
+        current_version = 44
+
 
 def _migrate_cleanup_legacy_columns(conn: sqlite3.Connection) -> None:
     """Clean up erroneous columns from buggy v40 migration.
