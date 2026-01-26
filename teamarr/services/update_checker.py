@@ -43,7 +43,6 @@ class ComprehensiveUpdateChecker:
         owner: str = "Pharaoh-Labs",
         repo: str = "teamarr",
         dev_branch: str = "dev",
-        display_dev_branch: str | None = None,
         cache_duration_hours: int = 6,
         timeout_seconds: int = 10,
     ):
@@ -54,7 +53,6 @@ class ComprehensiveUpdateChecker:
             owner: GitHub repository owner (default: "Pharaoh-Labs")
             repo: GitHub repository name (default: "teamarr")
             dev_branch: Git branch to check for dev builds (default: "dev")
-            display_dev_branch: Branch to use for fetching latest_dev (default: same as dev_branch)
             cache_duration_hours: How long to cache results (default: 6 hours)
             timeout_seconds: HTTP request timeout (default: 10 seconds)
         """
@@ -62,7 +60,6 @@ class ComprehensiveUpdateChecker:
         self.owner = owner
         self.repo = repo
         self.dev_branch = dev_branch
-        self.display_dev_branch = display_dev_branch or dev_branch
         self.cache_duration_hours = cache_duration_hours
         self.timeout_seconds = timeout_seconds
         self._cached_result: UpdateInfo | None = None
@@ -181,9 +178,8 @@ class ComprehensiveUpdateChecker:
         # Fetch both stable and dev info
         latest_stable = self._fetch_latest_stable()
         
-        # Always fetch latest dev SHA from the display branch (usually "dev")
-        # This ensures we show Latest Dev Build even when auto-detect finds a feature branch
-        latest_dev_sha = self._fetch_latest_dev_sha_from_branch(self.display_dev_branch)
+        # Fetch latest dev SHA from the configured/detected branch
+        latest_dev_sha = self._fetch_latest_dev_sha_from_branch(self.dev_branch)
 
         # Determine update availability based on build type
         update_available = False

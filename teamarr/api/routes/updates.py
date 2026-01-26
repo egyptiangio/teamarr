@@ -90,13 +90,12 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
     # Check for updates with configured repositories
     # Auto-detect dev branch from version string if enabled
     dev_branch = update_settings.dev_branch
-    dev_branch_for_display = update_settings.dev_branch  # Always use configured branch for display
     
     if update_settings.auto_detect_dev_branch and "-" in VERSION and "+" in VERSION:
         # Extract branch from version string (e.g., "2.0.11-copilot/add-update-notification-feature+051741")
         detected_branch = VERSION.split("-")[1].split("+")[0]
         if detected_branch:
-            dev_branch = detected_branch  # Use detected branch for update checking
+            dev_branch = detected_branch
             logger.debug("[UPDATE_CHECKER] Auto-detected dev branch from version: %s", dev_branch)
     
     checker = create_update_checker(
@@ -104,7 +103,6 @@ def get_update_status(force: bool = False) -> UpdateStatusResponse:
         owner=update_settings.github_owner,
         repo=update_settings.github_repo,
         dev_branch=dev_branch,
-        display_dev_branch=dev_branch_for_display,  # Pass the configured branch for display
     )
     update_info = checker.check_for_updates(force=force)
 
