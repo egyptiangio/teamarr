@@ -30,14 +30,25 @@ Select which EPG source in Dispatcharr to associate with Teamarr-managed channel
 
 ### Default Channel Profiles
 
-Select which channel profiles to assign to Teamarr-managed channels by default. Individual event groups can override this setting.
+Select which channel profiles to assign to Teamarr-managed channels by default. Individual [event groups can override](../event-groups/creating-groups#channel-profiles) this setting.
 
 - **All profiles selected** - Channels appear in all profiles
 - **None selected** - Channels don't appear in any profile
 - **Specific profiles** - Channels appear only in selected profiles
 
+#### Dynamic Wildcards
+
+In addition to selecting specific profiles, you can use wildcards that dynamically create and assign profiles based on the event:
+
+| Wildcard | Description | Example |
+|----------|-------------|---------|
+| `{sport}` | Creates/assigns profile named after the sport | `football`, `basketball` |
+| `{league}` | Creates/assigns profile named after the league | `nfl`, `nba`, `epl` |
+
+For example, selecting profiles `[1, {sport}]` would assign all channels to profile 1, plus dynamically create and assign to a sport-specific profile.
+
 {: .note }
-Profile assignment is enforced on every EPG generation run.
+Profile assignment is enforced on every EPG generation run. Wildcard profiles are created in Dispatcharr automatically if they don't exist.
 
 See [Dispatcharr Integration](../dispatcharr-integration) for setup details.
 
