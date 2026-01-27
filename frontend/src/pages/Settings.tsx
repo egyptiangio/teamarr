@@ -2114,16 +2114,6 @@ export function Settings() {
                     <Label className="text-sm">Notify about dev builds</Label>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 pl-6">
-                  <Switch
-                    checked={updateCheck.auto_detect_branch}
-                    onCheckedChange={(checked) =>
-                      setUpdateCheck({ ...updateCheck, auto_detect_branch: checked })
-                    }
-                  />
-                  <Label className="text-sm">Auto-detect branch from version</Label>
-                </div>
               </>
             )}
           </div>

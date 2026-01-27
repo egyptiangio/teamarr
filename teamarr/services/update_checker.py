@@ -152,22 +152,20 @@ class UpdateChecker:
             # For dev builds, compare commit dates (more reliable than SHA comparison)
             latest_date = dev_date
             if self.current_sha and latest_dev_sha:
-                current_short = self.current_sha[:7].lower()
-                latest_short = latest_dev_sha[:7].lower()
+                # Use 6-char comparison to match git --short=6 used in version string
+                current_short = self.current_sha[:6].lower()
+                latest_short = latest_dev_sha[:6].lower()
                 if current_short != latest_short:
                     # SHAs differ - check if latest is actually newer by date
                     if dev_date:
                         current_date = self._fetch_commit_date(self.current_sha)
                         if current_date and dev_date > current_date:
                             update_available = True
-                        elif not current_date:
-                            # Can't get current commit date, fall back to SHA difference
-                            update_available = True
-                    else:
-                        # Can't get latest date, fall back to SHA difference
-                        update_available = True
+                        # If we can't get current commit date, don't assume update available
+                        # This avoids false positives for local commits not yet pushed
+                    # If we can't get latest date, don't assume update available
 
-            latest_version = latest_dev_sha[:7] if latest_dev_sha else "unknown"
+            latest_version = latest_dev_sha[:6] if latest_dev_sha else "unknown"
             download_url = f"https://github.com/{self.owner}/{self.repo}/tree/{self.dev_branch}"
             build_type: Literal["stable", "dev", "unknown"] = "dev"
         else:
@@ -189,7 +187,7 @@ class UpdateChecker:
             build_type=build_type,
             download_url=download_url,
             latest_stable=latest_stable,
-            latest_dev=latest_dev_sha[:7] if latest_dev_sha else None,
+            latest_dev=latest_dev_sha[:6] if latest_dev_sha else None,
             latest_date=latest_date,
         )
 

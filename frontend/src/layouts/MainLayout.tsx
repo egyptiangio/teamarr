@@ -3,6 +3,7 @@ import { Moon, Sun } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Toaster } from "sonner"
 import { useQuery } from "@tanstack/react-query"
+import { useUpdateCheckSettings, useCheckForUpdates } from "../hooks/useSettings"
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard" },
@@ -32,6 +33,11 @@ export function MainLayout() {
   })
 
   const version = healthQuery.data?.version || "v2.0.0"
+
+  // Update check
+  const updateSettingsQuery = useUpdateCheckSettings()
+  const updateInfoQuery = useCheckForUpdates(updateSettingsQuery.data?.enabled ?? false)
+  const updateAvailable = updateInfoQuery.data?.update_available ?? false
 
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark")
@@ -90,9 +96,16 @@ export function MainLayout() {
 
             {/* Right side */}
             <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+              <Link
+                to="/settings?tab=advanced"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded hover:bg-muted/80 transition-colors"
+                title={updateAvailable ? "Update available - click to view" : version}
+              >
                 {version}
-              </span>
+                {updateAvailable && (
+                  <span className="flex h-2 w-2 rounded-full bg-amber-500" />
+                )}
+              </Link>
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-md hover:bg-accent transition-colors"
@@ -126,7 +139,13 @@ export function MainLayout() {
                 e.currentTarget.style.display = "none"
               }}
             />
-            <span>Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}{window.location.port && ` | Port ${window.location.port}`}</span>
+            <span className="flex items-center gap-1.5">
+              Teamarr - Dynamic Sports EPG Generator for Dispatcharr | {version}
+              {updateAvailable && (
+                <span className="flex h-2 w-2 rounded-full bg-amber-500" title="Update available" />
+              )}
+              {window.location.port && ` | Port ${window.location.port}`}
+            </span>
           </div>
         </div>
       </footer>
