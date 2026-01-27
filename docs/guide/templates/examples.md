@@ -10,7 +10,7 @@ nav_order: 3
 Community-contributed templates to get you started.
 
 {: .note }
-These templates use [game-thumbs](game-thumbs) for dynamic program artwork. Replace `<game-thumbs-base-url>` with your game-thumbs instance URL or a hosted version.
+These templates use [game-thumbs](../settings/advanced#game-thumbs) for dynamic program artwork. Replace `<game-thumbs-base-url>` with your game-thumbs instance URL or a hosted version.
 
 ## Community Templates
 
