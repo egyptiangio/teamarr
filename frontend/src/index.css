@@ -76,11 +76,15 @@ body {
   line-height: 1.5;
 }
 
-/* Set default border color to match V1 (subtle, dark) */
-*,
-*::before,
-*::after {
-  border-color: var(--color-border);
+/* Set default border color to match V1 (subtle, dark).
+   MUST be in @layer base so Tailwind utility classes (e.g. border-muted-foreground)
+   in @layer utilities can override it. Unlayered styles beat all layers per CSS spec. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
+  }
 }
 
 /* Custom scrollbar */
