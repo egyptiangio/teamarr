@@ -4,12 +4,11 @@ layout: home
 nav_order: 1
 ---
 
-# Teamarr
-
-Sports EPG Generator for Dispatcharr.
-
-{: .note }
-Documentation is under construction.
+<div style="text-align: center; margin-bottom: 2rem;">
+  <h1 style="margin-bottom: 0.5rem;">Teamarr</h1>
+  <img src="assets/images/logo.svg" alt="Teamarr" width="100" height="100" style="margin: 1rem 0;">
+  <p style="font-size: 1.25rem; color: #666;">Sports EPG Generator for Dispatcharr</p>
+</div>
 
 ## What is Teamarr?
 
@@ -52,8 +51,7 @@ EPG:     Kansas City Chiefs @ Philadelphia Eagles
 - **280+ leagues, 10+ sports** - Football, basketball, hockey, baseball, soccer (200+ leagues), cricket, lacrosse, MMA, rugby, and more
 - **160+ template variables** - Customize channel names and EPG with team records, scores, venues, broadcasts, standings, playoff status, and more
 - **Flexible matching** - Aliases, fuzzy matching, and configurable stream ordering to handle inconsistent IPTV naming
-- **Channel profiles** - Assign streams to Dispatcharr channel profiles for organized output
-- **Group management** - Automatic group assignment and dynamic group creation
+- **Channel groups & profiles** - Use existing Dispatcharr groups/profiles or create them dynamically using variables and wildcards
 - **Smart sorting** - Configurable stream and channel sorting modes based on priority rules
 - **Scheduled automation** - Cron-based EPG generation and channel lifecycle management
 

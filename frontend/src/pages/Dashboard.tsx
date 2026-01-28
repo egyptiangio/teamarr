@@ -6,7 +6,6 @@ import { Quadrant, StatTile } from "@/components/ui/rich-tooltip"
 import { useGenerationProgress } from "@/contexts/GenerationContext"
 import { useDateFormat } from "@/hooks/useDateFormat"
 import {
-  RefreshCw,
   Rocket,
   FileText,
   Plus,
@@ -16,7 +15,6 @@ import {
   Loader2,
   Clock,
 } from "lucide-react"
-import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -185,16 +183,6 @@ export function Dashboard() {
       statsQuery.refetch()
       historyQuery.refetch()
     })
-  }
-
-  const handleRefreshCache = async () => {
-    toast.loading("Refreshing cache...", { id: "cache-refresh" })
-    try {
-      await api.post("/cache/refresh")
-      toast.success("Cache refresh complete", { id: "cache-refresh" })
-    } catch {
-      toast.error("Cache refresh failed", { id: "cache-refresh" })
-    }
   }
 
   const stats = statsQuery.data
@@ -529,14 +517,6 @@ export function Dashboard() {
           </div>
         </div>
       )}
-
-      {/* Cache Refresh Button */}
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={handleRefreshCache}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh Cache
-        </Button>
-      </div>
 
     </div>
   )

@@ -6,9 +6,9 @@ nav_order: 9
 
 # Game Thumbs
 
-[Game Thumbs](https://github.com/sethwv/game-thumbs) is an optional external service by [@sethwv](https://github.com/sethwv) that generates dynamic program artwork for sports events.
+[Game Thumbs](https://github.com/sethwv/game-thumbs) is an optional external service by [@sethwv](https://github.com/sethwv) for sports matchup thumbnail and logo generation.
 
-Teamarr templates can use game-thumbs URLs in artwork fields to display matchup images with team logos.
+Teamarr templates can use Game Thumbs URLs in artwork fields to display matchup images with team logos.
 
 ## Resources
 

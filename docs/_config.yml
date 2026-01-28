@@ -2,6 +2,7 @@ title: Teamarr
 description: Sports EPG Generator for Dispatcharr
 remote_theme: just-the-docs/just-the-docs
 
+
 plugins:
   - jekyll-remote-theme
 
@@ -22,7 +23,7 @@ search:
 
 # Aux links (top right)
 aux_links:
-  GitHub: https://github.com/Pharaoh-Labs/teamarr
+  Teamarr GitHub: https://github.com/Pharaoh-Labs/teamarr
 
 # Footer
 footer_content: "Teamarr - Sports EPG Generator for Dispatcharr"

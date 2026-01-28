@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "teamarr"
-version = "2.0.11"
+version = "2.0.12"
 description = "Provider-agnostic sports data layer for EPG generation"
 readme = "README.md"
 requires-python = ">=3.11"
