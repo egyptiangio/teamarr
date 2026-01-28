@@ -4,11 +4,11 @@ layout: home
 nav_order: 1
 ---
 
-<img src="assets/images/logo.svg" alt="Teamarr" width="80" height="80">
-
-# Teamarr
-
-Sports EPG Generator for Dispatcharr.
+<div style="text-align: center; margin-bottom: 2rem;">
+  <h1 style="margin-bottom: 0.5rem;">Teamarr</h1>
+  <img src="assets/images/logo.svg" alt="Teamarr" width="100" height="100" style="margin: 1rem 0;">
+  <p style="font-size: 1.25rem; color: #666;">Sports EPG Generator for Dispatcharr</p>
+</div>
 
 ## What is Teamarr?
 
