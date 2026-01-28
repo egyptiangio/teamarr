@@ -1794,7 +1794,7 @@ export function Settings() {
               id="dispatcharr-url"
               value={dispatcharr.url ?? ""}
               onChange={(e) => setDispatcharr({ ...dispatcharr, url: e.target.value })}
-              placeholder="http://localhost:5000"
+              placeholder="http://localhost:9191"
             />
           </div>
 

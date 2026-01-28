@@ -12,6 +12,7 @@ Docker Compose is the recommended method for installation.
 
 - Docker
 - [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) (highly recommended - Teamarr is designed for tight integration with Dispatcharr)
+- [Game-Thumbs](game-thumbs.md) (optional - sports matchup thumbnail and logo generation)
 
 ## Docker
 

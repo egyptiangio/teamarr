@@ -18,11 +18,22 @@ Connect Teamarr to Dispatcharr for automatic channel management.
 | Field | Description |
 |-------|-------------|
 | **Enable** | Toggle Dispatcharr integration on/off |
-| **URL** | Dispatcharr server URL (e.g., `http://localhost:5000`) |
+| **URL** | Dispatcharr server URL (e.g., `http://localhost:9191`) |
 | **Username** | Dispatcharr login username |
 | **Password** | Dispatcharr login password |
 
 Use the **Test** button to verify your connection.
+
+### Connection Status
+
+A status badge shows the current connection state:
+
+| Status | Description |
+|--------|-------------|
+| **Connected** | Successfully communicating with Dispatcharr |
+| **Disconnected** | Configured but unable to connect |
+| **Error** | Connection failed (hover for error details) |
+| **Not Configured** | Integration not yet set up |
 
 ### EPG Source
 

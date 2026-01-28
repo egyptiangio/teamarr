@@ -2,50 +2,52 @@
 title: Examples
 parent: Templates
 grand_parent: User Guide
-nav_order: 3
+nav_order: 4
 ---
 
 # Template Examples
 
-Community-contributed templates to get you started.
+Community-contributed templates to get you started quickly.
 
-{: .note }
-These templates use [game-thumbs](../game-thumbs) for dynamic program artwork. Replace `<game-thumbs-base-url>` with your game-thumbs instance URL or a hosted version.
+## Community Templates by @jesmannstlPanda
 
-## Community Templates
+Production-ready templates designed to match real Gracenote EPG data as closely as possible, with enhancements like dynamic artwork via [Game Thumbs](../game-thumbs).
 
-### Full-Featured Templates by @jesmannstlPanda
+### Features
 
-Comprehensive templates with pregame, postgame, and idle content. Features dynamic artwork via game-thumbs.
+- **Gracenote-accurate formatting** - Titles, descriptions, and categories that match real EPG feeds
+- **Dynamic artwork** - Matchup thumbnails generated on-the-fly showing team logos, scores, and game info
+- **Conditional descriptions** - Different content based on win streaks, rankings, home/away status
+- **Full filler content** - Pregame, postgame, and idle programmes with detailed descriptions
 
-#### Team Template
-
-For team-based channels with persistent channel assignments.
-
-- Full pregame/postgame/idle content
-- Conditional descriptions based on game status
-- Dynamic artwork for all states
-- Gracenote-style categories
+### Team Template
 
 [Download Team Template](../../assets/templates/team-template-jesmannstlpanda.json){: .btn .btn-primary }
 
-#### Event Template
-
-For event-based channels that appear only during games.
-
-- Pregame and postgame content
-- No idle content (channels only exist during events)
-- Dynamic channel logos with broadcast network badges
-- Gracenote-style categories
+### Event Template
 
 [Download Event Template](../../assets/templates/event-template-jesmannstlpanda.json){: .btn .btn-primary }
+
+---
+
+## Game Thumbs Integration
+
+These templates use Game Thumbs to generate dynamic programme artwork. Game Thumbs creates matchup images showing:
+
+- Team logos for both teams
+- Live scores during games
+- Win/loss indicators for completed games
+- Broadcast network badges
+- Venue and time information
+
+See [Game Thumbs](../game-thumbs) for setup instructions and hosted options.
 
 ---
 
 ## Using Downloaded Templates
 
 1. Download the template JSON file
-2. Open the file and replace `<game-thumbs-base-url>` with your game-thumbs URL:
+2. Open the file and replace `<game-thumbs-base-url>` with your Game Thumbs URL:
    - Self-hosted: `http://your-server:port`
    - Hosted options: See [Game Thumbs](../game-thumbs#hosted-instances)
 3. In Teamarr, go to **Templates** and click **Import**
