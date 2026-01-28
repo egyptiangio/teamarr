@@ -195,6 +195,8 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
     Returns:
         Tuple of (masked text, extracted date, extracted time)
     """
+    from datetime import timedelta
+
     if not text:
         return text, None, None
 
@@ -223,6 +225,30 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
             extracted_time = _parse_time_match(match)
             result = re.sub(pattern, f" {mask} ", result, count=1, flags=re.IGNORECASE)
             break
+
+    # Adjust date for UK/GMT timezone streams showing US evening games
+    # UK streams show after-midnight times for US evening games (7pm ET = midnight UK)
+    # If time is 00:00-05:59 and timezone appears to be UK/GMT, subtract 1 day
+    if extracted_date and extracted_time and extracted_time.hour < 6:
+        text_upper = text.upper()
+
+        # Check for US timezone indicators - if present, don't adjust
+        us_tz_pattern = r'\b(ET|EST|EDT|PT|PST|PDT|CT|CST|CDT|MT|MST|MDT|EASTERN|PACIFIC|CENTRAL)\b'
+        has_us_tz = re.search(us_tz_pattern, text_upper)
+
+        # Check for UK/European timezone indicators
+        uk_tz_pattern = r'\b(UK|GMT|BST|CET|CEST)\b'
+        has_uk_tz = re.search(uk_tz_pattern, text_upper)
+
+        # Adjust if:
+        # 1. Explicitly marked as UK/GMT timezone, OR
+        # 2. No US timezone marker (default to UK assumption for after-midnight times)
+        if has_uk_tz or not has_us_tz:
+            extracted_date = extracted_date - timedelta(days=1)
+            logger.debug(
+                "[NORMALIZE] Adjusted date -1 day for UK timezone: %s (time=%s)",
+                text[:50], extracted_time
+            )
 
     # Clean up multiple spaces
     result = " ".join(result.split())
