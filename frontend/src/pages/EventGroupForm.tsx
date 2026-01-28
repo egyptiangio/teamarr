@@ -999,26 +999,23 @@ export function EventGroupForm() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="flex items-center gap-2 mb-2">
+                <label className="flex items-center gap-2 mb-2 cursor-pointer">
                   <Checkbox
-                    id="use_default_profiles"
                     checked={useDefaultProfiles}
-                    onClick={() => {
+                    onCheckedChange={() => {
                       const newValue = !useDefaultProfiles
                       setUseDefaultProfiles(newValue)
                       if (newValue) {
-                        // Use default - set to null
                         setFormData({ ...formData, channel_profile_ids: null })
                       } else {
-                        // Custom selection - set to empty array initially
                         setFormData({ ...formData, channel_profile_ids: [] })
                       }
                     }}
                   />
-                  <Label htmlFor="use_default_profiles" className="font-normal cursor-pointer">
+                  <span className="text-sm font-normal">
                     Use default channel profiles (set in Integrations tab in Settings)
-                  </Label>
-                </div>
+                  </span>
+                </label>
                 {!useDefaultProfiles && (
                   <p className="text-xs text-muted-foreground mb-2">
                     Select specific profiles for this group
@@ -1034,22 +1031,32 @@ export function EventGroupForm() {
 
           {/* Custom Regex - Collapsible section (available for all groups including children) */}
           <Card>
-            <button
-              type="button"
-              onClick={() => setRegexExpanded(!regexExpanded)}
-              className="w-full"
-            >
-              <CardHeader className="flex flex-row items-center justify-between py-3 cursor-pointer hover:bg-muted/50 rounded-t-lg">
-                <div className="flex items-center gap-2">
-                  {regexExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <CardTitle className="text-base">Custom Regex</CardTitle>
-                </div>
-              </CardHeader>
-            </button>
+            <CardHeader className="flex flex-row items-center justify-between py-3 rounded-t-lg">
+              <button
+                type="button"
+                onClick={() => setRegexExpanded(!regexExpanded)}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80"
+              >
+                {regexExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <CardTitle className="text-base">Custom Regex</CardTitle>
+              </button>
+              {isEdit && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setTestPatternsOpen(true)}
+                  className="gap-1.5"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  Test Patterns
+                </Button>
+              )}
+            </CardHeader>
 
             {regexExpanded && (
               <CardContent className="space-y-6 pt-0">
@@ -1063,38 +1070,34 @@ export function EventGroupForm() {
                   </div>
 
                   {/* Skip Builtin Filter */}
-                  <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-3 cursor-pointer">
                     <Checkbox
-                      id="skip_builtin"
                       checked={formData.skip_builtin_filter || false}
-                      onClick={() =>
+                      onCheckedChange={() =>
                         setFormData({ ...formData, skip_builtin_filter: !formData.skip_builtin_filter })
                       }
                     />
                     <div>
-                      <Label htmlFor="skip_builtin" className="font-normal cursor-pointer">
+                      <span className="text-sm font-normal">
                         Skip built-in stream filtering
-                      </Label>
+                      </span>
                       <p className="text-xs text-muted-foreground">
                         Bypass placeholder detection, unsupported sport filtering, and event pattern requirements.
                       </p>
                     </div>
-                  </div>
+                  </label>
 
                   {/* Inclusion Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="include_enabled"
                         checked={formData.stream_include_regex_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, stream_include_regex_enabled: !formData.stream_include_regex_enabled })
                         }
                       />
-                      <Label htmlFor="include_enabled" className="font-normal cursor-pointer">
-                        Inclusion Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">Inclusion Pattern</span>
+                    </label>
                     <Input
                       value={formData.stream_include_regex || ""}
                       onChange={(e) =>
@@ -1111,18 +1114,15 @@ export function EventGroupForm() {
 
                   {/* Exclusion Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="exclude_enabled"
                         checked={formData.stream_exclude_regex_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, stream_exclude_regex_enabled: !formData.stream_exclude_regex_enabled })
                         }
                       />
-                      <Label htmlFor="exclude_enabled" className="font-normal cursor-pointer">
-                        Exclusion Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">Exclusion Pattern</span>
+                    </label>
                     <Input
                       value={formData.stream_exclude_regex || ""}
                       onChange={(e) =>
@@ -1149,18 +1149,15 @@ export function EventGroupForm() {
 
                   {/* Teams Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="teams_enabled"
                         checked={formData.custom_regex_teams_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, custom_regex_teams_enabled: !formData.custom_regex_teams_enabled })
                         }
                       />
-                      <Label htmlFor="teams_enabled" className="font-normal cursor-pointer">
-                        Teams Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">Teams Pattern</span>
+                    </label>
                     <Input
                       value={formData.custom_regex_teams || ""}
                       onChange={(e) =>
@@ -1174,18 +1171,15 @@ export function EventGroupForm() {
 
                   {/* Date Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="date_enabled"
                         checked={formData.custom_regex_date_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, custom_regex_date_enabled: !formData.custom_regex_date_enabled })
                         }
                       />
-                      <Label htmlFor="date_enabled" className="font-normal cursor-pointer">
-                        Date Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">Date Pattern</span>
+                    </label>
                     <Input
                       value={formData.custom_regex_date || ""}
                       onChange={(e) =>
@@ -1202,18 +1196,15 @@ export function EventGroupForm() {
 
                   {/* Time Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="time_enabled"
                         checked={formData.custom_regex_time_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, custom_regex_time_enabled: !formData.custom_regex_time_enabled })
                         }
                       />
-                      <Label htmlFor="time_enabled" className="font-normal cursor-pointer">
-                        Time Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">Time Pattern</span>
+                    </label>
                     <Input
                       value={formData.custom_regex_time || ""}
                       onChange={(e) =>
@@ -1230,18 +1221,15 @@ export function EventGroupForm() {
 
                   {/* League Pattern */}
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
                       <Checkbox
-                        id="league_enabled"
                         checked={formData.custom_regex_league_enabled || false}
-                        onClick={() =>
+                        onCheckedChange={() =>
                           setFormData({ ...formData, custom_regex_league_enabled: !formData.custom_regex_league_enabled })
                         }
                       />
-                      <Label htmlFor="league_enabled" className="font-normal cursor-pointer">
-                        League Pattern
-                      </Label>
-                    </div>
+                      <span className="text-sm font-normal">League Pattern</span>
+                    </label>
                     <Input
                       value={formData.custom_regex_league || ""}
                       onChange={(e) =>
@@ -1256,18 +1244,6 @@ export function EventGroupForm() {
                     </p>
                   </div>
 
-                  {/* Test Patterns Button - only in edit mode (needs group ID to load streams) */}
-                  {isEdit && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setTestPatternsOpen(true)}
-                      className="gap-2"
-                    >
-                      <FlaskConical className="h-4 w-4" />
-                      Test Patterns
-                    </Button>
-                  )}
                 </div>
               </CardContent>
             )}
@@ -1303,22 +1279,19 @@ export function EventGroupForm() {
               {teamFilterExpanded && (
                 <CardContent className="space-y-4 pt-0">
                   {/* Use default toggle */}
-                  <div className="flex items-center gap-2 mb-2">
+                  <label className="flex items-center gap-2 mb-2 cursor-pointer">
                     <Checkbox
-                      id="use_default_team_filter"
                       checked={useDefaultTeamFilter}
-                      onClick={() => {
+                      onCheckedChange={() => {
                         const newValue = !useDefaultTeamFilter
                         setUseDefaultTeamFilter(newValue)
                         if (newValue) {
-                          // Use default - set to null (will inherit from global settings)
                           setFormData({
                             ...formData,
                             include_teams: null,
                             exclude_teams: null,
                           })
                         } else {
-                          // Custom selection - set to empty array initially
                           setFormData({
                             ...formData,
                             include_teams: [],
@@ -1327,10 +1300,10 @@ export function EventGroupForm() {
                         }
                       }}
                     />
-                    <Label htmlFor="use_default_team_filter" className="font-normal cursor-pointer">
+                    <span className="text-sm font-normal">
                       Use default team filter (set in Event Groups tab in Settings)
-                    </Label>
-                  </div>
+                    </span>
+                  </label>
 
                   {!useDefaultTeamFilter && (
                     <>
