@@ -308,6 +308,7 @@ def run_full_generation(
             progress_callback=group_progress,
             generation=current_generation,  # Share generation across all groups
             service=shared_service,  # Reuse service to maintain warm cache
+            abort_check=lambda: abort_check() if abort_check else False,
         )
         result.groups_processed = group_result.groups_processed
         result.groups_programmes = group_result.total_programmes
@@ -636,19 +637,30 @@ def run_full_generation(
             logger.debug("[CACHE] Flushed %d entries to SQLite", flushed)
 
     except Exception as e:
-        logger.exception("[GENERATION] Failed: %s", e)
-        result.success = False
-        result.error = str(e)
+        # Check if this is an abort (either our AbortedError or one from event_group_processor)
+        is_abort = "AbortedError" in type(e).__name__ or "aborted" in str(e).lower()
+
+        if is_abort:
+            logger.info("[GENERATION] Aborted by user: %s", e)
+            result.success = False
+            result.error = "Aborted by user"
+            status = "aborted"
+        else:
+            logger.exception("[GENERATION] Failed: %s", e)
+            result.success = False
+            result.error = str(e)
+            status = "failed"
+
         result.completed_at = time.time()
         result.duration_seconds = round(result.completed_at - result.started_at, 1)
 
-        # Save failed run
+        # Save run with appropriate status
         try:
-            stats_run.complete(status="failed", error=str(e))
+            stats_run.complete(status=status, error=str(e))
             with db_factory() as conn:
                 save_run(conn, stats_run)
         except Exception as save_err:
-            logger.warning("[GENERATION] Failed to save failed run stats: %s", save_err)
+            logger.warning("[GENERATION] Failed to save run stats: %s", save_err)
 
     finally:
         # Always release the lock

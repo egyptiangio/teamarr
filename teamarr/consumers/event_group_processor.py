@@ -21,6 +21,15 @@ from datetime import date, datetime, timedelta
 from sqlite3 import Connection
 from typing import Any
 
+# Type alias for abort check callback
+AbortCheck = Callable[[], bool]
+
+
+class AbortedError(Exception):
+    """Raised when processing is aborted by user request."""
+
+    pass
+
 from teamarr.consumers.channel_lifecycle import (
     StreamProcessResult,
     create_lifecycle_service,
@@ -512,6 +521,7 @@ class EventGroupProcessor:
         run_enforcement: bool = True,
         progress_callback: Callable[[int, int, str], None] | None = None,
         generation: int | None = None,
+        abort_check: AbortCheck | None = None,
     ) -> BatchProcessingResult:
         """Process all active event groups.
 
@@ -559,6 +569,11 @@ class EventGroupProcessor:
 
             # Phase 1: Process parent groups (create channels, generate EPG)
             for group in parent_groups:
+                # Check for abort before each group
+                if abort_check and abort_check():
+                    logger.info("[GROUPS] Abort requested, stopping after %d groups", processed_count)
+                    raise AbortedError("Generation aborted during event group processing")
+
                 # Send "Loading..." message before expensive fetch operations
                 if progress_callback:
                     leagues_count = len(group.leagues) if group.leagues else 0
@@ -612,6 +627,11 @@ class EventGroupProcessor:
 
             # Phase 2: Process child groups (add streams to parent channels)
             for group in child_groups:
+                # Check for abort before each group
+                if abort_check and abort_check():
+                    logger.info("[GROUPS] Abort requested, stopping after %d groups", processed_count)
+                    raise AbortedError("Generation aborted during child group processing")
+
                 # Send "Loading..." message before expensive fetch operations
                 if progress_callback:
                     progress_callback(
@@ -661,6 +681,11 @@ class EventGroupProcessor:
 
             # Phase 3: Process multi-league groups
             for group in multi_league_groups:
+                # Check for abort before each group
+                if abort_check and abort_check():
+                    logger.info("[GROUPS] Abort requested, stopping after %d groups", processed_count)
+                    raise AbortedError("Generation aborted during multi-league group processing")
+
                 # Send "Loading..." message before expensive fetch operations
                 if progress_callback:
                     leagues_count = len(group.leagues) if group.leagues else 0
@@ -2761,6 +2786,7 @@ def process_all_event_groups(
     progress_callback: Callable[[int, int, str], None] | None = None,
     generation: int | None = None,
     service: SportsDataService | None = None,
+    abort_check: AbortCheck | None = None,
 ) -> BatchProcessingResult:
     """Process all active event groups.
 
@@ -2773,6 +2799,7 @@ def process_all_event_groups(
         progress_callback: Optional callback(current, total, group_name)
         generation: Cache generation counter (shared across all groups in run)
         service: Optional SportsDataService (reuse to maintain cache warmth)
+        abort_check: Optional callback to check if abort was requested
 
     Returns:
         BatchProcessingResult
@@ -2783,7 +2810,10 @@ def process_all_event_groups(
         service=service,
     )
     return processor.process_all_groups(
-        target_date, progress_callback=progress_callback, generation=generation
+        target_date,
+        progress_callback=progress_callback,
+        generation=generation,
+        abort_check=abort_check,
     )
 
 
