@@ -31,6 +31,7 @@ from teamarr.database.settings.types import AISettings
 from teamarr.services.ai.client import OllamaConfig
 from teamarr.services.ai.parser import AIStreamParser, ParsedStream
 from teamarr.services.ai.patterns import LearnedPattern, PatternLearner
+from teamarr.services.ai.providers import get_provider_client
 
 logger = logging.getLogger(__name__)
 
@@ -57,27 +58,89 @@ class AIClassifier:
 
     @property
     def parser(self) -> AIStreamParser:
-        """Lazy-load the AI parser."""
+        """Lazy-load the AI parser using the assigned provider.
+
+        Note: Currently AIStreamParser only supports Ollama.
+        TODO: Update AIStreamParser to accept any AIProviderClient.
+        """
         if self._parser is None:
-            ollama_config = OllamaConfig(
-                base_url=self.settings.ollama_url,
-                model=self.settings.model,
-                timeout=float(self.settings.timeout),
-            )
+            # Get provider from task assignments
+            provider_name = self.settings.task_assignments.stream_parsing
+
+            # For now, only Ollama is supported for parsing
+            # Use the assigned provider's settings if it's Ollama, otherwise fallback
+            if provider_name == "ollama" and self.settings.ollama.enabled:
+                ollama_config = OllamaConfig(
+                    base_url=self.settings.ollama.url,
+                    model=self.settings.ollama.model,
+                    timeout=float(self.settings.ollama.timeout),
+                )
+            else:
+                # Fallback to legacy settings
+                ollama_config = OllamaConfig(
+                    base_url=self.settings.ollama_url,
+                    model=self.settings.model,
+                    timeout=float(self.settings.timeout),
+                )
+                if provider_name != "ollama":
+                    logger.warning(
+                        "[AI] Stream parsing assigned to %s but only Ollama is currently supported",
+                        provider_name
+                    )
             self._parser = AIStreamParser(ollama_config)
         return self._parser
 
     @property
     def learner(self) -> PatternLearner:
-        """Lazy-load the pattern learner."""
+        """Lazy-load the pattern learner using the assigned provider."""
         if self._learner is None:
-            ollama_config = OllamaConfig(
-                base_url=self.settings.ollama_url,
-                model=self.settings.model,
-                timeout=float(self.settings.timeout),
-            )
-            self._learner = PatternLearner(ollama_config)
+            # Get provider from task assignments
+            provider_name = self.settings.task_assignments.pattern_learning
+            provider_settings = self._get_provider_settings(provider_name)
+
+            if provider_settings:
+                client = get_provider_client(provider_name, provider_settings)
+                if client:
+                    logger.info("[AI] Using %s for pattern learning", provider_name)
+                    self._learner = PatternLearner(client=client)
+                else:
+                    logger.warning("[AI] Failed to create %s client, falling back to Ollama", provider_name)
+
+            # Fallback to Ollama if provider not configured
+            if self._learner is None:
+                ollama_config = OllamaConfig(
+                    base_url=self.settings.ollama_url,
+                    model=self.settings.model,
+                    timeout=float(self.settings.timeout),
+                )
+                self._learner = PatternLearner(config=ollama_config)
         return self._learner
+
+    def _get_provider_settings(self, provider_name: str) -> dict | None:
+        """Get settings dict for a provider."""
+        provider_map = {
+            "ollama": self.settings.ollama,
+            "openai": self.settings.openai,
+            "anthropic": self.settings.anthropic,
+            "grok": self.settings.grok,
+            "groq": self.settings.groq,
+            "gemini": self.settings.gemini,
+            "openrouter": self.settings.openrouter,
+        }
+        provider = provider_map.get(provider_name)
+        if provider and provider.enabled:
+            # Convert dataclass to dict
+            return {
+                "enabled": provider.enabled,
+                "api_key": getattr(provider, "api_key", ""),
+                "url": getattr(provider, "url", ""),
+                "model": provider.model,
+                "timeout": provider.timeout,
+                "organization": getattr(provider, "organization", ""),
+                "site_url": getattr(provider, "site_url", ""),
+                "app_name": getattr(provider, "app_name", ""),
+            }
+        return None
 
     def _load_patterns(self) -> None:
         """Load learned patterns from database."""
