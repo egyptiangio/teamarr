@@ -27,7 +27,7 @@ from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from teamarr.config import get_user_timezone
-from teamarr.consumers.matching import MATCH_WINDOW_DAYS
+from teamarr.consumers.matching.constants import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
     CustomRegexConfig,
@@ -210,26 +210,32 @@ class StreamMatcher:
                 row = conn.execute(
                     "SELECT event_match_days_ahead FROM settings WHERE id = 1"
                 ).fetchone()
-                days_ahead = row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
+                days_ahead = (
+                    row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
+                )
         self._days_ahead = days_ahead
 
         # Custom regex configuration - create if any pattern is enabled
         has_custom_regex = (
-            (custom_regex_teams_enabled and custom_regex_teams) or
-            (custom_regex_date_enabled and custom_regex_date) or
-            (custom_regex_time_enabled and custom_regex_time) or
-            (custom_regex_league_enabled and custom_regex_league)
+            (custom_regex_teams_enabled and custom_regex_teams)
+            or (custom_regex_date_enabled and custom_regex_date)
+            or (custom_regex_time_enabled and custom_regex_time)
+            or (custom_regex_league_enabled and custom_regex_league)
         )
-        self._custom_regex = CustomRegexConfig(
-            teams_pattern=custom_regex_teams,
-            teams_enabled=custom_regex_teams_enabled,
-            date_pattern=custom_regex_date,
-            date_enabled=custom_regex_date_enabled,
-            time_pattern=custom_regex_time,
-            time_enabled=custom_regex_time_enabled,
-            league_pattern=custom_regex_league,
-            league_enabled=custom_regex_league_enabled,
-        ) if has_custom_regex else None
+        self._custom_regex = (
+            CustomRegexConfig(
+                teams_pattern=custom_regex_teams,
+                teams_enabled=custom_regex_teams_enabled,
+                date_pattern=custom_regex_date,
+                date_enabled=custom_regex_date_enabled,
+                time_pattern=custom_regex_time,
+                time_enabled=custom_regex_time_enabled,
+                league_pattern=custom_regex_league,
+                league_enabled=custom_regex_league_enabled,
+            )
+            if has_custom_regex
+            else None
+        )
 
         # Initialize cache
         self._cache = StreamMatchCache(db_factory)
@@ -364,7 +370,7 @@ class StreamMatcher:
 
         total_leagues = len(self._search_leagues)
         num_dates = MATCH_WINDOW_DAYS + self._days_ahead + 1
-        total_slots = total_leagues * num_dates
+        total_leagues * num_dates
 
         for league_idx, league in enumerate(self._search_leagues):
             league_events: list[Event] = []
@@ -422,7 +428,7 @@ class StreamMatcher:
 
             # Report progress periodically (every 20 leagues or at end)
             if status_callback and (league_idx % 20 == 0 or league_idx == total_leagues - 1):
-                progress_pct = int((league_idx + 1) / total_leagues * 100)
+                int((league_idx + 1) / total_leagues * 100)
                 status_callback(
                     f"Prefetching events: {league_idx + 1}/{total_leagues} leagues "
                     f"({total_events} events, {shared_hits} reused)"
@@ -445,9 +451,7 @@ class StreamMatcher:
         # Determine event type from configured leagues
         league_event_type = self._get_dominant_event_type()
 
-        classified = classify_stream(
-            stream_name, league_event_type, self._custom_regex
-        )
+        classified = classify_stream(stream_name, league_event_type, self._custom_regex)
 
         # Step 2: Handle placeholders (streams that couldn't be classified)
         # Note: Placeholder pattern detection and unsupported sports filtering

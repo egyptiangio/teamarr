@@ -49,10 +49,12 @@ def _get_league_sport(conn, league_code: str) -> str | None:
     return row["sport"].lower() if row else None
 
 
-def _get_all_leagues_from_cache(conn, provider: str, provider_team_id: str, sport: str) -> list[str]:
+def _get_all_leagues_from_cache(
+    conn, provider: str, provider_team_id: str, sport: str
+) -> list[str]:
     """Get all leagues a team appears in from the cache for a given sport."""
     cursor = conn.execute(
-        "SELECT DISTINCT league FROM team_cache WHERE provider = ? AND provider_team_id = ? AND sport = ?",
+        "SELECT DISTINCT league FROM team_cache WHERE provider = ? AND provider_team_id = ? AND sport = ?",  # noqa: E501
         (provider, provider_team_id, sport),
     )
     return [row["league"] for row in cursor.fetchall()]
@@ -253,7 +255,12 @@ def bulk_import_teams(request: BulkImportRequest):
         existing_sport: dict[tuple[str, str, str], list[tuple[int, str, list[str]]]] = {}
 
         for row in cursor.fetchall():
-            full_key = (row["provider"], row["provider_team_id"], row["sport"], row["primary_league"])
+            full_key = (
+                row["provider"],
+                row["provider_team_id"],
+                row["sport"],
+                row["primary_league"],
+            )
             sport_key = (row["provider"], row["provider_team_id"], row["sport"])
             leagues = _parse_leagues(row["leagues"])
 
@@ -276,7 +283,7 @@ def bulk_import_teams(request: BulkImportRequest):
                 )
                 params = [val for key in unique_keys for val in key]
                 cursor = conn.execute(
-                    f"SELECT provider, provider_team_id, sport, league FROM team_cache WHERE {placeholders}",
+                    f"SELECT provider, provider_team_id, sport, league FROM team_cache WHERE {placeholders}",  # noqa: E501
                     params,
                 )
                 for row in cursor.fetchall():
@@ -323,9 +330,15 @@ def bulk_import_teams(request: BulkImportRequest):
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                         """,
                         (
-                            team.provider, team.provider_team_id, team.league,
-                            leagues_json, team.sport, team.team_name,
-                            team.team_abbrev, team.logo_url, channel_id,
+                            team.provider,
+                            team.provider_team_id,
+                            team.league,
+                            leagues_json,
+                            team.sport,
+                            team.team_name,
+                            team.team_abbrev,
+                            team.logo_url,
+                            channel_id,
                         ),
                     )
                     new_id = cursor.lastrowid
@@ -350,9 +363,15 @@ def bulk_import_teams(request: BulkImportRequest):
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                         """,
                         (
-                            team.provider, team.provider_team_id, team.league,
-                            leagues_json, team.sport, team.team_name,
-                            team.team_abbrev, team.logo_url, channel_id,
+                            team.provider,
+                            team.provider_team_id,
+                            team.league,
+                            leagues_json,
+                            team.sport,
+                            team.team_name,
+                            team.team_abbrev,
+                            team.logo_url,
+                            channel_id,
                         ),
                     )
                     new_id = cursor.lastrowid
@@ -362,7 +381,9 @@ def bulk_import_teams(request: BulkImportRequest):
                     existing_sport[sport_key].append((new_id, team.league, [team.league]))
                     imported += 1
 
-    logger.info("[BULK_IMPORT] Teams: %d imported, %d updated, %d skipped", imported, updated, skipped)
+    logger.info(
+        "[BULK_IMPORT] Teams: %d imported, %d updated, %d skipped", imported, updated, skipped
+    )
     return BulkImportResponse(imported=imported, updated=updated, skipped=skipped)
 
 

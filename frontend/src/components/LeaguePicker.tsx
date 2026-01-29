@@ -118,13 +118,6 @@ export function LeaguePicker({
     return sportLeagues.length > 0 && sportLeagues.every(l => selectedSet.has(l.slug))
   }
 
-  // Check if some (but not all) leagues in a sport are selected
-  const isSportPartiallySelected = (sport: string) => {
-    const sportLeagues = leaguesBySport[sport] || []
-    const selected = sportLeagues.filter(l => selectedSet.has(l.slug))
-    return selected.length > 0 && selected.length < sportLeagues.length
-  }
-
   // Toggle entire sport (multi-select only)
   const toggleSport = (sport: string) => {
     if (isSportFullySelected(sport)) {
@@ -237,7 +230,6 @@ export function LeaguePicker({
             if (displayLeagues.length === 0) return null
 
             const allSelected = isSportFullySelected(sport)
-            const someSelected = isSportPartiallySelected(sport)
 
             // Soccer in multi-select mode: show as single consolidated checkbox (too many leagues)
             if (!singleSelect && sport.toLowerCase() === "soccer") {
@@ -248,15 +240,9 @@ export function LeaguePicker({
                     "flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-accent",
                     allSelected && "bg-primary/10"
                   )}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    toggleSport(sport)
-                  }}
                 >
                   <Checkbox
                     checked={allSelected}
-                    // @ts-expect-error - indeterminate is valid but not in types
-                    indeterminate={someSelected}
                     onCheckedChange={() => toggleSport(sport)}
                   />
                   <div className="flex-1">
@@ -319,21 +305,24 @@ export function LeaguePicker({
                     {displayLeagues.map(league => {
                       const isSelected = selectedSet.has(league.slug)
                       return (
-                        <div
+                        <label
                           key={league.slug}
                           className={cn(
                             "flex items-center gap-2 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-accent",
                             isSelected && "bg-primary/10"
                           )}
-                          onClick={() => selectLeague(league.slug)}
                         >
                           {singleSelect ? (
-                            // Single select: show checkmark for selected
-                            <div className="w-4 h-4 flex items-center justify-center">
+                            // Single select: custom checkmark icon (no checkbox)
+                            <button
+                              type="button"
+                              className="w-4 h-4 flex items-center justify-center"
+                              onClick={() => selectLeague(league.slug)}
+                            >
                               {isSelected && <Check className="h-4 w-4 text-primary" />}
-                            </div>
+                            </button>
                           ) : (
-                            // Multi select: show checkbox
+                            // Multi select: standard checkbox
                             <Checkbox
                               checked={isSelected}
                               onCheckedChange={() => selectLeague(league.slug)}
@@ -343,7 +332,7 @@ export function LeaguePicker({
                             <img src={league.logo_url} alt="" className="h-4 w-4 object-contain" />
                           )}
                           <span className="truncate">{getLeagueDisplayName(league, true)}</span>
-                        </div>
+                        </label>
                       )
                     })}
                   </div>

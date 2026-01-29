@@ -603,7 +603,7 @@ def seed_default_templates(conn: Connection) -> None:
         pregame_fallback={
             "title": "Coming up: {gracenote_category} starting at {game_time.next}",
             "subtitle": "{away_team.next} at {home_team.next}",
-            "description": "The {away_team_record.next} {away_team.next} travel to {venue_city.next}, {venue_state.next} to play the {home_team_record.next} {home_team.next} {today_tonight.next} at {game_time.next}.",
+            "description": "The {away_team_record.next} {away_team.next} travel to {venue_city.next}, {venue_state.next} to play the {home_team_record.next} {home_team.next} {today_tonight.next} at {game_time.next}.",  # noqa: E501
             "art_url": "http://localhost:3000/{league_id}/{away_team_pascal.next}/{home_team_pascal.next}/cover.png",
         },
         postgame_periods=[],
@@ -615,19 +615,19 @@ def seed_default_templates(conn: Connection) -> None:
         },
         postgame_conditional={
             "enabled": True,
-            "description_final": "The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}",
-            "description_not_final": "The game between the {team_name} and the {opponent.last} on {game_date.last} has not yet ended as of the last update.",
+            "description_final": "The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last}",  # noqa: E501
+            "description_not_final": "The game between the {team_name} and the {opponent.last} on {game_date.last} has not yet ended as of the last update.",  # noqa: E501
         },
         idle_content={
             "title": "No {team_name} Game Today",
-            "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+            "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",  # noqa: E501
             "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
             "art_url": "",
         },
         idle_conditional={
             "enabled": True,
-            "description_final": "The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last} on {game_date.last}. Next game will be with the {opponent.next} on {game_date.next}",
-            "description_not_final": "The {team_name} last played against the {opponent.last} on {game_date.last}.",
+            "description_final": "The {team_name} {result_text.last} the {opponent.last} {final_score.last} {overtime_text.last} on {game_date.last}. Next game will be with the {opponent.next} on {game_date.next}",  # noqa: E501
+            "description_not_final": "The {team_name} last played against the {opponent.last} on {game_date.last}.",  # noqa: E501
         },
         idle_offseason={
             "title_enabled": False,
@@ -641,7 +641,7 @@ def seed_default_templates(conn: Connection) -> None:
             {
                 "condition": None,
                 "condition_value": None,
-                "template": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to take on the {home_team_record} {home_team} at {venue}.",
+                "template": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to take on the {home_team_record} {home_team} at {venue}.",  # noqa: E501
                 "priority": 100,
                 "label": "Default",
             }
@@ -670,20 +670,20 @@ def seed_default_templates(conn: Connection) -> None:
         pregame_fallback={
             "title": "Coming up: {gracenote_category} starting at {game_time}",
             "subtitle": "{away_team} at {home_team}",
-            "description": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to play the {home_team_record} {home_team} {today_tonight} at {game_time}.",
+            "description": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to play the {home_team_record} {home_team} {today_tonight} at {game_time}.",  # noqa: E501
             "art_url": "http://localhost:3000/{league_id}/{away_team_pascal}/{home_team_pascal}/cover.png",
         },
         postgame_periods=[],
         postgame_fallback={
             "title": "{gracenote_category}: Postgame Recap",
             "subtitle": "{away_team} at {home_team}",
-            "description": "The {team_name} {result_text} the {opponent} {final_score} {overtime_text}",
+            "description": "The {team_name} {result_text} the {opponent} {final_score} {overtime_text}",  # noqa: E501
             "art_url": "http://localhost:3000/{league_id}/{away_team_pascal}/{home_team_pascal}/cover.png",
         },
         postgame_conditional={
             "enabled": True,
-            "description_final": "The {team_name} {result_text} the {opponent} {final_score} {overtime_text}",
-            "description_not_final": "The game between the {away_team} and {home_team} has not yet ended as of the last update.",
+            "description_final": "The {team_name} {result_text} the {opponent} {final_score} {overtime_text}",  # noqa: E501
+            "description_not_final": "The game between the {away_team} and {home_team} has not yet ended as of the last update.",  # noqa: E501
         },
         idle_content={
             "title": "{team_name} Programming",
@@ -708,7 +708,7 @@ def seed_default_templates(conn: Connection) -> None:
             {
                 "condition": "",
                 "condition_value": None,
-                "template": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to play the {home_team_record} {home_team} at {venue}.",
+                "template": "The {away_team_record} {away_team} travel to {venue_city}, {venue_state} to play the {home_team_record} {home_team} at {venue}.",  # noqa: E501
                 "priority": 100,
                 "label": "Default",
             }

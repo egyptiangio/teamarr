@@ -251,18 +251,30 @@ def extract_date_with_custom_regex(
 def _parse_month(month_str: str) -> int:
     """Parse month from string (name or number)."""
     month_names = {
-        "jan": 1, "january": 1,
-        "feb": 2, "february": 2,
-        "mar": 3, "march": 3,
-        "apr": 4, "april": 4,
+        "jan": 1,
+        "january": 1,
+        "feb": 2,
+        "february": 2,
+        "mar": 3,
+        "march": 3,
+        "apr": 4,
+        "april": 4,
         "may": 5,
-        "jun": 6, "june": 6,
-        "jul": 7, "july": 7,
-        "aug": 8, "august": 8,
-        "sep": 9, "sept": 9, "september": 9,
-        "oct": 10, "october": 10,
-        "nov": 11, "november": 11,
-        "dec": 12, "december": 12,
+        "jun": 6,
+        "june": 6,
+        "jul": 7,
+        "july": 7,
+        "aug": 8,
+        "august": 8,
+        "sep": 9,
+        "sept": 9,
+        "september": 9,
+        "oct": 10,
+        "october": 10,
+        "nov": 11,
+        "november": 11,
+        "dec": 12,
+        "december": 12,
     }
     month_lower = month_str.lower()
     if month_lower in month_names:
@@ -276,16 +288,16 @@ def _parse_date_string(date_str: str) -> date | None:
 
     # Common formats to try
     formats = [
-        "%d %b",      # 14 Jan
-        "%d %B",      # 14 January
-        "%b %d",      # Jan 14
-        "%B %d",      # January 14
-        "%m/%d/%Y",   # 01/14/2026
-        "%m/%d/%y",   # 01/14/26
-        "%d/%m/%Y",   # 14/01/2026
-        "%d/%m/%y",   # 14/01/26
-        "%Y-%m-%d",   # 2026-01-14
-        "%d-%m-%Y",   # 14-01-2026
+        "%d %b",  # 14 Jan
+        "%d %B",  # 14 January
+        "%b %d",  # Jan 14
+        "%B %d",  # January 14
+        "%m/%d/%Y",  # 01/14/2026
+        "%m/%d/%y",  # 01/14/26
+        "%d/%m/%Y",  # 14/01/2026
+        "%d/%m/%y",  # 14/01/26
+        "%Y-%m-%d",  # 2026-01-14
+        "%d-%m-%Y",  # 14-01-2026
     ]
 
     # Clean up ordinal suffixes (1st, 2nd, 3rd, 4th)
@@ -377,12 +389,12 @@ def _parse_time_string(time_str: str) -> time | None:
 
     # Common formats to try
     formats = [
-        "%I:%M%p",    # 6:45pm
-        "%I:%M %p",   # 6:45 pm
-        "%I%p",       # 6pm
-        "%I %p",      # 6 pm
-        "%H:%M",      # 18:45
-        "%H%M",       # 1845
+        "%I:%M%p",  # 6:45pm
+        "%I:%M %p",  # 6:45 pm
+        "%I%p",  # 6pm
+        "%I %p",  # 6 pm
+        "%H:%M",  # 18:45
+        "%H%M",  # 1845
     ]
 
     # Normalize: remove spaces between number and am/pm
@@ -638,9 +650,7 @@ def _clean_team_name(name: str) -> str:
 
         # Check if first part is a provider/channel prefix pattern
         # Handles: "US (Paramount 010)", "UK (Sky Sports 042)", "CA (TSN 3)"
-        first_is_provider = bool(re.match(
-            r"^[A-Z]{2,3}\s*\(.*\d+\)$", first_part, re.IGNORECASE
-        ))
+        first_is_provider = bool(re.match(r"^[A-Z]{2,3}\s*\(.*\d+\)$", first_part, re.IGNORECASE))
 
         # Also strip if first part is mostly datetime placeholders
         first_stripped = re.sub(r"\bDATE_MASK\b", "", first_part)
@@ -1015,7 +1025,8 @@ def classify_stream(
                 normalized.extracted_date = custom_date
                 logger.debug(
                     "[CLASSIFY] Custom date regex extracted: %s from '%s'",
-                    custom_date, stream_name[:50]
+                    custom_date,
+                    stream_name[:50],
                 )
 
         if custom_regex.time_enabled:
@@ -1024,7 +1035,8 @@ def classify_stream(
                 normalized.extracted_time = custom_time
                 logger.debug(
                     "[CLASSIFY] Custom time regex extracted: %s from '%s'",
-                    custom_time, stream_name[:50]
+                    custom_time,
+                    stream_name[:50],
                 )
 
     # Early exit for empty streams
@@ -1048,7 +1060,8 @@ def classify_stream(
                 league_hint = custom_league
                 logger.debug(
                     "[CLASSIFY] Custom league regex extracted: %s from '%s'",
-                    custom_league, stream_name[:50]
+                    custom_league,
+                    stream_name[:50],
                 )
 
         # Step 2: Check for event card

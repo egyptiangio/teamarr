@@ -49,9 +49,7 @@ def get_channel_numbering_mode(conn: Connection) -> str:
     Returns:
         One of: 'strict_block', 'rational_block', 'strict_compact'
     """
-    cursor = conn.execute(
-        "SELECT channel_numbering_mode FROM settings WHERE id = 1"
-    )
+    cursor = conn.execute("SELECT channel_numbering_mode FROM settings WHERE id = 1")
     row = cursor.fetchone()
     if not row or not row["channel_numbering_mode"]:
         return "strict_block"
@@ -115,15 +113,14 @@ def get_next_channel_number(
         if not channel_start:
             logger.warning(
                 "[CHANNEL_NUM] Could not calculate auto channel_start for group %d (mode=%s)",
-                group_id, numbering_mode
+                group_id,
+                numbering_mode,
             )
             return None
 
         # Calculate block_end by finding where the next group starts
         # This allows dynamic expansion as a group adds more channels
-        block_end = _calculate_auto_block_end(
-            conn, group_id, group["sort_order"], channel_start
-        )
+        block_end = _calculate_auto_block_end(conn, group_id, group["sort_order"], channel_start)
 
     # For MANUAL mode with no channel_start, auto-assign if enabled
     elif not channel_start and auto_assign:
@@ -136,12 +133,12 @@ def get_next_channel_number(
             conn.commit()
             logger.info(
                 "[CHANNEL_NUM] Auto-assigned channel_start %d to MANUAL group %d",
-                channel_start, group_id
+                channel_start,
+                group_id,
             )
         else:
             logger.warning(
-                "[CHANNEL_NUM] Could not auto-assign channel_start for group %d",
-                group_id
+                "[CHANNEL_NUM] Could not auto-assign channel_start for group %d", group_id
             )
 
     if not channel_start:
@@ -172,7 +169,10 @@ def get_next_channel_number(
     if block_end and next_num > block_end:
         logger.warning(
             "[CHANNEL_NUM] Group %d AUTO range exhausted (%d-%d, mode=%s)",
-            group_id, channel_start, block_end, numbering_mode
+            group_id,
+            channel_start,
+            block_end,
+            numbering_mode,
         )
         return None
 
@@ -254,7 +254,8 @@ def get_next_compact_channel_number(conn: Connection) -> int | None:
         if next_num > effective_end:
             logger.warning(
                 "[CHANNEL_NUM] strict_compact: No available channels (range %d-%d exhausted)",
-                range_start, effective_end
+                range_start,
+                effective_end,
             )
             return None
 
@@ -461,7 +462,9 @@ def _calculate_strict_block_start(
             if current_start > effective_end:
                 logger.warning(
                     "[CHANNEL_NUM] AUTO group %d would start at %d, exceeds range end %d",
-                    group_id, current_start, effective_end
+                    group_id,
+                    current_start,
+                    effective_end,
                 )
                 return None
             return current_start
@@ -526,7 +529,9 @@ def _calculate_rational_block_start(
             if current_start > effective_end:
                 logger.warning(
                     "[CHANNEL_NUM] AUTO group %d would start at %d, exceeds range end %d",
-                    group_id, current_start, effective_end
+                    group_id,
+                    current_start,
+                    effective_end,
                 )
                 return None
             return current_start
@@ -627,9 +632,7 @@ def get_group_channel_range(
             return get_global_channel_range(conn)
 
         # strict_block or rational_block: Calculate per-group block range
-        start = _calculate_auto_channel_start(
-            conn, group_id, group["sort_order"], numbering_mode
-        )
+        start = _calculate_auto_channel_start(conn, group_id, group["sort_order"], numbering_mode)
         if not start:
             return None, None
 
@@ -700,7 +703,9 @@ def reassign_out_of_range_channel(
     """
     new_number = get_next_channel_number(conn, group_id)
     if not new_number:
-        logger.warning("[CHANNEL_NUM] Could not reassign channel %d - no available numbers", channel_id)
+        logger.warning(
+            "[CHANNEL_NUM] Could not reassign channel %d - no available numbers", channel_id
+        )
         return None
 
     conn.execute(
@@ -712,7 +717,11 @@ def reassign_out_of_range_channel(
     range_start, range_end = get_group_channel_range(conn, group_id)
     logger.info(
         "[CHANNEL_NUM] Reassigned channel %d: %d -> %d (group range %s-%s)",
-        channel_id, current_number, new_number, range_start, range_end
+        channel_id,
+        current_number,
+        new_number,
+        range_start,
+        range_end,
     )
 
     return new_number
@@ -729,9 +738,7 @@ def get_channel_sorting_scope(conn: Connection) -> str:
     Returns:
         One of: 'per_group', 'global'
     """
-    cursor = conn.execute(
-        "SELECT channel_sorting_scope FROM settings WHERE id = 1"
-    )
+    cursor = conn.execute("SELECT channel_sorting_scope FROM settings WHERE id = 1")
     row = cursor.fetchone()
     if not row or not row["channel_sorting_scope"]:
         return "per_group"
@@ -745,9 +752,7 @@ def get_channel_sort_by(conn: Connection) -> str:
     Returns:
         One of: 'sport_league_time', 'time', 'stream_order'
     """
-    cursor = conn.execute(
-        "SELECT channel_sort_by FROM settings WHERE id = 1"
-    )
+    cursor = conn.execute("SELECT channel_sort_by FROM settings WHERE id = 1")
     row = cursor.fetchone()
     if not row or not row["channel_sort_by"]:
         return "time"
@@ -779,11 +784,7 @@ def get_all_auto_channels_globally_sorted(conn: Connection) -> list[dict]:
 
     # 1. Get sort priorities (normalize to lowercase for case-insensitive matching)
     priorities = get_all_sort_priorities(conn)
-    sport_order = {
-        p.sport.lower(): p.sort_priority
-        for p in priorities
-        if p.league_code is None
-    }
+    sport_order = {p.sport.lower(): p.sort_priority for p in priorities if p.league_code is None}
     league_order = {
         (p.sport.lower(), p.league_code.lower() if p.league_code else None): p.sort_priority
         for p in priorities
@@ -812,18 +813,20 @@ def get_all_auto_channels_globally_sorted(conn: Connection) -> list[dict]:
 
     channels = []
     for row in cursor.fetchall():
-        channels.append({
-            "id": row["id"],
-            "dispatcharr_channel_id": row["dispatcharr_channel_id"],
-            "channel_number": row["channel_number"],
-            "channel_name": row["channel_name"],
-            "event_epg_group_id": row["event_epg_group_id"],
-            "primary_stream_id": row["primary_stream_id"],
-            "sport": row["sport"],
-            "league": row["league"],
-            "event_date": row["event_date"],
-            "created_at": row["created_at"],
-        })
+        channels.append(
+            {
+                "id": row["id"],
+                "dispatcharr_channel_id": row["dispatcharr_channel_id"],
+                "channel_number": row["channel_number"],
+                "channel_name": row["channel_name"],
+                "event_epg_group_id": row["event_epg_group_id"],
+                "primary_stream_id": row["primary_stream_id"],
+                "sport": row["sport"],
+                "league": row["league"],
+                "event_date": row["event_date"],
+                "created_at": row["created_at"],
+            }
+        )
 
     # 3. Sort by: sport priority → league priority → event time
     def sort_key(ch):
@@ -832,7 +835,7 @@ def get_all_auto_channels_globally_sorted(conn: Connection) -> list[dict]:
         event_date_str = ch.get("event_date")
 
         # Normalize sport/league to lowercase for priority lookup
-        # (managed_channels may store title case "Football", sort_priorities uses lowercase "football")
+        # (managed_channels may store title case "Football", sort_priorities uses lowercase "football")  # noqa: E501
         sport_lower = sport.lower()
         league_lower = league.lower()
 
@@ -845,9 +848,7 @@ def get_all_auto_channels_globally_sorted(conn: Connection) -> list[dict]:
             try:
                 # Handle various formats
                 if "T" in str(event_date_str):
-                    event_date = datetime.fromisoformat(
-                        str(event_date_str).replace("Z", "+00:00")
-                    )
+                    event_date = datetime.fromisoformat(str(event_date_str).replace("Z", "+00:00"))
                 else:
                     event_date = datetime.strptime(str(event_date_str), "%Y-%m-%d %H:%M:%S")
             except (ValueError, TypeError):
@@ -917,26 +918,28 @@ def reassign_channels_globally(conn: Connection) -> dict:
                 "UPDATE managed_channels SET channel_number = ? WHERE id = ?",
                 (next_num, ch["id"]),
             )
-            drift_details.append({
-                "channel_id": ch["id"],
-                "dispatcharr_channel_id": ch["dispatcharr_channel_id"],
-                "channel_name": ch["channel_name"],
-                "old_number": old_num,
-                "new_number": next_num,
-            })
+            drift_details.append(
+                {
+                    "channel_id": ch["id"],
+                    "dispatcharr_channel_id": ch["dispatcharr_channel_id"],
+                    "channel_name": ch["channel_name"],
+                    "old_number": old_num,
+                    "new_number": next_num,
+                }
+            )
             channels_moved += 1
 
             # Log drift at debug level (summary is at INFO)
             logger.debug(
-                "[CHANNEL_NUM] '%s' moved #%s → #%d",
-                ch["channel_name"], old_num, next_num
+                "[CHANNEL_NUM] '%s' moved #%s → #%d", ch["channel_name"], old_num, next_num
             )
 
         next_num += 1
 
     logger.info(
         "[CHANNEL_SORT] Global reassign complete: %d channels processed, %d moved",
-        len(sorted_channels), channels_moved
+        len(sorted_channels),
+        channels_moved,
     )
 
     return {

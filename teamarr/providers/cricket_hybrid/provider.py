@@ -11,9 +11,8 @@ unaware that data flows from multiple sources underneath.
 import dataclasses
 import logging
 from datetime import date
-from functools import lru_cache
 
-from teamarr.core import Event, EventStatus, SportsProvider, Team, TeamStats, Venue
+from teamarr.core import Event, SportsProvider, Team, TeamStats
 from teamarr.core.interfaces import LeagueMappingSource
 
 logger = logging.getLogger(__name__)
@@ -80,9 +79,7 @@ class CricketHybridProvider(SportsProvider):
 
         return enriched
 
-    def get_team_schedule(
-        self, team_id: str, league: str, days_ahead: int = 14
-    ) -> list[Event]:
+    def get_team_schedule(self, team_id: str, league: str, days_ahead: int = 14) -> list[Event]:
         """Get team schedule from Cricbuzz, enriched with TSDB logos."""
         cricbuzz_league_id = self._get_cricbuzz_league_id(league)
         if not cricbuzz_league_id:
@@ -196,7 +193,8 @@ class CricketHybridProvider(SportsProvider):
                 if self._names_match(team_name_lower, cached_name_lower):
                     logger.debug(
                         "[CRICKET_HYBRID] Fuzzy matched team '%s' -> '%s'",
-                        team_name, row['team_name']
+                        team_name,
+                        row["team_name"],
                     )
                     return row["logo_url"]
 

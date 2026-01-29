@@ -1784,16 +1784,13 @@ export function EventGroups() {
           <div className="space-y-4 py-4 px-1 max-h-[60vh] overflow-y-auto">
             {/* Leagues */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setBulkEditLeaguesEnabled(!bulkEditLeaguesEnabled)}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditLeaguesEnabled}
                   onCheckedChange={(checked) => setBulkEditLeaguesEnabled(!!checked)}
                 />
                 <span className="text-sm font-medium">Leagues</span>
-              </div>
+              </label>
               {bulkEditLeaguesEnabled && (
                 <LeaguePicker
                   selectedLeagues={bulkEditLeagues}
@@ -1806,17 +1803,7 @@ export function EventGroups() {
 
             {/* Template */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => {
-                  const newVal = !bulkEditTemplateEnabled
-                  setBulkEditTemplateEnabled(newVal)
-                  if (!newVal) {
-                    setBulkEditTemplateId(null)
-                    setBulkEditClearTemplate(false)
-                  }
-                }}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditTemplateEnabled}
                   onCheckedChange={(checked) => {
@@ -1828,7 +1815,7 @@ export function EventGroups() {
                   }}
                 />
                 <span className="text-sm font-medium">Template</span>
-              </div>
+              </label>
               {bulkEditTemplateEnabled && (
                 <>
                   <Select
@@ -1846,14 +1833,7 @@ export function EventGroups() {
                       </option>
                     ))}
                   </Select>
-                  <div
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={() => {
-                      const newVal = !bulkEditClearTemplate
-                      setBulkEditClearTemplate(newVal)
-                      if (newVal) setBulkEditTemplateId(null)
-                    }}
-                  >
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={bulkEditClearTemplate}
                       onCheckedChange={(checked) => {
@@ -1862,25 +1842,14 @@ export function EventGroups() {
                       }}
                     />
                     <span className="text-xs text-muted-foreground">Clear (unassign template)</span>
-                  </div>
+                  </label>
                 </>
               )}
             </div>
 
             {/* Channel Group */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => {
-                  const newVal = !bulkEditChannelGroupEnabled
-                  setBulkEditChannelGroupEnabled(newVal)
-                  if (!newVal) {
-                    setBulkEditChannelGroupId(null)
-                    setBulkEditChannelGroupMode('static')
-                    setBulkEditClearChannelGroup(false)
-                  }
-                }}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditChannelGroupEnabled}
                   onCheckedChange={(checked) => {
@@ -1893,21 +1862,11 @@ export function EventGroups() {
                   }}
                 />
                 <span className="text-sm font-medium">Channel Group</span>
-              </div>
+              </label>
               {bulkEditChannelGroupEnabled && (
                 <div className="space-y-3">
                   {/* Clear option */}
-                  <div
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={() => {
-                      const newVal = !bulkEditClearChannelGroup
-                      setBulkEditClearChannelGroup(newVal)
-                      if (newVal) {
-                        setBulkEditChannelGroupId(null)
-                        setBulkEditChannelGroupMode('static')
-                      }
-                    }}
-                  >
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={bulkEditClearChannelGroup}
                       onCheckedChange={(checked) => {
@@ -1919,7 +1878,7 @@ export function EventGroups() {
                       }}
                     />
                     <span className="text-xs text-muted-foreground">Clear (remove from channel group)</span>
-                  </div>
+                  </label>
 
                   {!bulkEditClearChannelGroup && (
                     <div className="space-y-2">
@@ -1999,17 +1958,7 @@ export function EventGroups() {
 
             {/* Channel Profiles */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => {
-                  const newVal = !bulkEditProfilesEnabled
-                  setBulkEditProfilesEnabled(newVal)
-                  if (!newVal) {
-                    setBulkEditProfileIds([])
-                    setBulkEditUseDefaultProfiles(true)
-                  }
-                }}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditProfilesEnabled}
                   onCheckedChange={(checked) => {
@@ -2021,19 +1970,10 @@ export function EventGroups() {
                   }}
                 />
                 <span className="text-sm font-medium">Channel Profiles</span>
-              </div>
+              </label>
               {bulkEditProfilesEnabled && (
                 <div className="space-y-2">
-                  <div
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={() => {
-                      const newVal = !bulkEditUseDefaultProfiles
-                      setBulkEditUseDefaultProfiles(newVal)
-                      if (newVal) {
-                        setBulkEditProfileIds([])
-                      }
-                    }}
-                  >
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={bulkEditUseDefaultProfiles}
                       onCheckedChange={(checked) => {
@@ -2046,7 +1986,7 @@ export function EventGroups() {
                     <span className="text-sm font-normal">
                       Use default channel profiles
                     </span>
-                  </div>
+                  </label>
                   <ChannelProfileSelector
                     selectedIds={bulkEditProfileIds}
                     onChange={setBulkEditProfileIds}
@@ -2063,17 +2003,14 @@ export function EventGroups() {
 
             {/* Channel Sort Order (multi-league only) */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setBulkEditSortOrderEnabled(!bulkEditSortOrderEnabled)}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditSortOrderEnabled}
                   onCheckedChange={(checked) => setBulkEditSortOrderEnabled(!!checked)}
                 />
                 <span className="text-sm font-medium">Channel Sort Order</span>
                 <span className="text-xs text-muted-foreground">(multi-league groups)</span>
-              </div>
+              </label>
               {bulkEditSortOrderEnabled && (
                 <Select
                   value={bulkEditSortOrder}
@@ -2088,17 +2025,14 @@ export function EventGroups() {
 
             {/* Overlap Handling (multi-league only) */}
             <div className="space-y-2">
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setBulkEditOverlapHandlingEnabled(!bulkEditOverlapHandlingEnabled)}
-              >
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={bulkEditOverlapHandlingEnabled}
                   onCheckedChange={(checked) => setBulkEditOverlapHandlingEnabled(!!checked)}
                 />
                 <span className="text-sm font-medium">Overlap Handling</span>
                 <span className="text-xs text-muted-foreground">(multi-league groups)</span>
-              </div>
+              </label>
               {bulkEditOverlapHandlingEnabled && (
                 <Select
                   value={bulkEditOverlapHandling}

@@ -276,7 +276,8 @@ class ChannelReconciler:
                     )
                     logger.debug(
                         "[RECONCILE] Backfilled UUID for channel '%s': %s",
-                        channel.channel_name, dispatcharr_channel.uuid,
+                        channel.channel_name,
+                        dispatcharr_channel.uuid,
                     )
 
         if issues:
@@ -576,7 +577,9 @@ class ChannelReconciler:
                                     "action": "deleted_from_dispatcharr",
                                 }
                             )
-                            logger.info("[FIXED] Deleted orphan from Dispatcharr: %s", issue.channel_name)
+                            logger.info(
+                                "[FIXED] Deleted orphan from Dispatcharr: %s", issue.channel_name
+                            )
                         else:
                             result.errors.append(
                                 f"Failed to delete orphan channel: {delete_result.error}"

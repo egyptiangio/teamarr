@@ -192,9 +192,7 @@ class StreamOrderingService:
             try:
                 self._compiled_regex[pattern] = re.compile(pattern, re.IGNORECASE)
             except re.error as e:
-                logger.warning(
-                    "[STREAM_ORDER] Invalid regex pattern '%s': %s", pattern, e
-                )
+                logger.warning("[STREAM_ORDER] Invalid regex pattern '%s': %s", pattern, e)
                 self._compiled_regex[pattern] = None  # type: ignore
         return self._compiled_regex.get(pattern)
 

@@ -15,7 +15,6 @@ from datetime import datetime, time, timedelta
 
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
-    StreamCategory,
     detect_card_segment,
     is_ufc_excluded,
 )
@@ -68,7 +67,9 @@ def canonicalize_segment(detected: str, event: Event) -> str:
             if segment in espn_segments:
                 logger.info(
                     "[UFC_SEGMENTS] Mapped '%s' to '%s' (not in ESPN data: %s)",
-                    detected, segment, sorted(espn_segments),
+                    detected,
+                    segment,
+                    sorted(espn_segments),
                 )
                 return segment
         # Fall back to earlier segments
@@ -76,21 +77,19 @@ def canonicalize_segment(detected: str, event: Event) -> str:
             if segment in espn_segments:
                 logger.info(
                     "[UFC_SEGMENTS] Mapped '%s' to '%s' (not in ESPN data: %s)",
-                    detected, segment, sorted(espn_segments),
+                    detected,
+                    segment,
+                    sorted(espn_segments),
                 )
                 return segment
 
     # Last resort: use main_card if available, else first available
     if "main_card" in espn_segments:
-        logger.warning(
-            "[UFC_SEGMENTS] Unknown segment '%s', defaulting to main_card", detected
-        )
+        logger.warning("[UFC_SEGMENTS] Unknown segment '%s', defaulting to main_card", detected)
         return "main_card"
 
     fallback = next(iter(espn_segments))
-    logger.warning(
-        "[UFC_SEGMENTS] Unknown segment '%s', defaulting to '%s'", detected, fallback
-    )
+    logger.warning("[UFC_SEGMENTS] Unknown segment '%s', defaulting to '%s'", detected, fallback)
     return fallback
 
 
@@ -112,7 +111,7 @@ def extract_time_from_stream(stream_name: str) -> time | None:
         return None
 
     # Pattern 1: 12-hour format with minutes - "5:30 PM", "5:30PM"
-    match = re.search(r'\b(\d{1,2}):(\d{2})\s*(am|pm)\b', stream_name, re.IGNORECASE)
+    match = re.search(r"\b(\d{1,2}):(\d{2})\s*(am|pm)\b", stream_name, re.IGNORECASE)
     if match:
         hour = int(match.group(1))
         minute = int(match.group(2))
@@ -124,7 +123,7 @@ def extract_time_from_stream(stream_name: str) -> time | None:
         return time(hour, minute)
 
     # Pattern 2: 12-hour format without minutes - "10pm", "10 pm"
-    match = re.search(r'\b(\d{1,2})\s*(am|pm)\b', stream_name, re.IGNORECASE)
+    match = re.search(r"\b(\d{1,2})\s*(am|pm)\b", stream_name, re.IGNORECASE)
     if match:
         hour = int(match.group(1))
         ampm = match.group(2).upper()
@@ -135,7 +134,7 @@ def extract_time_from_stream(stream_name: str) -> time | None:
         return time(hour, 0)
 
     # Pattern 3: 24-hour format - "22:30"
-    match = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', stream_name)
+    match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", stream_name)
     if match:
         hour = int(match.group(1))
         minute = int(match.group(2))
@@ -272,7 +271,9 @@ def disambiguate_prelims_by_time(
         logger.info(
             "[UFC_SEGMENTS] Disambiguated 'prelims' to 'early_prelims' based on time "
             "(stream=%s, early=%s, prelims=%s)",
-            stream_time, early_time, prelims_time,
+            stream_time,
+            early_time,
+            prelims_time,
         )
         return "early_prelims"
 
@@ -323,7 +324,8 @@ def get_segment_times(
     # Fallback: estimate if no ESPN data (should be rare)
     logger.warning(
         "[UFC_SEGMENTS] No ESPN segment_times for event %s segment %s, using estimates",
-        event.id, segment,
+        event.id,
+        segment,
     )
     return _estimate_segment_times_fallback(event, segment, mma_duration)
 

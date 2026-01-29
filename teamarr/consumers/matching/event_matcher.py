@@ -7,6 +7,7 @@ These don't have team-vs-team format but instead match by:
 - Fighter names (fallback)
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -23,7 +24,6 @@ from teamarr.consumers.stream_match_cache import StreamMatchCache, event_to_cach
 from teamarr.core.types import Event
 from teamarr.services.sports_data import SportsDataService
 from teamarr.utilities.constants import EVENT_CARD_KEYWORDS
-import logging
 
 logger = logging.getLogger(__name__)
 

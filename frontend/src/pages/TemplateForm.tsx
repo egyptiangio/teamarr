@@ -1934,13 +1934,13 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
 
             {/* Conditional postgame */}
             <div className="p-3 bg-secondary/30 rounded-lg space-y-3">
-              <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={postgameCond.enabled}
-                  onClick={() => updatePostgameCond("enabled", !postgameCond.enabled)}
+                  onCheckedChange={() => updatePostgameCond("enabled", !postgameCond.enabled)}
                 />
                 <span className="text-sm">Use conditional description based on last game status</span>
-              </div>
+              </label>
               {postgameCond.enabled && (
                 <>
                   <TemplateField
@@ -2006,13 +2006,13 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 resolveTemplate={resolveTemplate}
               />
               <div className="p-3 bg-secondary/30 rounded-lg space-y-3 -mt-2">
-                <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
                     checked={idleOffseason.title_enabled}
-                    onClick={() => updateIdleOffseason("title_enabled", !idleOffseason.title_enabled)}
+                    onCheckedChange={() => updateIdleOffseason("title_enabled", !idleOffseason.title_enabled)}
                   />
                   <span className="text-sm">Override title when no games in 30-day lookahead</span>
-                </div>
+                </label>
                 {idleOffseason.title_enabled && (
                   <TemplateField
                     id="idle_offseason.title"
@@ -2039,13 +2039,13 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 resolveTemplate={resolveTemplate}
               />
               <div className="p-3 bg-secondary/30 rounded-lg space-y-3 -mt-2">
-                <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
                     checked={idleOffseason.subtitle_enabled}
-                    onClick={() => updateIdleOffseason("subtitle_enabled", !idleOffseason.subtitle_enabled)}
+                    onCheckedChange={() => updateIdleOffseason("subtitle_enabled", !idleOffseason.subtitle_enabled)}
                   />
                   <span className="text-sm">Override subtitle when no games in 30-day lookahead</span>
-                </div>
+                </label>
                 {idleOffseason.subtitle_enabled && (
                   <TemplateField
                     id="idle_offseason.subtitle"
@@ -2071,13 +2071,13 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 resolveTemplate={resolveTemplate}
               />
               <div className="p-3 bg-secondary/30 rounded-lg space-y-3 -mt-2">
-                <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
                     checked={idleOffseason.description_enabled}
-                    onClick={() => updateIdleOffseason("description_enabled", !idleOffseason.description_enabled)}
+                    onCheckedChange={() => updateIdleOffseason("description_enabled", !idleOffseason.description_enabled)}
                   />
                   <span className="text-sm">Override description when no games in 30-day lookahead</span>
-                </div>
+                </label>
                 {idleOffseason.description_enabled && (
                   <TemplateField
                     id="idle_offseason.description"
@@ -2094,13 +2094,13 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
 
               {/* Conditional idle (final/not final) */}
               <div className="p-3 bg-secondary/30 rounded-lg space-y-3">
-                <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
                     checked={idleCond.enabled}
-                    onClick={() => updateIdleCond("enabled", !idleCond.enabled)}
+                    onCheckedChange={() => updateIdleCond("enabled", !idleCond.enabled)}
                   />
                   <span className="text-sm">Use conditional description based on last game status</span>
-                </div>
+                </label>
                 {idleCond.enabled && (
                   <>
                     <TemplateField
@@ -2207,11 +2207,11 @@ function XmltvTab({ formData, setFormData }: TabProps) {
             <Label>Common Categories</Label>
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox checked={hasSports} onClick={() => toggleCategory("Sports", !hasSports)} />
+                <Checkbox checked={hasSports} onCheckedChange={() => toggleCategory("Sports", !hasSports)} />
                 <span>Sports</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox checked={hasSportVar} onClick={() => toggleCategory("{sport}", !hasSportVar)} />
+                <Checkbox checked={hasSportVar} onCheckedChange={() => toggleCategory("{sport}", !hasSportVar)} />
                 <span>
                   <code>{"{sport}"}</code> - Auto-populates with team's sport (Basketball, Football, etc.)
                 </span>
@@ -2259,21 +2259,21 @@ function XmltvTab({ formData, setFormData }: TabProps) {
         </CardHeader>
         <CardContent className="space-y-3">
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={flags.new} onClick={() => updateFlags("new", !flags.new)} />
+            <Checkbox checked={flags.new} onCheckedChange={() => updateFlags("new", !flags.new)} />
             <div>
               <span>Include New Tag</span>
               <p className="text-xs text-muted-foreground">Adds &lt;new/&gt; tag to events</p>
             </div>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={flags.live} onClick={() => updateFlags("live", !flags.live)} />
+            <Checkbox checked={flags.live} onCheckedChange={() => updateFlags("live", !flags.live)} />
             <div>
               <span>Include Live Tag</span>
               <p className="text-xs text-muted-foreground">Adds &lt;live/&gt; tag to events</p>
             </div>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={flags.date} onClick={() => updateFlags("date", !flags.date)} />
+            <Checkbox checked={flags.date} onCheckedChange={() => updateFlags("date", !flags.date)} />
             <div>
               <span>Include Date Tag</span>
               <p className="text-xs text-muted-foreground">Adds &lt;date&gt; tag with air date (YYYYMMDD) to events</p>
@@ -2297,7 +2297,7 @@ function XmltvTab({ formData, setFormData }: TabProps) {
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox
               checked={formData.xmltv_video?.enabled || false}
-              onClick={() => setFormData(prev => ({
+              onCheckedChange={() => setFormData(prev => ({
                 ...prev,
                 xmltv_video: { ...prev.xmltv_video, enabled: !prev.xmltv_video?.enabled }
               }))}

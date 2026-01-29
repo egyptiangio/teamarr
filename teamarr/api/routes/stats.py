@@ -204,7 +204,7 @@ def get_dashboard_stats():
         if latest_run:
             extra = json.loads(latest_run["extra_metrics"]) if latest_run["extra_metrics"] else {}
             teams_processed = extra.get("teams_processed", 0)
-            groups_processed = extra.get("groups_processed", 0)
+            extra.get("groups_processed", 0)
 
             # Total programmes and events
             programmes_total = latest_run["programmes_total"] or 0

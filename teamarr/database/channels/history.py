@@ -40,7 +40,9 @@ def log_channel_history(
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (managed_channel_id, change_type, change_source, field_name, old_value, new_value, notes),
     )
-    logger.debug("[HISTORY] channel_id=%d type=%s source=%s", managed_channel_id, change_type, change_source)
+    logger.debug(
+        "[HISTORY] channel_id=%d type=%s source=%s", managed_channel_id, change_type, change_source
+    )
     return cursor.lastrowid
 
 
@@ -85,5 +87,9 @@ def cleanup_old_history(conn: Connection, retention_days: int = 90) -> int:
         (f"-{retention_days}",),
     )
     if cursor.rowcount > 0:
-        logger.info("[CLEANUP] Deleted %d history records older than %d days", cursor.rowcount, retention_days)
+        logger.info(
+            "[CLEANUP] Deleted %d history records older than %d days",
+            cursor.rowcount,
+            retention_days,
+        )
     return cursor.rowcount

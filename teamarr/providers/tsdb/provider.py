@@ -450,7 +450,7 @@ class TSDBProvider(SportsProvider):
             )
 
         except Exception as e:
-            logger.warning("[TSDB] Failed to parse event %s: %s", data.get('idEvent', 'unknown'), e)
+            logger.warning("[TSDB] Failed to parse event %s: %s", data.get("idEvent", "unknown"), e)
             return None
 
     def _parse_fighters_from_event_name(

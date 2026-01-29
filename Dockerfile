@@ -15,9 +15,13 @@ ARG GIT_SHA=unknown
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + lightweight troubleshooting tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    curl \
+    dnsutils \
+    iputils-ping \
+    nano \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies from pyproject.toml (single source of truth)

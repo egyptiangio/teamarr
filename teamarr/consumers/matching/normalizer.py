@@ -8,6 +8,7 @@ Cleans up heterogeneous, poorly-formatted stream names before matching:
 - Extracts date/time hints for validation
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, time
@@ -15,7 +16,6 @@ from datetime import date, time
 from unidecode import unidecode
 
 from teamarr.utilities.constants import BROADCAST_NETWORKS, CITY_TRANSLATIONS, PROVIDER_PREFIXES
-import logging
 
 logger = logging.getLogger(__name__)
 

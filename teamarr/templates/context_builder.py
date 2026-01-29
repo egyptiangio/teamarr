@@ -4,6 +4,8 @@ Assembles TemplateContext from Event/Team data using SportsDataService.
 This is the bridge between the data layer and the template engine.
 """
 
+import logging
+
 from teamarr.core import Event, TeamStats
 from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import (
@@ -12,7 +14,6 @@ from teamarr.templates.context import (
     TeamChannelContext,
     TemplateContext,
 )
-import logging
 from teamarr.utilities.sports import get_sport_from_league
 
 logger = logging.getLogger(__name__)

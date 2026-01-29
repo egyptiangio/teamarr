@@ -12,12 +12,12 @@ otherwise falls back to standard 're' module.
 
 import logging
 import re
-
-logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from re import Pattern
 
 from teamarr.utilities.constants import PLACEHOLDER_PATTERNS, SPORT_HINT_PATTERNS
+
+logger = logging.getLogger(__name__)
 
 # Try to import 'regex' module which supports advanced features
 try:
@@ -32,15 +32,17 @@ except ImportError:
 
 # Sports that can be detected but are not currently supported by Teamarr
 # These sports don't have team-based schedules we can match against
-UNSUPPORTED_SPORTS = frozenset([
-    "Swimming",
-    "Diving",
-    "Gymnastics",
-    "Wrestling",
-    "Track and Field",
-    "Tennis",
-    "Golf",
-])
+UNSUPPORTED_SPORTS = frozenset(
+    [
+        "Swimming",
+        "Diving",
+        "Gymnastics",
+        "Wrestling",
+        "Track and Field",
+        "Tennis",
+        "Golf",
+    ]
+)
 
 
 def is_placeholder(text: str) -> bool:

@@ -4,12 +4,11 @@ Handles raw HTTP requests to ESPN endpoints.
 No data transformation - just fetch and return JSON.
 """
 
+import logging
 import threading
 import time
 
 import httpx
-
-import logging
 
 logger = logging.getLogger(__name__)
 

@@ -21,6 +21,7 @@ def _get_base_version() -> str:
     # Try pyproject.toml first (single source of truth, works in dev and Docker)
     try:
         import tomllib
+
         pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
         if pyproject_path.exists():
             with open(pyproject_path, "rb") as f:
@@ -32,6 +33,7 @@ def _get_base_version() -> str:
     # Fall back to installed package metadata (pip install without source)
     try:
         from importlib.metadata import version
+
         return version("teamarr")
     except ImportError:
         pass

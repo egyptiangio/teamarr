@@ -92,7 +92,9 @@ def create_managed_channel(
         values,
     )
     channel_id = cursor.lastrowid
-    logger.info("[CREATED] Managed channel id=%d name=%s event=%s", channel_id, channel_name, event_id)
+    logger.info(
+        "[CREATED] Managed channel id=%d name=%s event=%s", channel_id, channel_name, event_id
+    )
     return channel_id
 
 
@@ -234,7 +236,6 @@ def get_channels_pending_deletion(conn: Connection) -> list[ManagedChannel]:
     Returns:
         List of ManagedChannel objects ready for deletion
     """
-    from datetime import datetime
 
     from dateutil import parser
 

@@ -4,36 +4,37 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 
-  /* V1-matching dark theme colors (slate palette) */
-  --color-background: #0f172a;
-  --color-foreground: #f1f5f9;
-  --color-card: #1e293b;
-  --color-card-foreground: #f1f5f9;
-  --color-popover: #1e293b;
-  --color-popover-foreground: #f1f5f9;
-  --color-primary: #3b82f6;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #334155;
-  --color-secondary-foreground: #f1f5f9;
-  --color-muted: #334155;
-  --color-muted-foreground: #94a3b8;
-  --color-accent: #334155;
-  --color-accent-foreground: #f1f5f9;
-  --color-destructive: #ef4444;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #1e293b;
-  --color-input: #334155;
-  --color-ring: #3b82f6;
+  /* V1-matching dark theme colors (slate palette)
+     oklch format enables Tailwind v4 alpha modifiers (e.g. bg-primary/50) */
+  --color-background: oklch(20.77% 0.04 265.75);
+  --color-foreground: oklch(96.83% 0.007 247.9);
+  --color-card: oklch(27.95% 0.037 260.03);
+  --color-card-foreground: oklch(96.83% 0.007 247.9);
+  --color-popover: oklch(27.95% 0.037 260.03);
+  --color-popover-foreground: oklch(96.83% 0.007 247.9);
+  --color-primary: oklch(62.31% 0.188 259.81);
+  --color-primary-foreground: oklch(100% 0 0);
+  --color-secondary: oklch(37.17% 0.039 257.29);
+  --color-secondary-foreground: oklch(96.83% 0.007 247.9);
+  --color-muted: oklch(37.17% 0.039 257.29);
+  --color-muted-foreground: oklch(71.07% 0.035 256.79);
+  --color-accent: oklch(37.17% 0.039 257.29);
+  --color-accent-foreground: oklch(96.83% 0.007 247.9);
+  --color-destructive: oklch(63.68% 0.208 25.33);
+  --color-destructive-foreground: oklch(100% 0 0);
+  --color-border: oklch(27.95% 0.037 260.03);
+  --color-input: oklch(37.17% 0.039 257.29);
+  --color-ring: oklch(62.31% 0.188 259.81);
 
   /* Checkbox/Switch visibility colors */
   --color-checkbox-border: #64748b;
   --color-checkbox-bg: #334155;
 
   /* Status colors matching V1 */
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #06b6d4;
+  --color-success: oklch(69.59% 0.149 162.48);
+  --color-warning: oklch(76.86% 0.165 70.08);
+  --color-error: oklch(63.68% 0.208 25.33);
+  --color-info: oklch(71.48% 0.126 215.22);
 
   /* Border radius */
   --radius-sm: 0.25rem;
@@ -44,20 +45,20 @@
 
 /* Light theme - matching V1 */
 .light {
-  --color-background: #f8fafc;
-  --color-foreground: #0f172a;
-  --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0f172a;
-  --color-secondary: #e2e8f0;
-  --color-secondary-foreground: #0f172a;
-  --color-muted: #e2e8f0;
-  --color-muted-foreground: #64748b;
-  --color-accent: #e2e8f0;
-  --color-accent-foreground: #0f172a;
-  --color-border: #cbd5e1;
-  --color-input: #cbd5e1;
+  --color-background: oklch(98.42% 0.003 247.86);
+  --color-foreground: oklch(20.77% 0.04 265.75);
+  --color-card: oklch(100% 0 0);
+  --color-card-foreground: oklch(20.77% 0.04 265.75);
+  --color-popover: oklch(100% 0 0);
+  --color-popover-foreground: oklch(20.77% 0.04 265.75);
+  --color-secondary: oklch(92.88% 0.013 255.51);
+  --color-secondary-foreground: oklch(20.77% 0.04 265.75);
+  --color-muted: oklch(92.88% 0.013 255.51);
+  --color-muted-foreground: oklch(55.44% 0.041 257.42);
+  --color-accent: oklch(92.88% 0.013 255.51);
+  --color-accent-foreground: oklch(20.77% 0.04 265.75);
+  --color-border: oklch(86.9% 0.02 252.89);
+  --color-input: oklch(86.9% 0.02 252.89);
 }
 
 /* Base styles */
@@ -79,11 +80,15 @@ body {
   line-height: 1.5;
 }
 
-/* Set default border color to match V1 (subtle, dark) */
-*,
-*::before,
-*::after {
-  border-color: var(--color-border);
+/* Set default border color to match V1 (subtle, dark).
+   MUST be in @layer base so Tailwind utility classes (e.g. border-muted-foreground)
+   in @layer utilities can override it. Unlayered styles beat all layers per CSS spec. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
+  }
 }
 
 /* Custom scrollbar */
@@ -267,7 +272,7 @@ input[type="number"] {
 
 .radio-btn.active {
   border-color: var(--color-primary);
-  background: rgba(59, 130, 246, 0.1);
+  background: oklch(62.31% 0.188 259.81 / 0.1);
 }
 
 .radio-btn input[type="radio"] {

@@ -5,7 +5,6 @@ Supports caching and configurable repositories for forks.
 """
 
 import logging
-import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime

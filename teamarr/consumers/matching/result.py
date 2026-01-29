@@ -436,7 +436,10 @@ def get_display_text(outcome: MatchOutcome) -> str:
         reason_text = EXCLUDED_DISPLAY.get(outcome.excluded_reason, str(outcome.excluded_reason))
         method_text = METHOD_DISPLAY.get(outcome.match_method, "")
         # Add league context for LEAGUE_NOT_INCLUDED
-        if outcome.excluded_reason == ExcludedReason.LEAGUE_NOT_INCLUDED and outcome.found_league_name:
+        if (
+            outcome.excluded_reason == ExcludedReason.LEAGUE_NOT_INCLUDED
+            and outcome.found_league_name
+        ):
             return f"Found in {outcome.found_league_name} (not in group)"
         if method_text:
             return f"{reason_text} (matched via {method_text})"
@@ -496,7 +499,9 @@ def log_result(
         if outcome.event:
             event_name = outcome.event.short_name or outcome.event.name
 
-        logger.info("[EXCLUDED:%s] %s -> %s | %s (via %s)", reason, display_name, league, event_name, method)
+        logger.info(
+            "[EXCLUDED:%s] %s -> %s | %s (via %s)", reason, display_name, league, event_name, method
+        )
 
     elif outcome.is_failed:
         reason = outcome.failed_reason.value if outcome.failed_reason else "unknown"

@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+from teamarr.consumers.event_epg import prepend_postponed_label
 from teamarr.core import Event, Programme, TemplateConfig
-from teamarr.consumers.event_epg import is_event_postponed, prepend_postponed_label
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
@@ -274,12 +274,18 @@ class TeamEPGGenerator:
 
             # Calculate when this event's programme would end
             # V1 Parity: Use template custom duration if set
-            template_dict = {
-                "game_duration_mode": options.template.game_duration_mode,
-                "game_duration_override": options.template.game_duration_override,
-            } if options.template else None
+            template_dict = (
+                {
+                    "game_duration_mode": options.template.game_duration_mode,
+                    "game_duration_override": options.template.game_duration_override,
+                }
+                if options.template
+                else None
+            )
             duration = get_effective_duration(
-                event.sport, options.sport_durations, options.default_duration_hours,
+                event.sport,
+                options.sport_durations,
+                options.default_duration_hours,
                 template=template_dict,
             )
             event_end = event.start_time + timedelta(hours=duration)
@@ -364,12 +370,18 @@ class TeamEPGGenerator:
         """Convert an Event to a Programme with template resolution."""
         start = event.start_time - timedelta(minutes=options.pregame_minutes)
         # V1 Parity: Use template custom duration if set
-        template_dict = {
-            "game_duration_mode": options.template.game_duration_mode,
-            "game_duration_override": options.template.game_duration_override,
-        } if options.template else None
+        template_dict = (
+            {
+                "game_duration_mode": options.template.game_duration_mode,
+                "game_duration_override": options.template.game_duration_override,
+            }
+            if options.template
+            else None
+        )
         duration = get_effective_duration(
-            event.sport, options.sport_durations, options.default_duration_hours,
+            event.sport,
+            options.sport_durations,
+            options.default_duration_hours,
             template=template_dict,
         )
         stop = event.start_time + timedelta(hours=duration)

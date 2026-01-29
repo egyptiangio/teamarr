@@ -15,10 +15,8 @@ Usage:
         current_version = 43
 """
 
-import json
 import logging
 import sqlite3
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -184,12 +182,24 @@ INDEXES_V43: list[tuple[str, str, str]] = [
     ("idx_event_epg_groups_sort_order", "event_epg_groups", "event_epg_groups(sort_order)"),
     ("idx_event_epg_groups_name", "event_epg_groups", "event_epg_groups(name)"),
     ("idx_managed_channels_group", "managed_channels", "managed_channels(event_epg_group_id)"),
-    ("idx_managed_channels_event", "managed_channels", "managed_channels(event_id, event_provider)"),
+    (
+        "idx_managed_channels_event",
+        "managed_channels",
+        "managed_channels(event_id, event_provider)",
+    ),
     ("idx_managed_channels_expires", "managed_channels", "managed_channels(expires_at)"),
-    ("idx_managed_channels_dispatcharr", "managed_channels", "managed_channels(dispatcharr_channel_id)"),
+    (
+        "idx_managed_channels_dispatcharr",
+        "managed_channels",
+        "managed_channels(dispatcharr_channel_id)",
+    ),
     ("idx_managed_channels_tvg", "managed_channels", "managed_channels(tvg_id)"),
     ("idx_managed_channels_sync", "managed_channels", "managed_channels(sync_status)"),
-    ("idx_mch_channel", "managed_channel_history", "managed_channel_history(managed_channel_id, changed_at DESC)"),
+    (
+        "idx_mch_channel",
+        "managed_channel_history",
+        "managed_channel_history(managed_channel_id, changed_at DESC)",
+    ),
     ("idx_mch_type", "managed_channel_history", "managed_channel_history(change_type)"),
     ("idx_mcs_channel", "managed_channel_streams", "managed_channel_streams(managed_channel_id)"),
     ("idx_mcs_stream", "managed_channel_streams", "managed_channel_streams(dispatcharr_stream_id)"),
@@ -209,16 +219,32 @@ INDEXES_V43: list[tuple[str, str, str]] = [
     ("idx_lc_sport", "league_cache", "league_cache(sport)"),
     ("idx_lc_provider", "league_cache", "league_cache(provider)"),
     ("idx_sc_expires", "service_cache", "service_cache(expires_at)"),
-    ("idx_channel_sort_priorities_priority", "channel_sort_priorities", "channel_sort_priorities(sort_priority)"),
-    ("idx_exception_keywords_enabled", "consolidation_exception_keywords", "consolidation_exception_keywords(enabled)"),
-    ("idx_exception_keywords_behavior", "consolidation_exception_keywords", "consolidation_exception_keywords(behavior)"),
+    (
+        "idx_channel_sort_priorities_priority",
+        "channel_sort_priorities",
+        "channel_sort_priorities(sort_priority)",
+    ),
+    (
+        "idx_exception_keywords_enabled",
+        "consolidation_exception_keywords",
+        "consolidation_exception_keywords(enabled)",
+    ),
+    (
+        "idx_exception_keywords_behavior",
+        "consolidation_exception_keywords",
+        "consolidation_exception_keywords(behavior)",
+    ),
     ("idx_team_aliases_league", "team_aliases", "team_aliases(league)"),
     ("idx_team_aliases_alias", "team_aliases", "team_aliases(alias)"),
     ("idx_processing_runs_type", "processing_runs", "processing_runs(run_type)"),
     ("idx_processing_runs_created", "processing_runs", "processing_runs(created_at)"),
     ("idx_processing_runs_group", "processing_runs", "processing_runs(group_id)"),
     ("idx_processing_runs_status", "processing_runs", "processing_runs(status)"),
-    ("idx_processing_runs_type_created", "processing_runs", "processing_runs(run_type, created_at DESC)"),
+    (
+        "idx_processing_runs_type_created",
+        "processing_runs",
+        "processing_runs(run_type, created_at DESC)",
+    ),
     ("idx_stats_snapshots_type", "stats_snapshots", "stats_snapshots(snapshot_type)"),
     ("idx_stats_snapshots_period", "stats_snapshots", "stats_snapshots(period_start)"),
     ("idx_matched_streams_run", "epg_matched_streams", "epg_matched_streams(run_id)"),
@@ -279,28 +305,19 @@ def _get_table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     """Check if a table exists."""
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table,)
-    )
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
     return cursor.fetchone() is not None
 
 
 def _index_exists(conn: sqlite3.Connection, index_name: str) -> bool:
     """Check if an index exists."""
     cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-        (index_name,)
+        "SELECT name FROM sqlite_master WHERE type='index' AND name=?", (index_name,)
     )
     return cursor.fetchone() is not None
 
 
-def _add_column_safe(
-    conn: sqlite3.Connection,
-    table: str,
-    column: str,
-    definition: str
-) -> bool:
+def _add_column_safe(conn: sqlite3.Connection, table: str, column: str, definition: str) -> bool:
     """Add a column if it doesn't exist. Returns True if added."""
     existing = _get_table_columns(conn, table)
     if column in existing:
@@ -430,8 +447,10 @@ def _ensure_columns_v43(conn: sqlite3.Connection) -> None:
     # Templates - xmltv_video (v19)
     if _table_exists(conn, "templates"):
         _add_column_safe(
-            conn, "templates", "xmltv_video",
-            """JSON DEFAULT '{"enabled": false, "quality": "HDTV"}'"""
+            conn,
+            "templates",
+            "xmltv_video",
+            """JSON DEFAULT '{"enabled": false, "quality": "HDTV"}'""",
         )
 
     # epg_matched_streams - excluded columns (v24)
@@ -587,7 +606,7 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
         for sport_code, display_name in SPORTS_SEED_V43:
             conn.execute(
                 "INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES (?, ?)",
-                (sport_code, display_name)
+                (sport_code, display_name),
             )
 
     # -------------------------------------------------------------------------
@@ -595,9 +614,7 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
     # -------------------------------------------------------------------------
     if _table_exists(conn, "sports"):
         # Remove old entries
-        conn.execute(
-            "DELETE FROM sports WHERE sport_code IN ('rugby_league', 'rugby_union')"
-        )
+        conn.execute("DELETE FROM sports WHERE sport_code IN ('rugby_league', 'rugby_union')")
         # Ensure unified entry exists (already in seed, but be safe)
         conn.execute(
             "INSERT OR REPLACE INTO sports (sport_code, display_name) VALUES ('rugby', 'Rugby')"
@@ -631,16 +648,17 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
             table_sql = row[0] if row else ""
 
             has_check_constraint = (
-                "channel_group_mode" in table_sql and
-                "CHECK" in table_sql and
-                "'sport'" in table_sql and
-                "'league'" in table_sql
+                "channel_group_mode" in table_sql
+                and "CHECK" in table_sql
+                and "'sport'" in table_sql
+                and "'league'" in table_sql
             )
 
             if has_check_constraint:
                 # Table has CHECK constraint - must recreate table to remove it
                 # Import and use the proper migration function from connection.py
                 from teamarr.database.connection import _migrate_channel_group_mode_to_patterns
+
                 logger.info("[CHECKPOINT] Recreating event_epg_groups to remove CHECK constraint")
                 _migrate_channel_group_mode_to_patterns(conn)
                 # Restore FK state — the migration function re-enables foreign keys
@@ -679,7 +697,7 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
                         UPDATE event_epg_groups
                         SET overlap_handling = 'add_stream'
                         WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
-                    """)
+                    """)  # noqa: E501
 
     # -------------------------------------------------------------------------
     # v35: Exception keywords label + match_terms restructure
@@ -706,10 +724,13 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
 
         # Ensure default keywords exist
         for label, match_terms, behavior in EXCEPTION_KEYWORDS_SEED_V43:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR IGNORE INTO consolidation_exception_keywords (label, match_terms, behavior)
                 VALUES (?, ?, ?)
-            """, (label, match_terms, behavior))
+            """,  # noqa: E501
+                (label, match_terms, behavior),
+            )
 
 
 # =============================================================================
@@ -728,7 +749,7 @@ def _fix_table_structures_v43(conn: sqlite3.Connection) -> None:
         try:
             # Try to detect if constraint is already updated
             cursor = conn.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='managed_channel_history'"
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='managed_channel_history'"  # noqa: E501
             )
             row = cursor.fetchone()
             if row and "keyword_ordering" not in row[0]:
@@ -766,7 +787,7 @@ def _recreate_managed_channel_history_v43(conn: sqlite3.Connection) -> None:
         ON managed_channel_history(managed_channel_id, changed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_mch_type
         ON managed_channel_history(change_type);
-    """)
+    """)  # noqa: E501
 
 
 # =============================================================================
@@ -782,8 +803,11 @@ def _verify_schema_v43(conn: sqlite3.Connection) -> list[str]:
     if _table_exists(conn, "settings"):
         existing = _get_table_columns(conn, "settings")
         critical_cols = {
-            "schema_version", "epg_output_path", "team_filter_enabled",
-            "prepend_postponed_label", "stream_ordering_rules"
+            "schema_version",
+            "epg_output_path",
+            "team_filter_enabled",
+            "prepend_postponed_label",
+            "stream_ordering_rules",
         }
         missing = critical_cols - existing
         if missing:
@@ -793,8 +817,11 @@ def _verify_schema_v43(conn: sqlite3.Connection) -> list[str]:
     if _table_exists(conn, "event_epg_groups"):
         existing = _get_table_columns(conn, "event_epg_groups")
         critical_cols = {
-            "group_mode", "display_name", "failed_count",
-            "channel_group_mode", "custom_regex_league"
+            "group_mode",
+            "display_name",
+            "failed_count",
+            "channel_group_mode",
+            "custom_regex_league",
         }
         missing = critical_cols - existing
         if missing:
@@ -802,8 +829,16 @@ def _verify_schema_v43(conn: sqlite3.Connection) -> list[str]:
 
     # Check required tables exist
     required_tables = [
-        "settings", "templates", "teams", "event_epg_groups", "managed_channels",
-        "sports", "leagues", "stream_match_cache", "team_cache", "league_cache"
+        "settings",
+        "templates",
+        "teams",
+        "event_epg_groups",
+        "managed_channels",
+        "sports",
+        "leagues",
+        "stream_match_cache",
+        "team_cache",
+        "league_cache",
     ]
     for table in required_tables:
         if not _table_exists(conn, table):
@@ -829,10 +864,7 @@ def apply_checkpoint_v43(conn: sqlite3.Connection, from_version: int) -> bool:
     Returns:
         True if checkpoint completed successfully, False otherwise
     """
-    logger.info(
-        "[CHECKPOINT] Applying v43 checkpoint (from v%d)",
-        from_version
-    )
+    logger.info("[CHECKPOINT] Applying v43 checkpoint (from v%d)", from_version)
 
     try:
         # Disable foreign keys during migration
@@ -874,6 +906,6 @@ def apply_checkpoint_v43(conn: sqlite3.Connection, from_version: int) -> bool:
         # Re-enable foreign keys even on failure
         try:
             conn.execute("PRAGMA foreign_keys = ON")
-        except:
+        except Exception:
             pass
         raise

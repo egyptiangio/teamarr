@@ -451,9 +451,7 @@ def get_stream_ordering_settings(conn: Connection) -> StreamOrderingSettings:
     if not row:
         return StreamOrderingSettings()
 
-    return StreamOrderingSettings(
-        rules=_parse_stream_ordering_rules(row["stream_ordering_rules"])
-    )
+    return StreamOrderingSettings(rules=_parse_stream_ordering_rules(row["stream_ordering_rules"]))
 
 
 # Single source of truth for update check defaults

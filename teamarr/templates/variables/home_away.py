@@ -24,10 +24,10 @@ def _to_pascal_case(name: str) -> str:
     import unicodedata
 
     # Normalize unicode (é → e)
-    normalized = unicodedata.normalize('NFKD', name)
-    ascii_name = normalized.encode('ascii', 'ignore').decode('ascii')
+    normalized = unicodedata.normalize("NFKD", name)
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
     # Keep only alphanumeric, split on non-alpha
-    words = re.split(r'[^a-zA-Z0-9]+', ascii_name)
+    words = re.split(r"[^a-zA-Z0-9]+", ascii_name)
     return "".join(word.capitalize() for word in words if word)
 
 

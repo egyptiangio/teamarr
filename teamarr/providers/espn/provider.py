@@ -4,6 +4,7 @@ Fetches data from ESPN API and normalizes into our dataclass format.
 Pure fetch + normalize - no caching (caching is in service layer).
 """
 
+import logging
 from datetime import date, datetime, timedelta
 
 from teamarr.core import (
@@ -21,7 +22,6 @@ from teamarr.providers.espn.constants import STATUS_MAP, TOURNAMENT_SPORTS
 from teamarr.providers.espn.tournament import TournamentParserMixin
 from teamarr.providers.espn.ufc import UFCParserMixin
 from teamarr.utilities.tz import to_user_tz
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +104,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
             # Mixin handles: pure parsing only
             events = self._parse_ufc_events(data)
             # Provider handles: date filtering
-            return [
-                e for e in events
-                if to_user_tz(e.start_time).date() == target_date
-            ]
+            return [e for e in events if to_user_tz(e.start_time).date() == target_date]
 
         # Get sport/league from database config
         sport_league = self._get_sport_league_from_db(league)
@@ -157,7 +154,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
 
         sport_league = self._get_sport_league_from_db(league)
         events = []
-        today = date.today()
+        date.today()
         seen_ids: set[str] = set()
 
         # 1. Get past games from schedule endpoint (all past games in one call)
@@ -319,7 +316,9 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
         # Some leagues don't have summary endpoints - scoreboard is the only source
         # See LEAGUES_WITHOUT_SUMMARY for the list
         if league in self.LEAGUES_WITHOUT_SUMMARY:
-            logger.debug("[ESPN] Summary endpoint not available for %s (league=%s)", event_id, league)
+            logger.debug(
+                "[ESPN] Summary endpoint not available for %s (league=%s)", event_id, league
+            )
             return None
 
         # Get sport/league from database config
@@ -443,7 +442,7 @@ class ESPNProvider(UFCParserMixin, TournamentParserMixin, SportsProvider):
                 odds_data=odds_data,
             )
         except Exception as e:
-            logger.warning("[ESPN] Failed to parse event %s: %s", data.get('id', 'unknown'), e)
+            logger.warning("[ESPN] Failed to parse event %s: %s", data.get("id", "unknown"), e)
             return None
 
     def _parse_team(self, competitor: dict, league: str, sport: str) -> Team:

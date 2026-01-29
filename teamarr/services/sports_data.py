@@ -120,9 +120,7 @@ class SportsDataService:
         """Register a provider."""
         self._providers.append(provider)
 
-    def get_events(
-        self, league: str, target_date: date, cache_only: bool = False
-    ) -> list[Event]:
+    def get_events(self, league: str, target_date: date, cache_only: bool = False) -> list[Event]:
         """Get all events for a league on a given date.
 
         Args:
@@ -219,7 +217,9 @@ class SportsDataService:
         """
         # Guard against empty event_id which would cause malformed API requests
         if not event_id:
-            logger.warning("[SPORTS_DATA] get_event called with empty event_id for league %s", league)
+            logger.warning(
+                "[SPORTS_DATA] get_event called with empty event_id for league %s", league
+            )
             return None
 
         cache_key = make_cache_key("event", league, event_id)

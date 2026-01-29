@@ -14,16 +14,16 @@ Design principles:
 - Respects midnight crossover mode from settings
 """
 
+import logging
 from datetime import date as date_type
 from datetime import datetime, timedelta
 
+from teamarr.consumers.event_epg import POSTPONED_LABEL, is_event_postponed
 from teamarr.core import Event, Programme, TeamStats
-from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.services import SportsDataService
 from teamarr.templates.context import GameContext, TeamChannelContext, TemplateContext
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
-import logging
 from teamarr.utilities.sports import get_sport_duration, get_sport_from_league
 from teamarr.utilities.time_blocks import create_filler_chunks, crosses_midnight
 from teamarr.utilities.tz import now_user, to_user_tz
@@ -203,7 +203,7 @@ class FillerGenerator:
             )
         elif not day_events and not next_future_event:
             logger.debug(
-                f"Idle day {date}: NO next_future_event found. Total events in schedule: {len(events)}"
+                f"Idle day {date}: NO next_future_event found. Total events in schedule: {len(events)}"  # noqa: E501
             )
 
         # Find last completed event relative to THIS DAY (for .last context)
@@ -614,7 +614,7 @@ class FillerGenerator:
                 next_event, team_config.team_id, team_config.league
             )
             logger.debug(
-                f"Built next_game context: opponent={next_game.opponent.name if next_game.opponent else 'None'}, "
+                f"Built next_game context: opponent={next_game.opponent.name if next_game.opponent else 'None'}, "  # noqa: E501
                 f"event={next_event.name}"
             )
 

@@ -5,6 +5,7 @@ Supports two modes:
 - Event-based: One channel per event, shows all events in leagues
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -12,7 +13,6 @@ from teamarr.consumers.event_epg import EventEPGGenerator, EventEPGOptions
 from teamarr.consumers.team_epg import TeamEPGGenerator, TeamEPGOptions
 from teamarr.core import Programme, TemplateConfig
 from teamarr.services import SportsDataService
-import logging
 from teamarr.utilities.xmltv import programmes_to_xmltv
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,9 @@ class Orchestrator:
         xmltv = programmes_to_xmltv(
             all_programmes,
             channels,
-            generator_name=options.generator_name if options and options.generator_name else "Teamarr",
+            generator_name=options.generator_name
+            if options and options.generator_name
+            else "Teamarr",
             generator_url=options.generator_url if options else None,
         )
 

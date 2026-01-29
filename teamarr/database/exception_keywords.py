@@ -73,9 +73,7 @@ def get_all_keywords(conn: Connection, include_disabled: bool = False) -> list[E
         List of ExceptionKeyword objects
     """
     if include_disabled:
-        cursor = conn.execute(
-            "SELECT * FROM consolidation_exception_keywords ORDER BY label"
-        )
+        cursor = conn.execute("SELECT * FROM consolidation_exception_keywords ORDER BY label")
     else:
         cursor = conn.execute(
             """SELECT * FROM consolidation_exception_keywords

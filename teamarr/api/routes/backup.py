@@ -92,7 +92,7 @@ async def restore_backup(file: UploadFile = File(...)):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid SQLite database: {e}",
-                )
+                ) from e
 
             # Create backup of current database before restoring
             backup_path = None
@@ -108,7 +108,7 @@ async def restore_backup(file: UploadFile = File(...)):
 
             return RestoreResponse(
                 success=True,
-                message="Database restored successfully. Please restart the application for changes to take effect.",
+                message="Database restored. Please restart the application for changes to take effect.",  # noqa: E501
                 backup_path=str(backup_path) if backup_path else None,
             )
 

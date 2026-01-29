@@ -42,6 +42,11 @@ services:
       # Log format: "text" or "json" (default: text)
       # Use "json" for log aggregation systems (ELK, Loki, Splunk)
       # - LOG_FORMAT=text
+
+      # Skip team/league cache refresh on startup (default: false)
+      # Useful during development to speed up restarts. Cache can still
+      # be refreshed manually via the UI or by the daily scheduled task.
+      # - SKIP_CACHE_REFRESH=true
 ```
 
 Open Teamarr at `http://<your-server>:9195`

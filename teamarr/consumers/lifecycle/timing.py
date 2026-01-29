@@ -15,12 +15,12 @@ Delete timing options:
 - 2_days_after, 3_days_after, 1_week_after
 """
 
+import logging
 from datetime import datetime, timedelta
 
 from teamarr.consumers.matching.result import ExcludedReason
 from teamarr.core import Event
 from teamarr.utilities.event_status import is_event_final
-import logging
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import crosses_midnight
 from teamarr.utilities.tz import now_user, to_user_tz
@@ -270,7 +270,11 @@ class ChannelLifecycleManager:
 
         # Calculate lifecycle window thresholds
         delete_threshold = self._calculate_delete_threshold(event)
-        create_threshold = self._calculate_create_threshold(event) if self.create_timing != "stream_available" else None
+        create_threshold = (
+            self._calculate_create_threshold(event)
+            if self.create_timing != "stream_available"
+            else None
+        )
 
         # Detailed logging for debugging lifecycle timing issues
         event_end = self.get_event_end_time(event)

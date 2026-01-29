@@ -36,6 +36,7 @@ def _validate_profile_ids(v: Any) -> list[str | int] | None:
             result.append(item)
     return result
 
+
 # =============================================================================
 # DISPATCHARR SETTINGS
 # =============================================================================
@@ -255,8 +256,7 @@ class StreamOrderingSettingsModel(BaseModel):
     """Stream ordering rules for prioritizing streams within channels."""
 
     rules: list[StreamOrderingRuleModel] = Field(
-        default_factory=list,
-        description="List of ordering rules, evaluated by priority"
+        default_factory=list, description="List of ordering rules, evaluated by priority"
     )
 
 

@@ -137,7 +137,9 @@ class StreamMatchCache:
                     return None
 
                 self._stats["hits"] += 1
-                logger.debug("[STREAM_CACHE_HIT] stream_id=%d event_id=%s", stream_id, row["event_id"])
+                logger.debug(
+                    "[STREAM_CACHE_HIT] stream_id=%d event_id=%s", stream_id, row["event_id"]
+                )
 
                 # Parse cached_event_data if present
                 cached_data = {}
@@ -370,7 +372,9 @@ class StreamMatchCache:
                 )
                 conn.commit()
                 self._stats["user_corrections"] += 1
-                logger.info("[STREAM_CACHE_CORRECTED] stream_id=%d event_id=%s", stream_id, event_id)
+                logger.info(
+                    "[STREAM_CACHE_CORRECTED] stream_id=%d event_id=%s", stream_id, event_id
+                )
                 return True
         except sqlite3.Error as e:
             logger.error("[STREAM_CACHE_ERROR] Set user correction: %s", e)
@@ -491,7 +495,9 @@ class StreamMatchCache:
                     )
                     success_purged = cursor.rowcount
                     if success_purged > 0:
-                        logger.debug("[STREAM_CACHE_PURGE] Removed %d stale successful", success_purged)
+                        logger.debug(
+                            "[STREAM_CACHE_PURGE] Removed %d stale successful", success_purged
+                        )
                     purged_total += success_purged
 
                 conn.commit()

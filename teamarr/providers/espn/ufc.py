@@ -136,7 +136,7 @@ class UFCParserMixin:
                 segment_times=segment_times,
             )
         except Exception as e:
-            logger.warning("[ESPN_UFC] Failed to parse event %s: %s", data.get('id', 'unknown'), e)
+            logger.warning("[ESPN_UFC] Failed to parse event %s: %s", data.get("id", "unknown"), e)
             return None
 
     def _parse_fighter_as_team(self, competitor: dict) -> Team:

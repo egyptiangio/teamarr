@@ -28,12 +28,12 @@ class ExceptionKeywordCreate(BaseModel):
     label: str = Field(
         ...,
         min_length=1,
-        description="Label for channel naming and {exception_keyword} template variable (e.g., 'Spanish', 'Manningcast')",
+        description="Label for channel naming and {exception_keyword} template variable (e.g., 'Spanish', 'Manningcast')",  # noqa: E501
     )
     match_terms: str = Field(
         ...,
         min_length=1,
-        description="Comma-separated terms/phrases to match in stream names (e.g., 'Spanish, En Español, (ESP)')",
+        description="Comma-separated terms/phrases to match in stream names (e.g., 'Spanish, En Español, (ESP)')",  # noqa: E501
     )
     behavior: ExceptionBehavior = Field(
         default="consolidate",

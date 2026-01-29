@@ -43,6 +43,8 @@ def update_update_check_settings(update: UpdateCheckSettingsUpdate):
     """Update update check settings."""
     from teamarr.database.settings import (
         get_update_check_settings,
+    )
+    from teamarr.database.settings import (
         update_update_check_settings as db_update,
     )
 

@@ -193,7 +193,7 @@ class CronScheduler:
         """Run all scheduled tasks.
 
         Tasks:
-        - Weekly cache refresh (team/league data from ESPN/TSDB)
+        - Daily cache refresh (team/league data from ESPN/TSDB)
         - EPG generation (teams, groups, XMLTV)
         - Dispatcharr integration
         - Channel lifecycle (deletions, reconciliation, cleanup)
@@ -208,7 +208,7 @@ class CronScheduler:
             "epg_generation": {},
         }
 
-        # Weekly cache refresh (only refreshes if > 7 days old)
+        # Daily cache refresh (only refreshes if > 1 day old)
         try:
             results["cache_refresh"] = self._task_refresh_cache()
         except Exception as e:
@@ -226,7 +226,12 @@ class CronScheduler:
         return results
 
     def _task_refresh_cache(self) -> dict:
-        """Refresh team/league cache if stale (weekly).
+        """Refresh team/league cache if stale (daily).
+
+        Cache is also refreshed unconditionally on every startup and
+        can be triggered manually via the UI. This scheduled check
+        catches staleness for long-running instances that haven't
+        restarted in over a day.
 
         Returns:
             Dict with refresh status
@@ -234,12 +239,12 @@ class CronScheduler:
         from teamarr.services import create_cache_service
 
         cache_service = create_cache_service(self._db_factory)
-        refreshed = cache_service.refresh_if_needed(max_age_days=7)
+        refreshed = cache_service.refresh_if_needed(max_age_days=1)
 
         if refreshed:
             stats = cache_service.get_stats()
             logger.info(
-                "[CRON] Weekly cache refresh: %d leagues, %d teams",
+                "[CRON] Daily cache refresh: %d leagues, %d teams",
                 stats.leagues_count,
                 stats.teams_count,
             )
@@ -312,14 +317,16 @@ class CronScheduler:
 
         # Update global status on completion
         if result.success:
-            complete_generation({
-                "success": True,
-                "programmes_count": result.programmes_total,
-                "teams_processed": result.teams_processed,
-                "groups_processed": result.groups_processed,
-                "duration_seconds": result.duration_seconds,
-                "run_id": result.run_id,
-            })
+            complete_generation(
+                {
+                    "success": True,
+                    "programmes_count": result.programmes_total,
+                    "teams_processed": result.teams_processed,
+                    "groups_processed": result.groups_processed,
+                    "duration_seconds": result.duration_seconds,
+                    "run_id": result.run_id,
+                }
+            )
         else:
             fail_generation(result.error or "Unknown error")
 
