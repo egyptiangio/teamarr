@@ -56,3 +56,4 @@ plans/
 
 # Local dev scripts
 dev.sh
+.gitattributes
