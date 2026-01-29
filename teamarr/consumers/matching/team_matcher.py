@@ -470,14 +470,24 @@ class TeamMatcher:
                 stream_date = ctx.classified.normalized.extracted_date
                 stream_time = ctx.classified.normalized.extracted_time
 
-                # For after-midnight streams (European sources), allow ±1 day tolerance
-                # because timezone differences can shift the date
+                # For after-midnight streams (European sources), use time proximity
+                # instead of strict date matching to handle timezone differences
+                # and avoid matching wrong games in series (e.g., MLB 3-game series)
                 if stream_time and stream_time.hour < 7:
-                    date_diff = abs((stream_date - event_date).days)
-                    if date_diff > 1:
+                    # Calculate approximate UTC time assuming European source (CET = UTC+1)
+                    # Stream shows "Jan 29 01:35 CET" = "Jan 29 00:35 UTC"
+                    from zoneinfo import ZoneInfo
+                    cet = ZoneInfo("Europe/Paris")
+                    stream_dt_cet = datetime.combine(stream_date, stream_time, tzinfo=cet)
+                    stream_utc = stream_dt_cet.astimezone(ZoneInfo("UTC"))
+                    event_utc = event.start_time.astimezone(ZoneInfo("UTC"))
+
+                    # Only allow events within 4 hours of the calculated UTC time
+                    time_diff_hours = abs((event_utc - stream_utc).total_seconds()) / 3600
+                    if time_diff_hours > 4:
                         logger.debug(
-                            "[DATE_FILTER] Skipping %s: stream_date=%s, event_date=%s, diff=%d (after-midnight)",
-                            event.short_name, stream_date, event_date, date_diff
+                            "[DATE_FILTER] Skipping %s: stream_utc=%s, event_utc=%s, diff=%.1fh",
+                            event.short_name, stream_utc, event_utc, time_diff_hours
                         )
                         continue
                 elif stream_date != event_date:
@@ -630,11 +640,18 @@ class TeamMatcher:
                 stream_date = ctx.classified.normalized.extracted_date
                 stream_time = ctx.classified.normalized.extracted_time
 
-                # For after-midnight streams (European sources), allow ±1 day tolerance
-                # because timezone differences can shift the date
+                # For after-midnight streams (European sources), use time proximity
+                # instead of strict date matching to handle timezone differences
                 if stream_time and stream_time.hour < 7:
-                    date_diff = abs((stream_date - event_date).days)
-                    if date_diff > 1:
+                    from zoneinfo import ZoneInfo
+                    cet = ZoneInfo("Europe/Paris")
+                    stream_dt_cet = datetime.combine(stream_date, stream_time, tzinfo=cet)
+                    stream_utc = stream_dt_cet.astimezone(ZoneInfo("UTC"))
+                    event_utc = event.start_time.astimezone(ZoneInfo("UTC"))
+
+                    # Only allow events within 4 hours of the calculated UTC time
+                    time_diff_hours = abs((event_utc - stream_utc).total_seconds()) / 3600
+                    if time_diff_hours > 4:
                         continue
                 elif stream_date != event_date:
                     continue
