@@ -467,7 +467,24 @@ class TeamMatcher:
 
             # Check for date mismatch from stream (if extracted)
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                stream_date = ctx.classified.normalized.extracted_date
+                stream_time = ctx.classified.normalized.extracted_time
+
+                # For after-midnight streams (European sources), allow ±1 day tolerance
+                # because timezone differences can shift the date
+                if stream_time and stream_time.hour < 7:
+                    date_diff = abs((stream_date - event_date).days)
+                    if date_diff > 1:
+                        logger.debug(
+                            "[DATE_FILTER] Skipping %s: stream_date=%s, event_date=%s, diff=%d (after-midnight)",
+                            event.short_name, stream_date, event_date, date_diff
+                        )
+                        continue
+                elif stream_date != event_date:
+                    logger.debug(
+                        "[DATE_FILTER] Skipping %s: stream_date=%s != event_date=%s",
+                        event.short_name, stream_date, event_date
+                    )
                     continue
 
             # Check for sport mismatch from stream (if detected)
@@ -610,7 +627,16 @@ class TeamMatcher:
 
             # Check for date mismatch from stream (if extracted)
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                stream_date = ctx.classified.normalized.extracted_date
+                stream_time = ctx.classified.normalized.extracted_time
+
+                # For after-midnight streams (European sources), allow ±1 day tolerance
+                # because timezone differences can shift the date
+                if stream_time and stream_time.hour < 7:
+                    date_diff = abs((stream_date - event_date).days)
+                    if date_diff > 1:
+                        continue
+                elif stream_date != event_date:
                     continue
 
             # Check for sport mismatch from stream (if detected)
