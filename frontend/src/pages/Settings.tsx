@@ -47,6 +47,8 @@ import {
   useUpdateDurationSettings,
   useUpdateDisplaySettings,
   useUpdateReconciliationSettings,
+  useAPISettings,
+  useUpdateAPISettings,
   useTeamFilterSettings,
   useUpdateTeamFilterSettings,
   useExceptionKeywords,
@@ -162,6 +164,10 @@ export function Settings() {
   const updateDurations = useUpdateDurationSettings()
   const updateDisplay = useUpdateDisplaySettings()
   const updateReconciliation = useUpdateReconciliationSettings()
+
+  // API settings (cache refresh on startup)
+  const { data: apiSettingsData } = useAPISettings()
+  const updateAPISettings = useUpdateAPISettings()
 
   // Exception keywords
   const keywordsQuery = useExceptionKeywords()
@@ -1921,6 +1927,27 @@ export function Settings() {
               Last error: {cacheStatus.last_error}
             </div>
           )}
+
+          <div className="space-y-2 pt-2 border-t">
+            <Label htmlFor="startup-cache-refresh">Startup Cache Refresh</Label>
+            <Select
+              id="startup-cache-refresh"
+              value={String(apiSettingsData?.startup_cache_max_age_days ?? 0)}
+              onChange={(e) => {
+                updateAPISettings.mutate({
+                  startup_cache_max_age_days: parseInt(e.target.value, 10),
+                })
+              }}
+            >
+              <option value="0">Disabled (only refresh if empty)</option>
+              <option value="1">Auto-refresh if older than 1 day</option>
+              <option value="3">Auto-refresh if older than 3 days</option>
+              <option value="7">Auto-refresh if older than 7 days</option>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Automatically refresh team/league cache on startup if it's older than the selected age.
+            </p>
+          </div>
 
           <Button
             onClick={handleRefreshCache}

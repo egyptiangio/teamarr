@@ -108,6 +108,9 @@ class APISettings:
     retry_count: int = 3
     soccer_cache_refresh_frequency: str = "weekly"
     team_cache_refresh_frequency: str = "weekly"
+    # Startup cache refresh: number of days before cache is considered stale
+    # 0 = disabled (never auto-refresh on startup), >0 = refresh if older than N days
+    startup_cache_max_age_days: int = 1  # Default: refresh if older than 1 day
 
 
 @dataclass

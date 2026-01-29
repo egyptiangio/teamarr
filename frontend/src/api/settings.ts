@@ -111,6 +111,22 @@ export interface StreamOrderingSettingsUpdate {
   rules: StreamOrderingRule[]
 }
 
+export interface APISettings {
+  timeout: number
+  retry_count: number
+  soccer_cache_refresh_frequency: string
+  team_cache_refresh_frequency: string
+  startup_cache_max_age_days: number  // 0 = disabled, >0 = refresh if older than N days
+}
+
+export interface APISettingsUpdate {
+  timeout?: number
+  retry_count?: number
+  soccer_cache_refresh_frequency?: string
+  team_cache_refresh_frequency?: string
+  startup_cache_max_age_days?: number
+}
+
 export interface UpdateCheckSettings {
   enabled: boolean
   notify_stable: boolean
@@ -306,6 +322,17 @@ export async function updateDisplaySettings(
   data: DisplaySettings
 ): Promise<DisplaySettings> {
   return api.put("/settings/display", data)
+}
+
+// API Settings
+export async function getAPISettings(): Promise<APISettings> {
+  return api.get("/settings/api")
+}
+
+export async function updateAPISettings(
+  data: APISettingsUpdate
+): Promise<APISettings> {
+  return api.put("/settings/api", data)
 }
 
 // Team Filter Settings API

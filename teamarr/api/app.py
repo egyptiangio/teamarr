@@ -163,12 +163,40 @@ def _run_startup_tasks():
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v2")
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v3")
 
-        # Refresh team/league cache (this takes time)
+        # Refresh team/league cache based on startup_cache_max_age_days setting
+        # 0 = disabled (never auto-refresh), >0 = refresh if older than N days
         startup_state.set_phase(StartupPhase.REFRESHING_CACHE)
+        from teamarr.database.settings import get_all_settings
+
+        with get_db() as conn:
+            all_settings = get_all_settings(conn)
+        max_age_days = all_settings.api.startup_cache_max_age_days
+
         cache_service = create_cache_service(get_db)
-        logger.info("[STARTUP] Refreshing team/league cache on startup...")
-        cache_service.refresh()
-        logger.info("[STARTUP] Team/league cache refreshed")
+        stats = cache_service.get_stats()
+
+        if max_age_days == 0:
+            # Disabled - only refresh if cache is completely empty
+            if stats.is_empty:
+                logger.info("[STARTUP] Cache is empty, refreshing...")
+                cache_service.refresh()
+                logger.info("[STARTUP] Team/league cache refreshed")
+            else:
+                logger.info("[STARTUP] Startup cache refresh disabled, skipping (cache has %d teams)", stats.teams_count)
+        else:
+            # Check if cache is older than max_age_days
+            from datetime import datetime, timedelta, timezone
+            is_stale = False
+            if stats.last_refresh:
+                age = datetime.now(timezone.utc) - stats.last_refresh
+                is_stale = age > timedelta(days=max_age_days)
+
+            if stats.is_empty or is_stale:
+                logger.info("[STARTUP] Cache is stale (max age: %d days) or empty, refreshing...", max_age_days)
+                cache_service.refresh()
+                logger.info("[STARTUP] Team/league cache refreshed")
+            else:
+                logger.info("[STARTUP] Cache is fresh (last refresh: %s, max age: %d days), skipping refresh", stats.last_refresh, max_age_days)
 
         # Reload league mapping service to pick up new league names from cache
         league_mapping_service.reload()

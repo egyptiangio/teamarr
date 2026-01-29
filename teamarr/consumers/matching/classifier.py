@@ -1052,7 +1052,16 @@ def classify_stream(
                 )
 
         # Step 2: Check for event card
-        if is_event_card(text, league_event_type):
+        # Skip event_card detection if sport_hint indicates a team sport
+        # This prevents streams like "VIAPLAY PPV 1 - NHL: Team vs Team" from being
+        # misclassified as boxing events just because they contain "PPV"
+        # Team sports with sport_hint: Hockey, Basketball, Football, Baseball, Soccer, etc.
+        # Combat sports (UFC, Boxing) have NO sport_hint, so they still get classified correctly
+        TEAM_SPORT_HINTS = {
+            "Hockey", "Basketball", "Football", "Baseball", "Soccer",
+            "Lacrosse", "Cricket", "Volleyball"
+        }
+        if sport_hint not in TEAM_SPORT_HINTS and is_event_card(text, league_event_type):
             event_hint = extract_event_card_hint(text)
 
             # Detect card segment (early_prelims, prelims, main_card, combined)

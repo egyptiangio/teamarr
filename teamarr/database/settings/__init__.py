@@ -36,6 +36,7 @@ from .types import (
 )
 from .update import (
     increment_epg_generation_counter,
+    update_api_settings,
     update_channel_numbering_settings,
     update_dispatcharr_settings,
     update_display_settings,
@@ -79,6 +80,7 @@ __all__ = [
     "get_channel_numbering_settings",
     "get_update_check_settings",
     # Update operations
+    "update_api_settings",
     "update_dispatcharr_settings",
     "update_scheduler_settings",
     "update_lifecycle_settings",

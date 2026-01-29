@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check } from "lucide-react"
+import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check, FlaskConical } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -24,6 +24,7 @@ import { getLeagues } from "@/api/teams"
 import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
+import { TestPatternsModal } from "@/components/TestPatternsModal"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -139,6 +140,9 @@ export function EventGroupForm() {
   // Collapsible section states
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
+
+  // Test patterns modal
+  const [showTestPatterns, setShowTestPatterns] = useState(false)
 
   // Channel profile default state - true = use global default, false = custom selection
   const [useDefaultProfiles, setUseDefaultProfiles] = useState(true)
@@ -1230,16 +1234,15 @@ export function EventGroupForm() {
                     </p>
                   </div>
 
-                  {/* Test Patterns Button - only in edit mode */}
-                  {isEdit && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => toast.info("Test Patterns feature coming soon")}
-                    >
-                      Test Patterns
-                    </Button>
-                  )}
+                  {/* Create/Test Patterns Button */}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowTestPatterns(true)}
+                  >
+                    <FlaskConical className="h-4 w-4 mr-2" />
+                    Create/Test Patterns
+                  </Button>
                 </div>
               </CardContent>
             )}
@@ -1467,6 +1470,44 @@ export function EventGroupForm() {
           </div>
         </div>
       )}
+
+      {/* Test Patterns Modal */}
+      <TestPatternsModal
+        open={showTestPatterns}
+        onOpenChange={setShowTestPatterns}
+        groupId={isEdit ? Number(groupId) : undefined}
+        patterns={{
+          stream_include_regex: formData.stream_include_regex,
+          stream_include_regex_enabled: formData.stream_include_regex_enabled,
+          stream_exclude_regex: formData.stream_exclude_regex,
+          stream_exclude_regex_enabled: formData.stream_exclude_regex_enabled,
+          custom_regex_teams: formData.custom_regex_teams,
+          custom_regex_teams_enabled: formData.custom_regex_teams_enabled,
+          custom_regex_date: formData.custom_regex_date,
+          custom_regex_date_enabled: formData.custom_regex_date_enabled,
+          custom_regex_time: formData.custom_regex_time,
+          custom_regex_time_enabled: formData.custom_regex_time_enabled,
+          custom_regex_league: formData.custom_regex_league,
+          custom_regex_league_enabled: formData.custom_regex_league_enabled,
+        }}
+        onApplyPattern={(field, value) => {
+          // Map the field to the corresponding enabled field
+          const enabledFieldMap: Record<string, string> = {
+            stream_include_regex: "stream_include_regex_enabled",
+            stream_exclude_regex: "stream_exclude_regex_enabled",
+            custom_regex_teams: "custom_regex_teams_enabled",
+            custom_regex_date: "custom_regex_date_enabled",
+            custom_regex_time: "custom_regex_time_enabled",
+            custom_regex_league: "custom_regex_league_enabled",
+          }
+          const enabledField = enabledFieldMap[field]
+          setFormData(prev => ({
+            ...prev,
+            [field]: value,
+            ...(enabledField ? { [enabledField]: true } : {}),
+          }))
+        }}
+      />
     </div>
   )
 }

@@ -513,6 +513,10 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn, "epg_matched_streams", "excluded", "BOOLEAN DEFAULT 0"
     )
     _add_column_if_not_exists(conn, "epg_matched_streams", "exclusion_reason", "TEXT")
+    # Startup cache refresh: 0 = disabled, >0 = refresh if cache older than N days
+    _add_column_if_not_exists(
+        conn, "settings", "startup_cache_max_age_days", "INTEGER DEFAULT 1"
+    )
 
     # LEGACY v3-v43 migrations follow (all skipped because version is now 43)
 

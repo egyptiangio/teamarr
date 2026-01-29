@@ -137,6 +137,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             retry_count=row["api_retry_count"] or 3,
             soccer_cache_refresh_frequency=(row["soccer_cache_refresh_frequency"] or "weekly"),
             team_cache_refresh_frequency=row["team_cache_refresh_frequency"] or "weekly",
+            startup_cache_max_age_days=row["startup_cache_max_age_days"] if row["startup_cache_max_age_days"] is not None else 1,
         ),
         stream_filter=StreamFilterSettings(
             require_event_pattern=bool(row["stream_filter_require_event_pattern"])

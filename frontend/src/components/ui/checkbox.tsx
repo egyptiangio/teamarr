@@ -21,16 +21,13 @@ const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
         role="checkbox"
         aria-checked={checked}
         disabled={disabled}
+        data-state={checked ? "checked" : "unchecked"}
         className={cn(
-          // Larger size (h-5 w-5 = 20px) with better visibility
-          "peer h-5 w-5 shrink-0 rounded border-2 shadow-sm",
+          "checkbox-control",
+          "peer h-5 w-5 shrink-0 rounded border-2",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed disabled:opacity-50",
-          "flex items-center justify-center transition-colors",
-          // Unchecked state: visible border
-          !checked && "border-muted-foreground/50 bg-transparent hover:border-primary hover:bg-primary/5",
-          // Checked state: filled background
-          checked && "bg-primary border-primary text-primary-foreground",
+          "flex items-center justify-center transition-all duration-150",
           className
         )}
         onClick={(e) => {
