@@ -215,6 +215,7 @@ class AISettings:
     enabled: bool = False
     ollama_url: str = "http://localhost:11434"
     model: str = "qwen2.5:7b"
+    timeout: int = 180  # Request timeout in seconds (pattern learning can take time)
     use_for_parsing: bool = True  # Use AI for stream parsing
     use_for_matching: bool = False  # Use AI for team matching (experimental)
     batch_size: int = 10  # Streams per AI batch call

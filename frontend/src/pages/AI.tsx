@@ -286,7 +286,8 @@ function EditPatternModal({ pattern, onClose, onSave, isSaving }: EditPatternMod
 
 export function AI() {
   const queryClient = useQueryClient()
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
+  const [filterGroupId, setFilterGroupId] = useState<number | null>(null)
   const [editingPattern, setEditingPattern] = useState<AIPattern | null>(null)
 
   // Queries
@@ -310,11 +311,13 @@ export function AI() {
 
   // Mutations
   const learnMutation = useMutation({
-    mutationFn: (groupId: number) => learnPatterns(groupId),
+    mutationFn: (groupIds: number[]) => learnPatterns(undefined, groupIds),
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(`Learned ${data.patterns_learned} patterns (${data.coverage_percent.toFixed(0)}% coverage)`)
+        const groupCount = data.group_results?.length || 1
+        toast.success(`Learned ${data.patterns_learned} patterns from ${groupCount} group(s) (${data.coverage_percent.toFixed(0)}% avg coverage)`)
         queryClient.invalidateQueries({ queryKey: ["ai", "patterns"] })
+        setSelectedGroupIds(new Set())
       } else {
         toast.error(data.error || "Failed to learn patterns")
       }
@@ -353,14 +356,36 @@ export function AI() {
 
   const status = statusQuery.data
   const patterns = patternsQuery.data?.patterns ?? []
+  const allGroups = groupsQuery.data?.groups ?? []
 
-  // Filter patterns by selected group
-  const filteredPatterns = selectedGroupId
-    ? patterns.filter(p => p.group_id === selectedGroupId)
+  // Filter patterns by selected group (for viewing)
+  const filteredPatterns = filterGroupId
+    ? patterns.filter(p => p.group_id === filterGroupId)
     : patterns
 
   // Get unique groups that have patterns
   const groupsWithPatterns = [...new Set(patterns.map(p => p.group_id).filter(Boolean))] as number[]
+
+  // Multi-select helpers
+  const toggleGroup = (groupId: number) => {
+    setSelectedGroupIds(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    setSelectedGroupIds(new Set(allGroups.map(g => g.id)))
+  }
+
+  const selectNone = () => {
+    setSelectedGroupIds(new Set())
+  }
 
   return (
     <div className="space-y-6">
@@ -429,40 +454,70 @@ export function AI() {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Learn Patterns</CardTitle>
           <CardDescription>
-            Analyze streams from an event group to generate regex patterns
+            Select event groups to analyze and generate regex patterns. This may take a few minutes per group.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-4">
-            <div className="flex-1 max-w-sm">
-              <Label htmlFor="learn-group">Event Group</Label>
-              <select
-                id="learn-group"
-                className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-background"
-                value={selectedGroupId ?? ""}
-                onChange={(e) => setSelectedGroupId(e.target.value ? Number(e.target.value) : null)}
+        <CardContent className="space-y-4">
+          {/* Selection controls */}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={selectAll}>
+              Select All
+            </Button>
+            <Button variant="outline" size="sm" onClick={selectNone}>
+              Select None
+            </Button>
+            <span className="text-sm text-muted-foreground ml-2">
+              {selectedGroupIds.size} of {allGroups.length} groups selected
+            </span>
+          </div>
+
+          {/* Groups checklist */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto border rounded-md p-3">
+            {allGroups.map(g => (
+              <label
+                key={g.id}
+                className={cn(
+                  "flex items-center gap-2 p-2 rounded-md cursor-pointer hover:bg-accent text-sm",
+                  selectedGroupIds.has(g.id) && "bg-accent"
+                )}
               >
-                <option value="">Select a group...</option>
-                {groupsQuery.data?.groups?.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            </div>
+                <input
+                  type="checkbox"
+                  checked={selectedGroupIds.has(g.id)}
+                  onChange={() => toggleGroup(g.id)}
+                  className="rounded"
+                />
+                <span className="truncate">{g.name}</span>
+                {groupsWithPatterns.includes(g.id) && (
+                  <Badge variant="secondary" className="text-xs ml-auto">
+                    {patterns.filter(p => p.group_id === g.id).length}
+                  </Badge>
+                )}
+              </label>
+            ))}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
             <Button
-              onClick={() => selectedGroupId && learnMutation.mutate(selectedGroupId)}
-              disabled={!selectedGroupId || learnMutation.isPending || !status?.available}
+              onClick={() => learnMutation.mutate([...selectedGroupIds])}
+              disabled={selectedGroupIds.size === 0 || learnMutation.isPending || !status?.available}
             >
               {learnMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
               ) : (
                 <Brain className="h-4 w-4 mr-1" />
               )}
-              Learn Patterns
+              Learn Patterns for {selectedGroupIds.size} Group{selectedGroupIds.size !== 1 ? "s" : ""}
             </Button>
-            {selectedGroupId && groupsWithPatterns.includes(selectedGroupId) && (
+            {selectedGroupIds.size > 0 && [...selectedGroupIds].some(id => groupsWithPatterns.includes(id)) && (
               <Button
                 variant="outline"
-                onClick={() => deleteGroupMutation.mutate(selectedGroupId)}
+                onClick={() => {
+                  // Delete patterns for all selected groups that have patterns
+                  const toDelete = [...selectedGroupIds].filter(id => groupsWithPatterns.includes(id))
+                  toDelete.forEach(id => deleteGroupMutation.mutate(id))
+                }}
                 disabled={deleteGroupMutation.isPending}
               >
                 {deleteGroupMutation.isPending ? (
@@ -470,7 +525,7 @@ export function AI() {
                 ) : (
                   <Trash2 className="h-4 w-4 mr-1" />
                 )}
-                Clear Group Patterns
+                Clear Selected Patterns
               </Button>
             )}
           </div>
@@ -485,14 +540,14 @@ export function AI() {
               <CardTitle className="text-lg">Learned Patterns</CardTitle>
               <CardDescription>
                 {filteredPatterns.length} pattern{filteredPatterns.length !== 1 ? "s" : ""}
-                {selectedGroupId && ` for ${groupMap.get(selectedGroupId) || `Group ${selectedGroupId}`}`}
+                {filterGroupId && ` for ${groupMap.get(filterGroupId) || `Group ${filterGroupId}`}`}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <select
                 className="px-3 py-1.5 border rounded-md text-sm bg-background"
-                value={selectedGroupId ?? ""}
-                onChange={(e) => setSelectedGroupId(e.target.value ? Number(e.target.value) : null)}
+                value={filterGroupId ?? ""}
+                onChange={(e) => setFilterGroupId(e.target.value ? Number(e.target.value) : null)}
               >
                 <option value="">All Groups</option>
                 {groupsWithPatterns.map(gid => (

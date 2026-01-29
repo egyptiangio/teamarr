@@ -464,6 +464,16 @@ export interface AIPatternListResponse {
   total: number
 }
 
+export interface LearnPatternsGroupResult {
+  group_id: number
+  group_name: string
+  success: boolean
+  patterns_learned: number
+  patterns: AIPattern[]
+  coverage_percent: number
+  error: string | null
+}
+
 export interface LearnPatternsResponse {
   success: boolean
   group_id: number
@@ -472,6 +482,7 @@ export interface LearnPatternsResponse {
   patterns: AIPattern[]
   coverage_percent: number
   error: string | null
+  group_results?: LearnPatternsGroupResult[]
 }
 
 export interface TestParseResult {
@@ -517,8 +528,14 @@ export async function deleteGroupPatterns(groupId: number): Promise<{ patterns_d
   return api.delete(`/ai/patterns/group/${groupId}`)
 }
 
-export async function learnPatterns(groupId: number): Promise<LearnPatternsResponse> {
-  return api.post("/ai/learn", { group_id: groupId })
+export async function learnPatterns(groupId?: number, groupIds?: number[]): Promise<LearnPatternsResponse> {
+  const body: { group_id?: number; group_ids?: number[] } = {}
+  if (groupIds && groupIds.length > 0) {
+    body.group_ids = groupIds
+  } else if (groupId) {
+    body.group_id = groupId
+  }
+  return api.post("/ai/learn", body)
 }
 
 export async function testParse(streams: string[]): Promise<TestParseResponse> {

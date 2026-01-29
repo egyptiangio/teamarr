@@ -62,6 +62,7 @@ class AIClassifier:
             ollama_config = OllamaConfig(
                 base_url=self.settings.ollama_url,
                 model=self.settings.model,
+                timeout=float(self.settings.timeout),
             )
             self._parser = AIStreamParser(ollama_config)
         return self._parser
@@ -73,6 +74,7 @@ class AIClassifier:
             ollama_config = OllamaConfig(
                 base_url=self.settings.ollama_url,
                 model=self.settings.model,
+                timeout=float(self.settings.timeout),
             )
             self._learner = PatternLearner(ollama_config)
         return self._learner

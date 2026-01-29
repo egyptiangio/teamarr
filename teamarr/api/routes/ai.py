@@ -40,6 +40,7 @@ class AISettingsResponse(BaseModel):
     enabled: bool
     ollama_url: str
     model: str
+    timeout: int
     use_for_parsing: bool
     use_for_matching: bool
     batch_size: int
@@ -53,6 +54,7 @@ class AISettingsUpdate(BaseModel):
     enabled: bool | None = None
     ollama_url: str | None = None
     model: str | None = None
+    timeout: int | None = Field(None, ge=30, le=600)  # 30s to 10min
     use_for_parsing: bool | None = None
     use_for_matching: bool | None = None
     batch_size: int | None = Field(None, ge=1, le=50)
@@ -82,21 +84,36 @@ class PatternListResponse(BaseModel):
 
 
 class LearnPatternsRequest(BaseModel):
-    """Request to learn patterns for a group."""
+    """Request to learn patterns for a group or multiple groups."""
+
+    group_id: int | None = None  # Single group (legacy)
+    group_ids: list[int] | None = None  # Multiple groups
+
+
+class LearnPatternsGroupResult(BaseModel):
+    """Result for a single group's pattern learning."""
 
     group_id: int
+    group_name: str
+    success: bool
+    patterns_learned: int
+    patterns: list[PatternResponse]
+    coverage_percent: float
+    error: str | None = None
 
 
 class LearnPatternsResponse(BaseModel):
     """Response from pattern learning."""
 
     success: bool
-    group_id: int
-    group_name: str
-    patterns_learned: int
-    patterns: list[PatternResponse]
-    coverage_percent: float
+    group_id: int  # For backwards compatibility (first group)
+    group_name: str  # For backwards compatibility (first group)
+    patterns_learned: int  # Total across all groups
+    patterns: list[PatternResponse]  # All patterns
+    coverage_percent: float  # Average coverage
     error: str | None = None
+    # New: per-group results
+    group_results: list[LearnPatternsGroupResult] | None = None
 
 
 class TestParseRequest(BaseModel):
@@ -376,67 +393,40 @@ def delete_group_patterns(group_id: int) -> dict:
 # =============================================================================
 
 
-@router.post("/learn", response_model=LearnPatternsResponse)
-def learn_patterns(request: LearnPatternsRequest):
-    """Learn regex patterns from a group's streams.
-
-    Fetches streams from Dispatcharr for the specified group,
-    analyzes their format patterns using AI, and saves learned
-    regex patterns to the database for fast future matching.
-    """
+def _learn_patterns_for_single_group(
+    group_id: int,
+    settings,
+    dispatcharr_conn,
+) -> LearnPatternsGroupResult:
+    """Learn patterns for a single group. Returns result dict."""
     from teamarr.database.ai_patterns import get_patterns_for_group
     from teamarr.database.groups import get_group
-    from teamarr.database.settings import get_ai_settings
-    from teamarr.dispatcharr import get_factory
     from teamarr.services.ai import AIClassifier, AIClassifierConfig
 
     with get_db() as conn:
-        group = get_group(conn, request.group_id)
+        group = get_group(conn, group_id)
         if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Group {request.group_id} not found",
+            return LearnPatternsGroupResult(
+                group_id=group_id,
+                group_name=f"Unknown ({group_id})",
+                success=False,
+                patterns_learned=0,
+                patterns=[],
+                coverage_percent=0.0,
+                error=f"Group {group_id} not found",
             )
 
-        settings = get_ai_settings(conn)
-
-    if not settings.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="AI is disabled. Enable it in settings first.",
-        )
-
-    if not settings.learn_patterns:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Pattern learning is disabled. Enable learn_patterns in settings.",
-        )
-
-    # Fetch streams from Dispatcharr
-    factory = get_factory(get_db)
-    if not factory:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dispatcharr not configured",
-        )
-
-    conn = factory.get_connection()
-    if not conn or not conn.m3u:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dispatcharr connection failed",
-        )
-
-    streams = conn.m3u.list_streams(
+    # Fetch streams
+    streams = dispatcharr_conn.m3u.list_streams(
         group_id=group.m3u_group_id,
         account_id=group.m3u_account_id,
     )
 
     if not streams:
-        return LearnPatternsResponse(
-            success=False,
-            group_id=request.group_id,
+        return LearnPatternsGroupResult(
+            group_id=group_id,
             group_name=group.name,
+            success=False,
             patterns_learned=0,
             patterns=[],
             coverage_percent=0.0,
@@ -450,12 +440,12 @@ def learn_patterns(request: LearnPatternsRequest):
         config = AIClassifierConfig(
             settings=settings,
             db_conn=db_conn,
-            group_id=request.group_id,
+            group_id=group_id,
         )
         classifier = AIClassifier(config)
 
         try:
-            learned = classifier.learn_patterns_for_group(stream_names, request.group_id)
+            learned = classifier.learn_patterns_for_group(stream_names, group_id)
 
             # Calculate coverage
             covered = 0
@@ -468,20 +458,20 @@ def learn_patterns(request: LearnPatternsRequest):
             coverage = (covered / len(stream_names)) * 100 if stream_names else 0
 
             # Get saved patterns from DB
-            saved_patterns = get_patterns_for_group(db_conn, request.group_id)
+            saved_patterns = get_patterns_for_group(db_conn, group_id)
 
             logger.info(
                 "[AI] Learned %d patterns for group %d (%s) - %.1f%% coverage",
                 len(learned),
-                request.group_id,
+                group_id,
                 group.name,
                 coverage,
             )
 
-            return LearnPatternsResponse(
-                success=True,
-                group_id=request.group_id,
+            return LearnPatternsGroupResult(
+                group_id=group_id,
                 group_name=group.name,
+                success=True,
                 patterns_learned=len(learned),
                 patterns=[
                     PatternResponse(
@@ -501,11 +491,11 @@ def learn_patterns(request: LearnPatternsRequest):
             )
 
         except Exception as e:
-            logger.exception("[AI] Pattern learning failed for group %d: %s", request.group_id, e)
-            return LearnPatternsResponse(
-                success=False,
-                group_id=request.group_id,
+            logger.exception("[AI] Pattern learning failed for group %d: %s", group_id, e)
+            return LearnPatternsGroupResult(
+                group_id=group_id,
                 group_name=group.name,
+                success=False,
                 patterns_learned=0,
                 patterns=[],
                 coverage_percent=0.0,
@@ -513,6 +503,88 @@ def learn_patterns(request: LearnPatternsRequest):
             )
         finally:
             classifier.close()
+
+
+@router.post("/learn", response_model=LearnPatternsResponse)
+def learn_patterns(request: LearnPatternsRequest):
+    """Learn regex patterns from group streams.
+
+    Supports both single group (group_id) and multiple groups (group_ids).
+    Fetches streams from Dispatcharr for specified groups,
+    analyzes their format patterns using AI, and saves learned
+    regex patterns to the database for fast future matching.
+    """
+    from teamarr.database.settings import get_ai_settings
+    from teamarr.dispatcharr import get_factory
+
+    # Determine which groups to process
+    group_ids = []
+    if request.group_ids:
+        group_ids = request.group_ids
+    elif request.group_id:
+        group_ids = [request.group_id]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either group_id or group_ids must be provided",
+        )
+
+    with get_db() as conn:
+        settings = get_ai_settings(conn)
+
+    if not settings.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI is disabled. Enable it in settings first.",
+        )
+
+    if not settings.learn_patterns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pattern learning is disabled. Enable learn_patterns in settings.",
+        )
+
+    # Get Dispatcharr connection
+    factory = get_factory(get_db)
+    if not factory:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dispatcharr not configured",
+        )
+
+    dispatcharr_conn = factory.get_connection()
+    if not dispatcharr_conn or not dispatcharr_conn.m3u:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dispatcharr connection failed",
+        )
+
+    # Process each group
+    group_results: list[LearnPatternsGroupResult] = []
+    for gid in group_ids:
+        result = _learn_patterns_for_single_group(gid, settings, dispatcharr_conn)
+        group_results.append(result)
+
+    # Aggregate results
+    total_patterns = sum(r.patterns_learned for r in group_results)
+    all_patterns = [p for r in group_results for p in r.patterns]
+    successful = [r for r in group_results if r.success]
+    avg_coverage = sum(r.coverage_percent for r in successful) / len(successful) if successful else 0.0
+    overall_success = len(successful) > 0
+
+    # Use first group for backwards compatibility
+    first_result = group_results[0] if group_results else None
+
+    return LearnPatternsResponse(
+        success=overall_success,
+        group_id=first_result.group_id if first_result else 0,
+        group_name=first_result.group_name if first_result else "",
+        patterns_learned=total_patterns,
+        patterns=all_patterns,
+        coverage_percent=avg_coverage,
+        error=None if overall_success else "Some groups failed",
+        group_results=group_results if len(group_ids) > 1 else None,
+    )
 
 
 # =============================================================================
@@ -543,6 +615,7 @@ def test_parse(request: TestParseRequest):
     ollama_config = OllamaConfig(
         base_url=settings.ollama_url,
         model=settings.model,
+        timeout=float(settings.timeout),
     )
     parser = AIStreamParser(ollama_config)
 
