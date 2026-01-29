@@ -13,6 +13,7 @@ This is the main entry point for event-based EPG generation.
 """
 
 import logging
+import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
@@ -62,7 +63,8 @@ from teamarr.utilities.xmltv import merge_xmltv_content, programmes_to_xmltv
 logger = logging.getLogger(__name__)
 
 # Number of parallel workers for event fetching
-MAX_WORKERS = 100
+# Configurable via ESPN_MAX_WORKERS for users with DNS throttling (PiHole, AdGuard)
+MAX_WORKERS = int(os.environ.get("ESPN_MAX_WORKERS", 100))
 
 
 @dataclass

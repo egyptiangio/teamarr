@@ -10,6 +10,7 @@ This is the main entry point for team-based EPG generation from the scheduler.
 """
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,8 +25,8 @@ from teamarr.services import SportsDataService, create_default_service
 from teamarr.utilities.xmltv import programmes_to_xmltv
 
 # Number of parallel workers for team processing
-# Keep low to avoid overwhelming ESPN API (each team = 30+ API calls)
-MAX_WORKERS = 10
+# Configurable via ESPN_MAX_WORKERS for users with DNS throttling (PiHole, AdGuard)
+MAX_WORKERS = int(os.environ.get("ESPN_MAX_WORKERS", 100))
 
 logger = logging.getLogger(__name__)
 

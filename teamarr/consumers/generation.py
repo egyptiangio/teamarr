@@ -57,6 +57,7 @@ class GenerationResult:
     deletions: dict = field(default_factory=dict)
     reconciliation: dict = field(default_factory=dict)
     cleanup: dict = field(default_factory=dict)
+    logo_cleanup: dict = field(default_factory=dict)
 
     # For stats run tracking
     run_id: int | None = None
@@ -564,6 +565,31 @@ def run_full_generation(
         except Exception as e:
             logger.warning("[CLEANUP] History cleanup failed: %s", e)
             result.cleanup = {"error": str(e)}
+
+        # Cleanup unused logos if enabled (part of step 7)
+        try:
+            from teamarr.database.settings import get_dispatcharr_settings
+
+            with db_factory() as conn:
+                dispatcharr_settings = get_dispatcharr_settings(conn)
+            if dispatcharr_settings.cleanup_unused_logos and dispatcharr_client:
+                update_progress("cleanup", 99, "Cleaning up unused logos...")
+                cleanup_result = dispatcharr_client.logos.cleanup_unused()
+                if cleanup_result.success:
+                    logos_deleted = (
+                        cleanup_result.data.get("deleted_count", 0)
+                        if cleanup_result.data
+                        else 0
+                    )
+                    result.logo_cleanup = {"deleted_count": logos_deleted}
+                    if logos_deleted > 0:
+                        logger.info("[CLEANUP] Removed %d unused logo(s)", logos_deleted)
+                else:
+                    logger.warning("[CLEANUP] Logo cleanup failed: %s", cleanup_result.error)
+                    result.logo_cleanup = {"error": cleanup_result.error}
+        except Exception as e:
+            logger.warning("[CLEANUP] Logo cleanup failed: %s", e)
+            result.logo_cleanup = {"error": str(e)}
 
         # Update stats run
         stats_run.programmes_total = result.programmes_total

@@ -1,19 +1,17 @@
 ---
-title: Integrations
+title: Dispatcharr Integration
 parent: Settings
 grand_parent: User Guide
 nav_order: 6
 ---
 
-# Integration Settings
+# Dispatcharr Integration
 
-Configure connections to external services.
+Configure connection to Dispatcharr for automatic channel management.
 
-## Dispatcharr Integration
+## Connection Settings
 
-Connect Teamarr to Dispatcharr for automatic channel management.
-
-### Connection Settings
+Server URL and credentials for connecting to Dispatcharr.
 
 | Field | Description |
 |-------|-------------|
@@ -35,11 +33,13 @@ A status badge shows the current connection state:
 | **Error** | Connection failed (hover for error details) |
 | **Not Configured** | Integration not yet set up |
 
-### EPG Source
+## EPG Source
 
 Select which EPG source in Dispatcharr to associate with Teamarr-managed channels.
 
-### Default Channel Profiles
+This links your Teamarr channels to a specific EPG source in Dispatcharr, ensuring the correct guide data is displayed.
+
+## Default Channel Profiles
 
 Select which channel profiles to assign to Teamarr-managed channels by default. Individual [event groups can override](../event-groups/creating-groups#channel-profiles) this setting.
 
@@ -47,7 +47,7 @@ Select which channel profiles to assign to Teamarr-managed channels by default. 
 - **None selected** - Channels don't appear in any profile
 - **Specific profiles** - Channels appear only in selected profiles
 
-#### Dynamic Wildcards
+### Dynamic Wildcards
 
 In addition to selecting specific profiles, you can use wildcards that dynamically create and assign profiles based on the event:
 
@@ -61,25 +61,11 @@ For example, selecting profiles `[1, {sport}]` would assign all channels to prof
 {: .note }
 Profile assignment is enforced on every EPG generation run. Wildcard profiles are created in Dispatcharr automatically if they don't exist.
 
-See [Dispatcharr Integration](../dispatcharr-integration) for setup details.
+## Logo Cleanup
 
-## Local Caching
+When enabled, removes **all** unused logos from Dispatcharr after EPG generation.
 
-Teamarr caches team and league data from ESPN and TheSportsDB to improve performance.
+{: .warning }
+This affects all unused logos in Dispatcharr, not just ones uploaded by Teamarr. Use with caution if you have manually uploaded logos that are not actively assigned to channels.
 
-### Cache Status
-
-View the current cache state:
-- Number of leagues and teams cached
-- Last refresh time and duration
-- Stale indicator if cache needs refresh
-
-### Refresh Cache
-
-Manually refresh the cache to pull the latest team and league data.
-
-## TheSportsDB API Key
-
-Optional premium API key for higher rate limits. The free tier works for most users.
-
-Get a premium key at [thesportsdb.com/pricing](https://www.thesportsdb.com/pricing).
+See [Dispatcharr Integration Guide](../dispatcharr-integration) for complete setup details.

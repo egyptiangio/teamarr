@@ -136,7 +136,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "events", label: "Event Groups" },
   { id: "channels", label: "Channel Management" },
   { id: "epg", label: "EPG Generation" },
-  { id: "integrations", label: "Integrations" },
+  { id: "integrations", label: "Dispatcharr" },
   { id: "advanced", label: "Advanced" },
 ]
 
@@ -279,6 +279,7 @@ export function Settings() {
         password: "", // Don't show masked password
         epg_id: settings.dispatcharr.epg_id,
         default_channel_profile_ids: settings.dispatcharr.default_channel_profile_ids,
+        cleanup_unused_logos: settings.dispatcharr.cleanup_unused_logos,
       })
       setLifecycle(settings.lifecycle)
       setScheduler(settings.scheduler)
@@ -365,6 +366,7 @@ export function Settings() {
         username: dispatcharr.username,
         epg_id: dispatcharr.epg_id,
         default_channel_profile_ids: profileIdsToSave,
+        cleanup_unused_logos: dispatcharr.cleanup_unused_logos,
       }
       if (dispatcharr.password) {
         data.password = dispatcharr.password
@@ -1788,19 +1790,20 @@ export function Settings() {
       </>
       )}
 
-      {/* Integrations Tab */}
+      {/* Dispatcharr Integration Tab */}
       {activeTab === "integrations" && (
       <>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold">Integrations</h2>
-        <p className="text-sm text-muted-foreground">Configure connections to external services</p>
+        <h2 className="text-lg font-semibold">Dispatcharr Integration</h2>
+        <p className="text-sm text-muted-foreground">Configure connection to Dispatcharr for channel management</p>
       </div>
+      {/* Card 1: Connection Settings */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Dispatcharr Integration</CardTitle>
-              <CardDescription>Configure connection to Dispatcharr for channel management</CardDescription>
+              <CardTitle>Connection Settings</CardTitle>
+              <CardDescription>Server URL and credentials</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button onClick={handleTestConnection} variant="outline" size="sm" disabled={testConnection.isPending}>
@@ -1841,7 +1844,7 @@ export function Settings() {
             </div>
           )}
 
-          {/* 1. Enable */}
+          {/* Enable */}
           <div className="flex items-center gap-2">
             <Switch
               checked={dispatcharr.enabled ?? false}
@@ -1850,7 +1853,7 @@ export function Settings() {
             <Label>Enable Dispatcharr Integration</Label>
           </div>
 
-          {/* 2. URL */}
+          {/* URL */}
           <div className="space-y-2">
             <Label htmlFor="dispatcharr-url">URL</Label>
             <Input
@@ -1861,7 +1864,7 @@ export function Settings() {
             />
           </div>
 
-          {/* 3. Credentials */}
+          {/* Credentials */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="dispatcharr-username">Username</Label>
@@ -1883,7 +1886,25 @@ export function Settings() {
             </div>
           </div>
 
-          {/* 4. EPG Source */}
+          {/* Save button */}
+          <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
+            {updateDispatcharr.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Card 2: EPG Source */}
+      <Card>
+        <CardHeader>
+          <CardTitle>EPG Source</CardTitle>
+          <CardDescription>Link channels to an EPG source in Dispatcharr</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="dispatcharr-epg">EPG Source</Label>
             <Select
@@ -1904,11 +1925,30 @@ export function Settings() {
                 </option>
               ))}
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Associate Teamarr-managed channels with this EPG source in Dispatcharr.
+            </p>
           </div>
 
-          {/* 5. Default Channel Profiles */}
+          <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
+            {updateDispatcharr.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Card 3: Default Channel Profiles */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Default Channel Profiles</CardTitle>
+          <CardDescription>Profiles assigned to new channels</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Default Channel Profiles</Label>
             <ChannelProfileSelector
               selectedIds={selectedProfileIds}
               onChange={setSelectedProfileIds}
@@ -1920,7 +1960,6 @@ export function Settings() {
             </p>
           </div>
 
-          {/* Save button */}
           <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
             {updateDispatcharr.isPending ? (
               <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -1931,6 +1970,48 @@ export function Settings() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Card 4: Logo Cleanup */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Logo Cleanup</CardTitle>
+          <CardDescription>Remove unused logos from Dispatcharr</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={dispatcharr.cleanup_unused_logos ?? false}
+                onCheckedChange={(checked) => setDispatcharr({ ...dispatcharr, cleanup_unused_logos: checked })}
+              />
+              <Label>Clean up unused logos after generation</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              When enabled, removes <strong>all</strong> unused logos from Dispatcharr after EPG generation.
+              This affects all unused logos, not just ones uploaded by Teamarr.
+            </p>
+          </div>
+
+          <Button onClick={handleSaveDispatcharr} disabled={updateDispatcharr.isPending}>
+            {updateDispatcharr.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+      </>
+      )}
+
+      {/* Advanced Tab */}
+      {activeTab === "advanced" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Advanced</h2>
+        <p className="text-sm text-muted-foreground">Advanced configuration options</p>
+      </div>
 
       <Card>
         <CardHeader>
@@ -2235,8 +2316,8 @@ export function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Advanced Settings</CardTitle>
-          <CardDescription>XMLTV generator metadata</CardDescription>
+          <CardTitle>XMLTV Generator Metadata</CardTitle>
+          <CardDescription>Customize XMLTV output file metadata</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

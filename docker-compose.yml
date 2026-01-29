@@ -18,3 +18,10 @@ services:
       # Log format: "text" or "json" (default: text)
       # Use "json" for log aggregation systems (ELK, Loki, Splunk)
       # - LOG_FORMAT=text
+
+      # ESPN API tuning (for users with DNS throttling from PiHole, AdGuard, etc.)
+      # Reduce these values if you experience timeouts or connection failures
+      # - ESPN_MAX_WORKERS=100       # Parallel workers for team/event processing
+      # - ESPN_MAX_CONNECTIONS=100   # HTTP connection pool size
+      # - ESPN_TIMEOUT=10            # Request timeout in seconds
+      # - ESPN_RETRY_COUNT=3         # Number of retry attempts

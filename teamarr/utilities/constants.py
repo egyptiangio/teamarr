@@ -538,15 +538,12 @@ EVENT_CARD_KEYWORDS: dict[str, list[str]] = {
         "boxing",
         "main event",
         "undercard",
-        "pbc",
         "premier boxing",
         "top rank",
         "matchroom",
         "dazn boxing",
         "showtime boxing",
         "golden boy",
-        "ppv",
-        "pay per view",
     ],
 }
 

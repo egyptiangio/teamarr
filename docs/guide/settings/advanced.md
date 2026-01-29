@@ -7,7 +7,39 @@ nav_order: 7
 
 # Advanced Settings
 
-XMLTV metadata, backup/restore, and update notifications.
+Local caching, API keys, XMLTV metadata, backup/restore, and update notifications.
+
+## Local Caching
+
+Teamarr caches team and league data from ESPN and TheSportsDB to improve performance and enable offline matching.
+
+### Cache Status
+
+View the current cache state:
+- **Leagues** - Number of leagues cached
+- **Teams** - Number of teams cached
+- **Last Refresh Duration** - How long the last refresh took
+- **Last Refresh** - When the cache was last updated
+
+A **Stale** badge appears if the cache needs refreshing.
+
+### Refresh Cache
+
+Manually refresh the cache to pull the latest team and league data. This fetches data from ESPN and TheSportsDB APIs.
+
+{: .note }
+Cache refresh runs automatically on first startup. Manual refresh is useful after adding new leagues or when team rosters change significantly.
+
+## TheSportsDB API Key
+
+Optional premium API key for higher rate limits on TheSportsDB.
+
+| Tier | Rate Limit | Result Limits |
+|------|------------|---------------|
+| **Free** | 30 requests/min | Lower |
+| **Premium** ($9/mo) | 100 requests/min | Higher |
+
+The free tier works for most users. Get a premium key at [thesportsdb.com/pricing](https://www.thesportsdb.com/pricing).
 
 ## XMLTV Generator Metadata
 

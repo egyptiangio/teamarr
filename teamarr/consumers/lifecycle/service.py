@@ -1517,13 +1517,8 @@ class ChannelLifecycleService:
                                 },
                             )
                             changes_made.append("logo updated")
-
-                            # Delete old logo if it existed
-                            if current_logo_id:
-                                try:
-                                    self._logo_manager.delete(current_logo_id)
-                                except Exception:
-                                    pass  # Ignore logo deletion failures
+                            # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
+                            # if cleanup_unused_logos setting is enabled
 
             elif stored_logo_url and self._logo_manager:
                 # Logo was removed from template - clear it
@@ -1543,13 +1538,8 @@ class ChannelLifecycleService:
                         },
                     )
                     changes_made.append("logo removed")
-
-                    # Delete old logo from Dispatcharr
-                    if current_logo_id:
-                        try:
-                            self._logo_manager.delete(current_logo_id)
-                        except Exception:
-                            pass  # Ignore logo deletion failures
+                    # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
+                    # if cleanup_unused_logos setting is enabled
 
             # Log changes if any
             if changes_made:
@@ -1619,7 +1609,8 @@ class ChannelLifecycleService:
     ) -> bool:
         """Delete a managed channel from Dispatcharr and mark as deleted in DB.
 
-        V1 Parity: Also deletes the channel's logo from Dispatcharr.
+        Note: Logos are cleaned up by Dispatcharr's bulk cleanup API if the
+        cleanup_unused_logos setting is enabled, not per-channel.
 
         Args:
             conn: Database connection
@@ -1638,15 +1629,6 @@ class ChannelLifecycleService:
         channel = get_managed_channel(conn, managed_channel_id)
         if not channel:
             return False
-
-        # Delete logo from Dispatcharr (V1 parity)
-        logo_id = getattr(channel, "dispatcharr_logo_id", None)
-        if self._logo_manager and logo_id:
-            try:
-                with self._dispatcharr_lock:
-                    self._logo_manager.delete(logo_id)
-            except Exception as e:
-                logger.debug("[LIFECYCLE] Failed to delete logo %s: %s", logo_id, e)
 
         # Delete channel from Dispatcharr
         if self._channel_manager and channel.dispatcharr_channel_id:

@@ -205,3 +205,38 @@ class LogoManager:
         if result.success and result.logo:
             return result.logo.get("id")
         return None
+
+    def cleanup_unused(self) -> OperationResult:
+        """Clean up all unused logos in Dispatcharr.
+
+        Calls Dispatcharr's native cleanup API which removes all logos
+        not currently assigned to any channel.
+
+        Note: This removes ALL unused logos, not just ones uploaded by Teamarr.
+
+        Returns:
+            OperationResult with success status and count of deleted logos
+        """
+        response = self._client.post("/api/channels/logos/cleanup/", {})
+
+        if response is None:
+            return OperationResult(
+                success=False,
+                error="No response from Dispatcharr",
+            )
+
+        if response.status_code in (200, 204):
+            # Clear our cache since logos may have been deleted
+            self.clear_cache()
+            data = response.json() if response.text else {}
+            deleted_count = data.get("deleted_count", 0)
+            logger.info("[LOGO] Cleaned up %d unused logos", deleted_count)
+            return OperationResult(
+                success=True,
+                data={"deleted_count": deleted_count},
+            )
+
+        return OperationResult(
+            success=False,
+            error=self._client.parse_api_error(response),
+        )

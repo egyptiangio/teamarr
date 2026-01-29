@@ -2,15 +2,40 @@
 
 Handles raw HTTP requests to ESPN endpoints.
 No data transformation - just fetch and return JSON.
+
+Configuration via environment variables:
+    ESPN_MAX_CONNECTIONS: Max concurrent connections (default: 100)
+    ESPN_TIMEOUT: Request timeout in seconds (default: 10)
+    ESPN_RETRY_COUNT: Number of retry attempts (default: 3)
 """
 
 import logging
+import os
+import random
 import threading
 import time
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Environment variable configuration with defaults
+# These allow users with DNS throttling (PiHole, AdGuard) to tune performance
+ESPN_MAX_CONNECTIONS = int(os.environ.get("ESPN_MAX_CONNECTIONS", 100))
+ESPN_TIMEOUT = float(os.environ.get("ESPN_TIMEOUT", 10.0))
+ESPN_RETRY_COUNT = int(os.environ.get("ESPN_RETRY_COUNT", 3))
+
+# Retry backoff configuration (ESPN-tuned)
+# ESPN is fast and reliable, so we use short delays with jitter
+RETRY_BASE_DELAY = 0.5  # Start at 500ms
+RETRY_MAX_DELAY = 10.0  # Cap at 10s (ESPN rarely needs more)
+RETRY_JITTER = 0.3  # ±30% randomization to prevent thundering herd
+
+# Rate limit (429) handling - reactive defense
+# ESPN rarely rate-limits, but we handle it gracefully if it happens
+RATE_LIMIT_BASE_DELAY = 5.0  # Start at 5s for 429s (more serious)
+RATE_LIMIT_MAX_DELAY = 60.0  # Cap at 60s
+RATE_LIMIT_MAX_RETRIES = 3  # Give up after 3 rate-limit retries
 
 ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 ESPN_CORE_URL = "http://sports.core.api.espn.com/v2/sports"
@@ -35,17 +60,25 @@ ESPN_TEAM_ID_CORRECTIONS: dict[tuple[str, str], str] = {
 
 
 class ESPNClient:
-    """Low-level ESPN API client."""
+    """Low-level ESPN API client.
+
+    Connection pool is configured to maximize keepalive connections, reducing
+    DNS lookups. This helps users with rate-limited DNS (PiHole, AdGuard).
+
+    All settings can be tuned via environment variables for constrained environments.
+    """
 
     def __init__(
         self,
-        timeout: float = 15.0,
-        retry_count: int = 3,
-        retry_delay: float = 1.0,
+        timeout: float | None = None,
+        retry_count: int | None = None,
+        max_connections: int | None = None,
     ):
-        self._timeout = timeout
-        self._retry_count = retry_count
-        self._retry_delay = retry_delay
+        self._timeout = timeout if timeout is not None else ESPN_TIMEOUT
+        self._retry_count = retry_count if retry_count is not None else ESPN_RETRY_COUNT
+        self._max_connections = (
+            max_connections if max_connections is not None else ESPN_MAX_CONNECTIONS
+        )
         self._client: httpx.Client | None = None
         self._lock = threading.Lock()
 
@@ -54,36 +87,106 @@ class ESPNClient:
             with self._lock:
                 # Double-check after acquiring lock
                 if self._client is None:
+                    # Set keepalive = max_connections to maximize connection reuse
+                    # This reduces DNS lookups, helping users with DNS throttling
                     self._client = httpx.Client(
                         timeout=self._timeout,
-                        # Limit concurrent connections to avoid overwhelming ESPN API
-                        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                        limits=httpx.Limits(
+                            max_connections=self._max_connections,
+                            max_keepalive_connections=self._max_connections,
+                        ),
                     )
         return self._client
 
+    def _calculate_delay(self, attempt: int) -> float:
+        """Calculate retry delay with exponential backoff and jitter.
+
+        ESPN-tuned: short base delay (0.5s) since ESPN is fast,
+        with jitter to prevent thundering herd when multiple
+        parallel requests retry simultaneously.
+
+        Args:
+            attempt: Zero-based attempt number (0, 1, 2...)
+
+        Returns:
+            Delay in seconds with jitter applied
+        """
+        # Exponential backoff: 0.5, 1, 2, 4... capped at 10s
+        base_delay = RETRY_BASE_DELAY * (2**attempt)
+        capped = min(base_delay, RETRY_MAX_DELAY)
+        # Add jitter: ±30% randomization
+        jitter = capped * RETRY_JITTER * (2 * random.random() - 1)
+        return max(0.1, capped + jitter)  # Minimum 100ms
+
     def _request(self, url: str, params: dict | None = None) -> dict | None:
-        """Make HTTP request with retry logic."""
-        for attempt in range(self._retry_count):
+        """Make HTTP request with retry logic.
+
+        Uses exponential backoff with jitter for resilience against
+        transient failures and DNS throttling. Handles 429 rate limits
+        with longer backoff and Retry-After header support.
+        """
+        rate_limit_retries = 0
+
+        for attempt in range(self._retry_count + RATE_LIMIT_MAX_RETRIES):
             try:
                 client = self._get_client()
                 response = client.get(url, params=params)
+
+                # Handle 429 rate limit separately with longer backoff
+                if response.status_code == 429:
+                    rate_limit_retries += 1
+                    if rate_limit_retries > RATE_LIMIT_MAX_RETRIES:
+                        logger.error(
+                            "[ESPN] Rate limit (429) persisted after %d retries for %s",
+                            RATE_LIMIT_MAX_RETRIES,
+                            url,
+                        )
+                        return None
+
+                    # Respect Retry-After header if present
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            delay = min(float(retry_after), RATE_LIMIT_MAX_DELAY)
+                        except ValueError:
+                            delay = RATE_LIMIT_BASE_DELAY * (2 ** (rate_limit_retries - 1))
+                    else:
+                        delay = min(
+                            RATE_LIMIT_BASE_DELAY * (2 ** (rate_limit_retries - 1)),
+                            RATE_LIMIT_MAX_DELAY,
+                        )
+
+                    logger.warning(
+                        "[ESPN] Rate limited (429). Retry %d/%d in %.1fs for %s",
+                        rate_limit_retries,
+                        RATE_LIMIT_MAX_RETRIES,
+                        delay,
+                        url,
+                    )
+                    time.sleep(delay)
+                    continue
+
                 response.raise_for_status()
                 logger.debug("[FETCH] %s", url.split("/sports/")[-1] if "/sports/" in url else url)
                 return response.json()
+
             except httpx.HTTPStatusError as e:
                 logger.warning("[ESPN] HTTP %d for %s", e.response.status_code, url)
                 if attempt < self._retry_count - 1:
-                    time.sleep(self._retry_delay * (attempt + 1))
+                    delay = self._calculate_delay(attempt)
+                    time.sleep(delay)
                     continue
                 return None
             except (httpx.RequestError, RuntimeError, OSError) as e:
                 # RuntimeError: "Cannot send a request, as the client has been closed"
                 # OSError: "Bad file descriptor" from stale connections
+                # httpx.RequestError: DNS failures, connection refused, etc.
                 logger.warning("[ESPN] Request failed for %s: %s", url, e)
                 # Don't reset client here - causes race conditions in parallel processing
                 # httpx connection pool handles stale connections automatically
                 if attempt < self._retry_count - 1:
-                    time.sleep(self._retry_delay * (attempt + 1))
+                    delay = self._calculate_delay(attempt)
+                    time.sleep(delay)
                     continue
                 return None
 

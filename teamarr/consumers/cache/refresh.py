@@ -4,6 +4,7 @@ Refreshes team and league cache from all registered providers.
 """
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,7 +31,9 @@ class CacheRefresher:
     """Refreshes team and league cache from providers."""
 
     # Max parallel requests
-    MAX_WORKERS = 50
+    # Configurable via ESPN_MAX_WORKERS for users with DNS throttling (PiHole, AdGuard)
+    # Default is 50 (lower than team/event processors due to more API calls per league)
+    MAX_WORKERS = int(os.environ.get("ESPN_MAX_WORKERS", 50))
     # Update progress every N leagues
     PROGRESS_UPDATE_INTERVAL = 5
 

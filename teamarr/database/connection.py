@@ -1069,6 +1069,19 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
         current_version = 44
 
+    # ==========================================================================
+    # v45: Logo Cleanup Setting
+    # ==========================================================================
+    # Adds cleanup_unused_logos setting to call Dispatcharr's bulk cleanup API
+    # after EPG generation instead of per-channel logo deletion
+    if current_version < 45:
+        _add_column_if_not_exists(
+            conn, "settings", "cleanup_unused_logos", "BOOLEAN DEFAULT 0"
+        )
+        conn.execute("UPDATE settings SET schema_version = 45 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 45 (logo cleanup setting)")
+        current_version = 45
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS

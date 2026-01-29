@@ -10,6 +10,8 @@ export interface DispatcharrSettings {
   // null = all profiles (default), [] = no profiles, [1,2,...] = specific profiles
   // Can include wildcards: "{sport}", "{league}"
   default_channel_profile_ids: (number | string)[] | null
+  // Clean up ALL unused logos in Dispatcharr after generation
+  cleanup_unused_logos: boolean
 }
 
 export interface LifecycleSettings {
