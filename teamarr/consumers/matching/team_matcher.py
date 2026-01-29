@@ -563,15 +563,17 @@ class TeamMatcher:
                     best_time_distance = time_distance
 
         if best_match:
+            # Override method to AI if stream was AI-classified
+            final_method = MatchMethod.AI if ctx.classified.ai_classified else best_method
             logger.debug(
                 "[MATCHED] stream_id=%d method=%s event=%s confidence=%.0f%%",
                 ctx.stream_id,
-                best_method.value,
+                final_method.value,
                 best_match.id,
                 best_confidence,
             )
             return MatchOutcome.matched(
-                best_method,
+                final_method,
                 best_match,
                 detected_league=league,
                 confidence=best_confidence / 100.0,  # Convert to 0-1
@@ -725,16 +727,18 @@ class TeamMatcher:
                     best_time_distance = time_distance
 
         if best_match and best_league:
+            # Override method to AI if stream was AI-classified
+            final_method = MatchMethod.AI if ctx.classified.ai_classified else best_method
             logger.debug(
                 "[MATCHED] stream_id=%d method=%s event=%s league=%s confidence=%.0f%%",
                 ctx.stream_id,
-                best_method.value,
+                final_method.value,
                 best_match.id,
                 best_league,
                 best_confidence,
             )
             return MatchOutcome.matched(
-                best_method,
+                final_method,
                 best_match,
                 detected_league=best_league,
                 confidence=best_confidence / 100.0,

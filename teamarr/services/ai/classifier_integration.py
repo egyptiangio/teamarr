@@ -192,6 +192,7 @@ class AIClassifier:
             league_hint=league_hint,
             sport_hint=sport_hint,
             custom_regex_used=(source == "ai_pattern"),
+            ai_classified=True,  # Mark as AI-classified
         )
 
         logger.debug(
@@ -281,6 +282,7 @@ class AIClassifier:
             league_hint=league_hint,
             sport_hint=sport_hint,
             custom_regex_used=True,  # Mark as custom regex (AI-learned pattern)
+            ai_classified=True,  # Mark as AI-classified
         )
 
         # Update pattern stats

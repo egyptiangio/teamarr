@@ -65,6 +65,9 @@ class ClassifiedStream:
     # Track if custom regex was used
     custom_regex_used: bool = False
 
+    # Track if AI classification was used
+    ai_classified: bool = False
+
 
 @dataclass
 class CustomRegexConfig:

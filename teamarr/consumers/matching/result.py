@@ -131,6 +131,9 @@ class MatchMethod(Enum):
     # Direct assignment (single-league groups)
     DIRECT = "direct"  # Group has single assigned league
 
+    # AI-powered matching
+    AI = "ai"  # Matched via AI-learned pattern or AI parsing
+
 
 # =============================================================================
 # EXCLUDED REASONS - Matched but excluded by lifecycle timing

@@ -92,6 +92,48 @@ Focus on STRUCTURE, not content. Two streams have the same format if:
 - Same prefix/suffix patterns"""
 
 
+def _sanitize_regex(regex: str) -> str:
+    """Clean up AI-generated regex to make it usable.
+
+    Removes common AI formatting artifacts like:
+    - r"..." raw string notation
+    - Code block markers (```python ... ```)
+    - Extra whitespace
+    - Python string quotes
+    """
+    # Strip whitespace
+    regex = regex.strip()
+
+    # Remove code block markers
+    if regex.startswith("```"):
+        # Remove opening ```python or ```
+        lines = regex.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        # Remove closing ```
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        regex = "\n".join(lines).strip()
+
+    # Remove Python raw string notation (r"..." or r'...')
+    if regex.startswith('r"') and regex.endswith('"'):
+        regex = regex[2:-1]
+    elif regex.startswith("r'") and regex.endswith("'"):
+        regex = regex[2:-1]
+    # Remove regular string quotes
+    elif regex.startswith('"') and regex.endswith('"'):
+        regex = regex[1:-1]
+    elif regex.startswith("'") and regex.endswith("'"):
+        regex = regex[1:-1]
+
+    # Unescape double-escaped backslashes (common in JSON responses)
+    # Only do this if it looks over-escaped
+    if "\\\\d" in regex or "\\\\s" in regex or "\\\\w" in regex:
+        regex = regex.replace("\\\\", "\\")
+
+    return regex
+
+
 class PatternLearner:
     """Learn regex patterns from stream examples using AI."""
 
@@ -125,6 +167,10 @@ class PatternLearner:
         if not regex:
             logger.warning("[AI] No regex in response")
             return None
+
+        # Sanitize AI-generated regex (remove code blocks, Python string notation, etc.)
+        regex = _sanitize_regex(regex)
+        logger.debug("[AI] Sanitized regex: %s", regex[:100])
 
         # Validate the regex
         try:
