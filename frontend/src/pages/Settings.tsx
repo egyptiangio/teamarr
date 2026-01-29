@@ -245,13 +245,27 @@ export function Settings() {
   const testParseMutation = useTestParse()
   const [aiSettings, setAISettings] = useState<AISettings>({
     enabled: false,
-    ollama_url: "http://localhost:11434",
-    model: "qwen2.5:7b",
-    use_for_parsing: true,
-    use_for_matching: false,
+    providers: {
+      ollama: { enabled: false, url: "http://localhost:11434", model: "qwen2.5:7b", timeout: 180 },
+      openai: { enabled: false, api_key: "", model: "gpt-4o-mini", timeout: 60, organization: "" },
+      anthropic: { enabled: false, api_key: "", model: "claude-3-5-sonnet-20241022", timeout: 60 },
+      grok: { enabled: false, api_key: "", model: "grok-2-latest", timeout: 60 },
+    },
+    task_assignments: {
+      pattern_learning: "ollama",
+      stream_parsing: "ollama",
+      event_cards: "ollama",
+      team_matching: "ollama",
+      description_gen: "ollama",
+    },
     batch_size: 10,
     learn_patterns: true,
     fallback_to_regex: true,
+    ollama_url: "http://localhost:11434",
+    model: "qwen2.5:7b",
+    timeout: 180,
+    use_for_parsing: true,
+    use_for_matching: false,
   })
   const [testStreams, setTestStreams] = useState("")
   const [editingKeyword, setEditingKeyword] = useState<{ id: number; label: string; match_terms: string } | null>(null)

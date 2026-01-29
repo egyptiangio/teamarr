@@ -419,26 +419,95 @@ export async function checkForUpdates(force: boolean = false): Promise<UpdateInf
 }
 
 // AI Settings Types
+// Provider configuration types
+export interface OllamaProviderConfig {
+  enabled: boolean
+  url: string
+  model: string
+  timeout: number
+}
+
+export interface OpenAIProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+  organization: string
+}
+
+export interface AnthropicProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface GrokProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface AIProvidersConfig {
+  ollama: OllamaProviderConfig
+  openai: OpenAIProviderConfig
+  anthropic: AnthropicProviderConfig
+  grok: GrokProviderConfig
+}
+
+export interface AITaskAssignments {
+  pattern_learning: string
+  stream_parsing: string
+  event_cards: string
+  team_matching: string
+  description_gen: string
+}
+
+// AI task types for display
+export const AI_TASKS = [
+  { key: "pattern_learning", label: "Pattern Learning", description: "Learning regex patterns from streams" },
+  { key: "stream_parsing", label: "Stream Parsing", description: "Parsing individual stream names" },
+  { key: "event_cards", label: "Event Cards", description: "Generating event group summaries (future)" },
+  { key: "team_matching", label: "Team Matching", description: "AI-assisted team matching (future)" },
+  { key: "description_gen", label: "Description Generation", description: "Programme descriptions (future)" },
+] as const
+
+export const AI_PROVIDERS = [
+  { key: "ollama", label: "Ollama (Local)" },
+  { key: "openai", label: "OpenAI (ChatGPT)" },
+  { key: "anthropic", label: "Anthropic (Claude)" },
+  { key: "grok", label: "xAI (Grok)" },
+] as const
+
 export interface AISettings {
   enabled: boolean
-  ollama_url: string
-  model: string
-  use_for_parsing: boolean
-  use_for_matching: boolean
+  providers: AIProvidersConfig
+  task_assignments: AITaskAssignments
   batch_size: number
   learn_patterns: boolean
   fallback_to_regex: boolean
+  // Legacy fields for backwards compatibility
+  ollama_url: string
+  model: string
+  timeout: number
+  use_for_parsing: boolean
+  use_for_matching: boolean
 }
 
 export interface AISettingsUpdate {
   enabled?: boolean
-  ollama_url?: string
-  model?: string
-  use_for_parsing?: boolean
-  use_for_matching?: boolean
+  providers?: AIProvidersConfig
+  task_assignments?: AITaskAssignments
   batch_size?: number
   learn_patterns?: boolean
   fallback_to_regex?: boolean
+  // Legacy fields
+  ollama_url?: string
+  model?: string
+  timeout?: number
+  use_for_parsing?: boolean
+  use_for_matching?: boolean
 }
 
 export interface AIStatus {

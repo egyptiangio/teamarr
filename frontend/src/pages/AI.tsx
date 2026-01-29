@@ -39,9 +39,18 @@ import { useGroups } from "@/hooks/useGroups"
 // Format seconds as "Xm Ys" or "Xs"
 function formatETA(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
-  const mins = Math.floor(seconds / 60)
+  if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
+  }
+  // Hours
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
   const secs = seconds % 60
-  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
+  if (mins === 0 && secs === 0) return `${hours}h`
+  if (secs === 0) return `${hours}h ${mins}m`
+  return `${hours}h ${mins}m ${secs}s`
 }
 
 // API functions for pattern management

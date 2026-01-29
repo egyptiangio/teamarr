@@ -518,7 +518,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn, "settings", "startup_cache_max_age_days", "INTEGER DEFAULT 1"
     )
 
-    # AI/Ollama settings
+    # AI/Ollama settings (legacy flat fields for backwards compatibility)
     _add_column_if_not_exists(conn, "settings", "ai_enabled", "BOOLEAN DEFAULT 0")
     _add_column_if_not_exists(conn, "settings", "ai_ollama_url", "TEXT DEFAULT 'http://localhost:11434'")
     _add_column_if_not_exists(conn, "settings", "ai_model", "TEXT DEFAULT 'qwen2.5:7b'")
@@ -528,6 +528,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _add_column_if_not_exists(conn, "settings", "ai_batch_size", "INTEGER DEFAULT 10")
     _add_column_if_not_exists(conn, "settings", "ai_learn_patterns", "BOOLEAN DEFAULT 1")
     _add_column_if_not_exists(conn, "settings", "ai_fallback_to_regex", "BOOLEAN DEFAULT 1")
+    # Multi-provider AI settings (JSON-encoded)
+    _add_column_if_not_exists(conn, "settings", "ai_providers_config", "TEXT")  # JSON: {ollama: {...}, openai: {...}, ...}
+    _add_column_if_not_exists(conn, "settings", "ai_task_assignments", "TEXT")  # JSON: {pattern_learning: "ollama", ...}
 
     # AI patterns table
     from teamarr.database.ai_patterns import init_ai_tables

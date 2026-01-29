@@ -36,32 +36,105 @@ class AIStatusResponse(BaseModel):
     error: str | None = None
 
 
-class AISettingsResponse(BaseModel):
-    """AI settings."""
+# Provider configuration models
+class OllamaProviderConfig(BaseModel):
+    """Ollama provider configuration."""
+    enabled: bool = False
+    url: str = "http://localhost:11434"
+    model: str = "qwen2.5:7b"
+    timeout: int = Field(180, ge=30, le=600)
 
+
+class OpenAIProviderConfig(BaseModel):
+    """OpenAI provider configuration."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "gpt-4o-mini"
+    timeout: int = Field(60, ge=30, le=300)
+    organization: str = ""
+
+
+class AnthropicProviderConfig(BaseModel):
+    """Anthropic provider configuration."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "claude-3-5-sonnet-20241022"
+    timeout: int = Field(60, ge=30, le=300)
+
+
+class GrokProviderConfig(BaseModel):
+    """Grok provider configuration."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "grok-2-latest"
+    timeout: int = Field(60, ge=30, le=300)
+
+
+class AITaskAssignmentsConfig(BaseModel):
+    """Task-to-provider assignments."""
+    pattern_learning: str = "ollama"
+    stream_parsing: str = "ollama"
+    event_cards: str = "ollama"
+    team_matching: str = "ollama"
+    description_gen: str = "ollama"
+
+
+class AIProvidersConfig(BaseModel):
+    """All provider configurations."""
+    ollama: OllamaProviderConfig = Field(default_factory=OllamaProviderConfig)
+    openai: OpenAIProviderConfig = Field(default_factory=OpenAIProviderConfig)
+    anthropic: AnthropicProviderConfig = Field(default_factory=AnthropicProviderConfig)
+    grok: GrokProviderConfig = Field(default_factory=GrokProviderConfig)
+
+
+class AISettingsResponse(BaseModel):
+    """AI settings with multi-provider support."""
+
+    # Master toggle
     enabled: bool
-    ollama_url: str
-    model: str
-    timeout: int
-    use_for_parsing: bool
-    use_for_matching: bool
+
+    # Provider configurations
+    providers: AIProvidersConfig
+
+    # Task assignments
+    task_assignments: AITaskAssignmentsConfig
+
+    # General settings
     batch_size: int
     learn_patterns: bool
     fallback_to_regex: bool
 
+    # Legacy fields for backwards compatibility
+    ollama_url: str  # Maps to providers.ollama.url
+    model: str  # Maps to providers.ollama.model
+    timeout: int  # Maps to providers.ollama.timeout
+    use_for_parsing: bool  # Derived from enabled + ollama.enabled
+    use_for_matching: bool  # Currently unused
+
 
 class AISettingsUpdate(BaseModel):
-    """Update AI settings request."""
+    """Update AI settings request - supports both legacy and new format."""
 
+    # Master toggle
     enabled: bool | None = None
-    ollama_url: str | None = None
-    model: str | None = None
-    timeout: int | None = Field(None, ge=30, le=600)  # 30s to 10min
-    use_for_parsing: bool | None = None
-    use_for_matching: bool | None = None
+
+    # Provider configurations (new format)
+    providers: AIProvidersConfig | None = None
+
+    # Task assignments (new format)
+    task_assignments: AITaskAssignmentsConfig | None = None
+
+    # General settings
     batch_size: int | None = Field(None, ge=1, le=50)
     learn_patterns: bool | None = None
     fallback_to_regex: bool | None = None
+
+    # Legacy fields (for backwards compatibility)
+    ollama_url: str | None = None
+    model: str | None = None
+    timeout: int | None = Field(None, ge=30, le=600)
+    use_for_parsing: bool | None = None
+    use_for_matching: bool | None = None
 
 
 class PatternResponse(BaseModel):
@@ -193,54 +266,123 @@ def get_ai_status():
         classifier.close()
 
 
+def _settings_to_response(settings) -> AISettingsResponse:
+    """Convert AISettings to response model."""
+    return AISettingsResponse(
+        enabled=settings.enabled,
+        providers=AIProvidersConfig(
+            ollama=OllamaProviderConfig(
+                enabled=settings.ollama.enabled,
+                url=settings.ollama.url,
+                model=settings.ollama.model,
+                timeout=settings.ollama.timeout,
+            ),
+            openai=OpenAIProviderConfig(
+                enabled=settings.openai.enabled,
+                api_key=settings.openai.api_key,
+                model=settings.openai.model,
+                timeout=settings.openai.timeout,
+                organization=settings.openai.organization,
+            ),
+            anthropic=AnthropicProviderConfig(
+                enabled=settings.anthropic.enabled,
+                api_key=settings.anthropic.api_key,
+                model=settings.anthropic.model,
+                timeout=settings.anthropic.timeout,
+            ),
+            grok=GrokProviderConfig(
+                enabled=settings.grok.enabled,
+                api_key=settings.grok.api_key,
+                model=settings.grok.model,
+                timeout=settings.grok.timeout,
+            ),
+        ),
+        task_assignments=AITaskAssignmentsConfig(
+            pattern_learning=settings.task_assignments.pattern_learning,
+            stream_parsing=settings.task_assignments.stream_parsing,
+            event_cards=settings.task_assignments.event_cards,
+            team_matching=settings.task_assignments.team_matching,
+            description_gen=settings.task_assignments.description_gen,
+        ),
+        batch_size=settings.batch_size,
+        learn_patterns=settings.learn_patterns,
+        fallback_to_regex=settings.fallback_to_regex,
+        # Legacy fields
+        ollama_url=settings.ollama.url,
+        model=settings.ollama.model,
+        timeout=settings.ollama.timeout,
+        use_for_parsing=settings.enabled and settings.ollama.enabled,
+        use_for_matching=False,
+    )
+
+
 @router.get("/settings", response_model=AISettingsResponse)
 def get_settings():
-    """Get current AI settings."""
+    """Get current AI settings with multi-provider support."""
     from teamarr.database.settings import get_ai_settings
 
     with get_db() as conn:
         settings = get_ai_settings(conn)
 
-    return AISettingsResponse(
-        enabled=settings.enabled,
-        ollama_url=settings.ollama_url,
-        model=settings.model,
-        timeout=settings.timeout,
-        use_for_parsing=settings.use_for_parsing,
-        use_for_matching=settings.use_for_matching,
-        batch_size=settings.batch_size,
-        learn_patterns=settings.learn_patterns,
-        fallback_to_regex=settings.fallback_to_regex,
-    )
+    return _settings_to_response(settings)
 
 
 @router.put("/settings", response_model=AISettingsResponse)
 def update_settings(request: AISettingsUpdate):
-    """Update AI settings."""
+    """Update AI settings - supports both legacy and new provider format."""
     from teamarr.database.settings import get_ai_settings, update_ai_settings
 
     with get_db() as conn:
-        # Only update provided fields
-        updates = {k: v for k, v in request.model_dump().items() if v is not None}
+        # Prepare update kwargs
+        update_kwargs = {}
 
-        if updates:
-            update_ai_settings(conn, **updates)
+        # Handle master toggle
+        if request.enabled is not None:
+            update_kwargs["enabled"] = request.enabled
+
+        # Handle general settings
+        if request.batch_size is not None:
+            update_kwargs["batch_size"] = request.batch_size
+        if request.learn_patterns is not None:
+            update_kwargs["learn_patterns"] = request.learn_patterns
+        if request.fallback_to_regex is not None:
+            update_kwargs["fallback_to_regex"] = request.fallback_to_regex
+
+        # Handle legacy fields (map to ollama)
+        if request.ollama_url is not None:
+            update_kwargs["ollama_url"] = request.ollama_url
+        if request.model is not None:
+            update_kwargs["model"] = request.model
+        if request.timeout is not None:
+            update_kwargs["timeout"] = request.timeout
+
+        # Handle new provider configs
+        if request.providers is not None:
+            providers_config = {
+                "ollama": request.providers.ollama.model_dump(),
+                "openai": request.providers.openai.model_dump(),
+                "anthropic": request.providers.anthropic.model_dump(),
+                "grok": request.providers.grok.model_dump(),
+            }
+            update_kwargs["providers_config"] = providers_config
+
+            # Also sync legacy fields from ollama config
+            update_kwargs["ollama_url"] = request.providers.ollama.url
+            update_kwargs["model"] = request.providers.ollama.model
+            update_kwargs["timeout"] = request.providers.ollama.timeout
+
+        # Handle task assignments
+        if request.task_assignments is not None:
+            update_kwargs["task_assignments"] = request.task_assignments.model_dump()
+
+        if update_kwargs:
+            update_ai_settings(conn, **update_kwargs)
 
         settings = get_ai_settings(conn)
 
-    logger.info("[AI] Settings updated: %s", list(updates.keys()))
+    logger.info("[AI] Settings updated: %s", list(update_kwargs.keys()))
 
-    return AISettingsResponse(
-        enabled=settings.enabled,
-        ollama_url=settings.ollama_url,
-        model=settings.model,
-        timeout=settings.timeout,
-        use_for_parsing=settings.use_for_parsing,
-        use_for_matching=settings.use_for_matching,
-        batch_size=settings.batch_size,
-        learn_patterns=settings.learn_patterns,
-        fallback_to_regex=settings.fallback_to_regex,
-    )
+    return _settings_to_response(settings)
 
 
 # =============================================================================

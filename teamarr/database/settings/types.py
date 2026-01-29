@@ -211,19 +211,133 @@ class ChannelNumberingSettings:
     sort_by: str = "time"  # 'sport_league_time', 'time', 'stream_order'
 
 
+# =============================================================================
+# AI PROVIDER SETTINGS
+# =============================================================================
+
+
 @dataclass
-class AISettings:
-    """AI/Ollama integration settings."""
+class OllamaProviderSettings:
+    """Ollama (local) provider settings."""
 
     enabled: bool = False
-    ollama_url: str = "http://localhost:11434"
+    url: str = "http://localhost:11434"
     model: str = "qwen2.5:7b"
-    timeout: int = 180  # Request timeout in seconds (pattern learning can take time)
-    use_for_parsing: bool = True  # Use AI for stream parsing
-    use_for_matching: bool = False  # Use AI for team matching (experimental)
+    timeout: int = 180
+
+
+@dataclass
+class OpenAIProviderSettings:
+    """OpenAI (ChatGPT) provider settings."""
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "gpt-4o-mini"
+    timeout: int = 60
+    # Organization ID (optional)
+    organization: str = ""
+
+
+@dataclass
+class AnthropicProviderSettings:
+    """Anthropic (Claude) provider settings."""
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "claude-3-5-sonnet-20241022"
+    timeout: int = 60
+
+
+@dataclass
+class GrokProviderSettings:
+    """xAI (Grok) provider settings."""
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "grok-2-latest"
+    timeout: int = 60
+
+
+# AI Task types - used for task-to-provider assignment
+AI_TASKS = [
+    "pattern_learning",  # Learning regex patterns from streams
+    "stream_parsing",    # Parsing individual streams with AI
+    "event_cards",       # Generating event group cards (future)
+    "team_matching",     # AI-assisted team matching (future)
+    "description_gen",   # Generating programme descriptions (future)
+]
+
+# Default provider for each task
+DEFAULT_TASK_PROVIDERS = {
+    "pattern_learning": "ollama",
+    "stream_parsing": "ollama",
+    "event_cards": "ollama",
+    "team_matching": "ollama",
+    "description_gen": "ollama",
+}
+
+
+@dataclass
+class AITaskAssignments:
+    """Maps AI tasks to their assigned provider."""
+
+    pattern_learning: str = "ollama"
+    stream_parsing: str = "ollama"
+    event_cards: str = "ollama"
+    team_matching: str = "ollama"
+    description_gen: str = "ollama"
+
+
+@dataclass
+class AISettings:
+    """AI integration settings with multi-provider support.
+
+    Supports multiple AI providers:
+    - ollama: Local Ollama instance (free, private)
+    - openai: OpenAI API (ChatGPT)
+    - anthropic: Anthropic API (Claude)
+    - grok: xAI API (Grok)
+
+    Each task can be assigned to a specific provider via task_assignments.
+    """
+
+    # Master toggle
+    enabled: bool = False
+
+    # Provider configurations
+    ollama: OllamaProviderSettings = field(default_factory=OllamaProviderSettings)
+    openai: OpenAIProviderSettings = field(default_factory=OpenAIProviderSettings)
+    anthropic: AnthropicProviderSettings = field(default_factory=AnthropicProviderSettings)
+    grok: GrokProviderSettings = field(default_factory=GrokProviderSettings)
+
+    # Task-to-provider assignments
+    task_assignments: AITaskAssignments = field(default_factory=AITaskAssignments)
+
+    # General settings (apply to all providers)
     batch_size: int = 10  # Streams per AI batch call
     learn_patterns: bool = True  # Learn regex patterns from AI results
     fallback_to_regex: bool = True  # Fall back to built-in regex if AI fails
+
+    # Legacy fields for backwards compatibility (mapped to ollama provider)
+    @property
+    def ollama_url(self) -> str:
+        return self.ollama.url
+
+    @property
+    def model(self) -> str:
+        return self.ollama.model
+
+    @property
+    def timeout(self) -> int:
+        return self.ollama.timeout
+
+    @property
+    def use_for_parsing(self) -> bool:
+        return self.enabled and self.ollama.enabled
+
+    @property
+    def use_for_matching(self) -> bool:
+        return False  # Experimental, not yet implemented
 
 
 @dataclass
