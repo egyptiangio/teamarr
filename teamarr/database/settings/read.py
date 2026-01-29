@@ -179,16 +179,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             rules=_parse_stream_ordering_rules(row["stream_ordering_rules"])
         ),
         update_check=_build_update_check_settings(row),
-        ai=AISettings(
-            enabled=bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False,
-            ollama_url=row["ai_ollama_url"] or "http://localhost:11434",
-            model=row["ai_model"] or "qwen2.5:7b",
-            use_for_parsing=bool(row["ai_use_for_parsing"]) if row["ai_use_for_parsing"] is not None else True,
-            use_for_matching=bool(row["ai_use_for_matching"]) if row["ai_use_for_matching"] is not None else False,
-            batch_size=row["ai_batch_size"] or 10,
-            learn_patterns=bool(row["ai_learn_patterns"]) if row["ai_learn_patterns"] is not None else True,
-            fallback_to_regex=bool(row["ai_fallback_to_regex"]) if row["ai_fallback_to_regex"] is not None else True,
-        ),
+        ai=_build_ai_settings(row),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
     )
@@ -529,27 +520,8 @@ def get_update_check_settings(conn: Connection) -> UpdateCheckSettings:
     return _build_update_check_settings(row)
 
 
-def get_ai_settings(conn: Connection) -> AISettings:
-    """Get AI integration settings with multi-provider support.
-
-    Args:
-        conn: Database connection
-
-    Returns:
-        AISettings object with AI configuration for all providers
-    """
-    cursor = conn.execute(
-        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_timeout,
-                  ai_use_for_parsing, ai_use_for_matching, ai_batch_size,
-                  ai_learn_patterns, ai_fallback_to_regex,
-                  ai_providers_config, ai_task_assignments
-           FROM settings WHERE id = 1"""
-    )
-    row = cursor.fetchone()
-
-    if not row:
-        return AISettings()
-
+def _build_ai_settings(row) -> AISettings:
+    """Build AISettings from DB row with multi-provider support."""
     # Parse JSON configs (new multi-provider format)
     providers_config = {}
     task_assignments = {}
@@ -649,6 +621,30 @@ def get_ai_settings(conn: Connection) -> AISettings:
         if row["ai_fallback_to_regex"] is not None
         else True,
     )
+
+
+def get_ai_settings(conn: Connection) -> AISettings:
+    """Get AI integration settings with multi-provider support.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        AISettings object with AI configuration for all providers
+    """
+    cursor = conn.execute(
+        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_timeout,
+                  ai_use_for_parsing, ai_use_for_matching, ai_batch_size,
+                  ai_learn_patterns, ai_fallback_to_regex,
+                  ai_providers_config, ai_task_assignments
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return AISettings()
+
+    return _build_ai_settings(row)
 
 
 def update_ai_settings(
