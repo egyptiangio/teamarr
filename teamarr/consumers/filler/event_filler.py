@@ -9,15 +9,15 @@ Reuses:
 - TemplateResolver for variable substitution
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from teamarr.consumers.event_epg import POSTPONED_LABEL, is_event_postponed
 from teamarr.core import Event, Programme, TeamStats
-from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.services.sports_data import SportsDataService
 from teamarr.templates.context import GameContext, Odds, TeamChannelContext, TemplateContext
 from teamarr.templates.resolver import TemplateResolver
-import logging
 from teamarr.utilities.sports import get_sport_duration
 from teamarr.utilities.time_blocks import create_filler_chunks
 
@@ -295,9 +295,7 @@ class EventFillerGenerator:
             return []
 
         # Check if we should prepend "Postponed: " label
-        should_prepend = (
-            prepend_postponed_label and event and is_event_postponed(event)
-        )
+        should_prepend = prepend_postponed_label and event and is_event_postponed(event)
 
         programmes: list[Programme] = []
         for chunk_start, chunk_end in chunks:

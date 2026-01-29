@@ -29,12 +29,12 @@ Example JSON format for description_options:
 """
 
 import json
+import logging
 import random
 from dataclasses import dataclass
 from typing import Any
 
 from teamarr.templates.context import GameContext, TemplateContext
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class ConditionEvaluator:
         except (ValueError, IndexError):
             return False
 
-    # Note: home/away streak conditions removed - can't reliably get venue-specific streak data from providers
+    # Note: home/away streak conditions removed - can't reliably get venue-specific streak data from providers  # noqa: E501
 
     # =========================================================================
     # Ranking conditions
@@ -328,7 +328,11 @@ class ConditionalDescriptionSelector:
 
         # Random selection from same-priority templates
         selected = random.choice(matching_templates)
-        logger.debug("[CONDITION] Selected priority=%d from %d options", highest_priority, len(matching_templates))
+        logger.debug(
+            "[CONDITION] Selected priority=%d from %d options",
+            highest_priority,
+            len(matching_templates),
+        )
         return selected
 
     def _parse_options(

@@ -25,10 +25,10 @@ def _to_pascal_case(name: str) -> str:
     import unicodedata
 
     # Normalize unicode (é → e)
-    normalized = unicodedata.normalize('NFKD', name)
-    ascii_name = normalized.encode('ascii', 'ignore').decode('ascii')
+    normalized = unicodedata.normalize("NFKD", name)
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
     # Keep only alphanumeric, split on non-alpha
-    words = re.split(r'[^a-zA-Z0-9]+', ascii_name)
+    words = re.split(r"[^a-zA-Z0-9]+", ascii_name)
     return "".join(word.capitalize() for word in words if word)
 
 
@@ -299,7 +299,7 @@ def extract_gracenote_category(ctx: TemplateContext, game_ctx: GameContext | Non
     name="exception_keyword",
     category=Category.IDENTITY,
     suffix_rules=SuffixRules.BASE_ONLY,
-    description="Exception keyword label (e.g., 'Spanish', '4K', 'Manningcast') - set at channel creation",
+    description="Exception keyword label (e.g., 'Spanish', '4K', 'Manningcast') - set at channel creation",  # noqa: E501
 )
 def extract_exception_keyword(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     """Return exception keyword label for channel naming.

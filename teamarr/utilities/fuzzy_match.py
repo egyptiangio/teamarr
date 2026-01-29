@@ -4,11 +4,17 @@ Uses rapidfuzz for fast, maintenance-free fuzzy matching.
 Provides whole-name token_set_ratio matching for event name comparison.
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from rapidfuzz import fuzz
 from unidecode import unidecode
+
+if TYPE_CHECKING:
+    from teamarr.core import Team
 
 # Common abbreviations to expand for better matching
 # Key: abbreviation (lowercase), Value: expansion
@@ -115,7 +121,7 @@ class FuzzyMatcher:
         self.threshold = threshold
         self.partial_threshold = partial_threshold
 
-    def generate_team_patterns(self, team: "Team") -> list[TeamPattern]:
+    def generate_team_patterns(self, team: "Team") -> list[TeamPattern]:  # noqa: UP037
         """Generate searchable patterns for a team.
 
         Simplified: just creates patterns for alias checking.
@@ -127,7 +133,6 @@ class FuzzyMatcher:
         Returns:
             List of TeamPattern objects
         """
-        from teamarr.core import Team
 
         patterns: list[TeamPattern] = []
         seen: set[str] = set()

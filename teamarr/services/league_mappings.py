@@ -144,8 +144,10 @@ class LeagueMappingService:
 
         logger.info(
             "[LEAGUE_MAPPING] Loaded %d mappings (%d providers, %d aliases, %d sports)",
-            len(self._mappings), len(self._provider_leagues),
-            len(self._league_aliases), len(self._sport_display_names)
+            len(self._mappings),
+            len(self._provider_leagues),
+            len(self._league_aliases),
+            len(self._sport_display_names),
         )
 
     def reload(self) -> None:
@@ -361,8 +363,10 @@ class LeagueMappingService:
             if mapping.fallback_provider and mapping.fallback_league_id:
                 logger.debug(
                     "[LEAGUE_MAPPING] Using fallback for %s: %s/%s (primary %s not premium)",
-                    league_code, mapping.fallback_provider, mapping.fallback_league_id,
-                    mapping.provider
+                    league_code,
+                    mapping.fallback_provider,
+                    mapping.fallback_league_id,
+                    mapping.provider,
                 )
                 return (mapping.fallback_provider, mapping.fallback_league_id)
 

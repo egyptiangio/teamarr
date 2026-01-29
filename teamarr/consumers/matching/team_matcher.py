@@ -12,6 +12,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from rapidfuzz import fuzz
+
 from teamarr.consumers.matching import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.classifier import ClassifiedStream, StreamCategory
 from teamarr.consumers.matching.normalizer import normalize_for_matching
@@ -24,8 +26,6 @@ from teamarr.consumers.matching.result import (
 from teamarr.consumers.stream_match_cache import StreamMatchCache, event_to_cache_data
 from teamarr.core.types import Event, Team
 from teamarr.services.sports_data import SportsDataService
-from rapidfuzz import fuzz
-
 from teamarr.utilities.constants import TEAM_ALIASES
 from teamarr.utilities.fuzzy_match import get_matcher, normalize_text
 
@@ -129,8 +129,11 @@ class TeamMatcher:
         """
         self._user_aliases = self._load_user_aliases()
         self._reverse_aliases = self._build_reverse_cache()
-        logger.info("[ALIAS] Reloaded aliases: %d forward, %d reverse entries",
-                    len(self._user_aliases), len(self._reverse_aliases))
+        logger.info(
+            "[ALIAS] Reloaded aliases: %d forward, %d reverse entries",
+            len(self._user_aliases),
+            len(self._reverse_aliases),
+        )
 
     def match_single_league(
         self,
@@ -290,7 +293,9 @@ class TeamMatcher:
 
             if not valid_leagues:
                 # None of the hinted leagues are enabled
-                hint_display = league_hint if isinstance(league_hint, str) else ", ".join(league_hint)
+                hint_display = (
+                    league_hint if isinstance(league_hint, str) else ", ".join(league_hint)
+                )
                 return MatchOutcome.filtered(
                     FilteredReason.LEAGUE_NOT_INCLUDED,
                     stream_name=ctx.stream_name,
@@ -371,7 +376,9 @@ class TeamMatcher:
         event = self._reconstruct_event(entry.cached_data)
         if not event:
             # Cache entry is invalid
-            logger.debug("[MATCH_CACHE] Invalid: failed to reconstruct event for stream=%d", ctx.stream_id)
+            logger.debug(
+                "[MATCH_CACHE] Invalid: failed to reconstruct event for stream=%d", ctx.stream_id
+            )
             self._cache.delete(ctx.group_id, ctx.stream_id, ctx.stream_name)
             return None
 
@@ -399,12 +406,16 @@ class TeamMatcher:
         event_date = event.start_time.astimezone(ctx.user_tz).date()
         if event_date < ctx.target_date:
             # Event is from a previous day - invalidate cache to get fresh status
-            logger.debug("[MATCH_CACHE] Stale: event from %s < target %s", event_date, ctx.target_date)
+            logger.debug(
+                "[MATCH_CACHE] Stale: event from %s < target %s", event_date, ctx.target_date
+            )
             return None
 
         # Today's events: use cache (final status handled in _outcome_to_result)
         if event_date != ctx.target_date:
-            logger.debug("[MATCH_CACHE] Mismatch: event from %s != target %s", event_date, ctx.target_date)
+            logger.debug(
+                "[MATCH_CACHE] Mismatch: event from %s != target %s", event_date, ctx.target_date
+            )
             return None
 
         logger.debug(
@@ -499,7 +510,9 @@ class TeamMatcher:
                     stream_dt = datetime.combine(
                         ref_date, ctx.classified.normalized.extracted_time, tzinfo=ctx.user_tz
                     )
-                    time_distance = abs(int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds()))
+                    time_distance = abs(
+                        int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
+                    )
 
                 # Ranking: score > time proximity > future over past > date proximity
                 is_better = False
@@ -642,7 +655,9 @@ class TeamMatcher:
                     stream_dt = datetime.combine(
                         ref_date, ctx.classified.normalized.extracted_time, tzinfo=ctx.user_tz
                     )
-                    time_distance = abs(int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds()))
+                    time_distance = abs(
+                        int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
+                    )
 
                 # Ranking: score > time proximity > future over past > date proximity
                 is_better = False
@@ -737,7 +752,6 @@ class TeamMatcher:
             Tuple of (method, confidence) if matched, None otherwise
         """
         # Apply threshold based on whether date validation is available
-        threshold = ACCEPT_WITH_DATE_THRESHOLD if has_date_validation else HIGH_CONFIDENCE_THRESHOLD
 
         # Normalize event team names for comparison
         home_normalized = normalize_text(event.home_team.name)
@@ -907,9 +921,7 @@ class TeamMatcher:
                 cache[key] = alias.team_name.lower()
 
             if cache:
-                logger.debug(
-                    "[ALIAS] Loaded %d user-defined aliases from database", len(cache)
-                )
+                logger.debug("[ALIAS] Loaded %d user-defined aliases from database", len(cache))
             return cache
 
         except Exception as e:
@@ -1003,8 +1015,8 @@ class TeamMatcher:
 
         # Collect candidate leagues from aliases (only those that are enabled)
         candidate_leagues: set[str] = set()
-        for canonical, league in team1_aliases + team2_aliases:
-            if league and league.lower() in [l.lower() for l in enabled_leagues]:
+        for _canonical, league in team1_aliases + team2_aliases:
+            if league and league.lower() in [lg.lower() for lg in enabled_leagues]:
                 candidate_leagues.add(league.lower())
 
         logger.debug(
@@ -1034,8 +1046,8 @@ class TeamMatcher:
         team1_candidates = team1_aliases if team1_aliases else [(ctx.team1, None)]
         team2_candidates = team2_aliases if team2_aliases else [(ctx.team2, None)]
 
-        for canonical1, league1 in team1_candidates:
-            for canonical2, league2 in team2_candidates:
+        for canonical1, _league1 in team1_candidates:
+            for canonical2, _league2 in team2_candidates:
                 # Build retry context with resolved names
                 retry_ctx = MatchContext(
                     stream_name=ctx.stream_name,

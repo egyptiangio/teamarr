@@ -117,7 +117,11 @@ def run_full_generation(
     from teamarr.consumers.team_processor import get_all_team_xmltv
     from teamarr.database.channels import cleanup_old_history, get_reconciliation_settings
     from teamarr.database.groups import get_all_group_xmltv
-    from teamarr.database.settings import get_dispatcharr_settings, get_display_settings, get_epg_settings
+    from teamarr.database.settings import (
+        get_dispatcharr_settings,
+        get_display_settings,
+        get_epg_settings,
+    )
     from teamarr.database.stats import create_run, save_run
     from teamarr.dispatcharr import EPGManager
     from teamarr.services import create_default_service
@@ -159,7 +163,9 @@ def run_full_generation(
                 conn.execute("ROLLBACK")
                 _generation_running = False
                 _generation_lock.release()
-                logger.warning("[GENERATION] Already in progress (run %d), skipping", recent_running['id'])
+                logger.warning(
+                    "[GENERATION] Already in progress (run %d), skipping", recent_running["id"]
+                )
                 result = GenerationResult()
                 result.success = False
                 result.error = "Generation already in progress"
@@ -174,7 +180,9 @@ def run_full_generation(
             try:
                 conn.execute("ROLLBACK")
             except Exception as rollback_err:
-                logger.debug("[GENERATION] Rollback failed during lock acquisition: %s", rollback_err)
+                logger.debug(
+                    "[GENERATION] Rollback failed during lock acquisition: %s", rollback_err
+                )
             _generation_running = False
             _generation_lock.release()
             logger.error("[GENERATION] Failed to acquire lock: %s", e)
@@ -234,9 +242,12 @@ def run_full_generation(
         # Transition message - teams done, starting groups
         logger.info("[GENERATION] Sending transition message: teams -> groups")
         update_progress(
-            "groups", 50,
+            "groups",
+            50,
             f"Teams complete ({result.teams_processed} processed), loading event groups...",
-            0, 1, "Loading event groups..."
+            0,
+            1,
+            "Loading event groups...",
         )
         logger.info("[GENERATION] Transition message sent")
 
@@ -258,7 +269,7 @@ def run_full_generation(
                 # Group completion - add context
                 remaining = total - current
                 if remaining > 0:
-                    msg = f"Finished {name} ({current}/{total}) - {remaining} remaining [{elapsed:.1f}s]"
+                    msg = f"Finished {name} ({current}/{total}) - {remaining} remaining [{elapsed:.1f}s]"  # noqa: E501
                 else:
                     msg = f"Finished {name} ({current}/{total}) [{elapsed:.1f}s]"
                 update_progress("groups", pct, msg, current, total, name)
@@ -276,14 +287,16 @@ def run_full_generation(
 
         # Step 3b: Global channel reassignment (if enabled)
         # Applies when sorting_scope is "global" - interleaves channels by sport/league/time
-        from teamarr.database.settings import get_channel_numbering_settings
         from teamarr.database.channel_numbers import reassign_channels_globally
+        from teamarr.database.settings import get_channel_numbering_settings
 
         with db_factory() as conn:
             channel_numbering = get_channel_numbering_settings(conn)
 
         if channel_numbering.sorting_scope == "global":
-            update_progress("groups", 94, "Reassigning channels globally by sport/league priority...")
+            update_progress(
+                "groups", 94, "Reassigning channels globally by sport/league priority..."
+            )
             with db_factory() as conn:
                 global_result = reassign_channels_globally(conn)
                 if global_result["channels_moved"] > 0:
@@ -309,10 +322,13 @@ def run_full_generation(
                                 except Exception as e:
                                     logger.warning(
                                         "[GENERATION] Failed to sync channel %s to Dispatcharr: %s",
-                                        ch.get("channel_name"), e
+                                        ch.get("channel_name"),
+                                        e,
                                     )
                         if synced:
-                            logger.info("[GENERATION] Synced %d channel numbers to Dispatcharr", synced)
+                            logger.info(
+                                "[GENERATION] Synced %d channel numbers to Dispatcharr", synced
+                            )
 
         # Step 3b: Apply stream ordering rules to all channels (93-95%)
         update_progress("ordering", 93, "Applying stream ordering rules...")
@@ -323,9 +339,9 @@ def run_full_generation(
 
         reorder_result = {"channels_reordered": 0, "streams_reordered": 0}
         try:
+            from teamarr.database.channels import get_channel_streams, update_stream_priority
             from teamarr.database.settings import get_stream_ordering_settings
             from teamarr.services.stream_ordering import StreamOrderingService
-            from teamarr.database.channels import get_channel_streams, update_stream_priority
 
             with db_factory() as conn:
                 # Load ordering rules once
@@ -346,6 +362,7 @@ def run_full_generation(
                     if dispatcharr_client:
                         from teamarr.dispatcharr.factory import DispatcharrConnection
                         from teamarr.dispatcharr.managers import ChannelManager
+
                         raw_client = (
                             dispatcharr_client.client
                             if isinstance(dispatcharr_client, DispatcharrConnection)
@@ -380,30 +397,32 @@ def run_full_generation(
                                 ordered_ids = get_ordered_stream_ids(conn, channel.id)
                                 if ordered_ids:
                                     sync_result = channel_mgr.update_channel(
-                                        channel.dispatcharr_channel_id,
-                                        {"streams": ordered_ids}
+                                        channel.dispatcharr_channel_id, {"streams": ordered_ids}
                                     )
                                     if not sync_result.success:
                                         logger.warning(
-                                            "[ORDERING] Failed to sync channel %s to Dispatcharr: %s",
+                                            "[ORDERING] Failed to sync channel %s to Dispatcharr: %s",  # noqa: E501
                                             channel.channel_name,
-                                            sync_result.error
+                                            sync_result.error,
                                         )
 
                         # Update progress every 10 channels or at end
                         if (idx + 1) % 10 == 0 or idx == total_channels - 1:
                             pct = 93 + int(((idx + 1) / total_channels) * 2)
                             update_progress(
-                                "ordering", pct,
+                                "ordering",
+                                pct,
                                 f"Ordering streams ({idx + 1}/{total_channels})",
-                                idx + 1, total_channels, channel.channel_name
+                                idx + 1,
+                                total_channels,
+                                channel.channel_name,
                             )
 
                     if reorder_result["channels_reordered"] > 0:
                         logger.info(
                             "[ORDERING] Reordered %d streams across %d channels",
                             reorder_result["streams_reordered"],
-                            reorder_result["channels_reordered"]
+                            reorder_result["channels_reordered"],
                         )
         except Exception as e:
             logger.warning("[ORDERING] Stream ordering failed: %s", e)
@@ -434,7 +453,9 @@ def run_full_generation(
             result.file_written = True
             result.file_path = str(output_file.absolute())
             result.file_size = len(merged_xmltv)
-            logger.info("[GENERATION] EPG written to %s (%s bytes)", output_path, f"{result.file_size:,}")
+            logger.info(
+                "[GENERATION] EPG written to %s (%s bytes)", output_path, f"{result.file_size:,}"
+            )
 
         # Create lifecycle service once for steps 5-6
         # Reuse shared_service to maintain cache warmth
@@ -624,8 +645,8 @@ def _refresh_m3u_accounts(db_factory: Callable[[], Any], dispatcharr_client: Any
     if batch_result.succeeded_count > 0:
         logger.info(
             "[M3U] Refresh: %d refreshed, %d skipped (recently updated)",
-            result['refreshed'],
-            result['skipped'],
+            result["refreshed"],
+            result["skipped"],
         )
 
     return result

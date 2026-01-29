@@ -178,9 +178,7 @@ class TTLCache:
         now = datetime.now()
         with self._lock:
             return {
-                k: (v.value, v.expires_at)
-                for k, v in self._cache.items()
-                if v.expires_at > now
+                k: (v.value, v.expires_at) for k, v in self._cache.items() if v.expires_at > now
             }
 
     def set_with_expiry(self, key: str, value: Any, expires_at: datetime) -> None:
@@ -275,9 +273,7 @@ class PersistentTTLCache:
                     expires_at = datetime.fromisoformat(row["expires_at"])
                     if expires_at > now:
                         value = json.loads(row["data_json"])
-                        self._memory_cache.set_with_expiry(
-                            row["cache_key"], value, expires_at
-                        )
+                        self._memory_cache.set_with_expiry(row["cache_key"], value, expires_at)
                         loaded += 1
                     else:
                         expired += 1
@@ -286,8 +282,7 @@ class PersistentTTLCache:
 
             if loaded > 0 or expired > 0:
                 logger.info(
-                    "[CACHE] Loaded %d entries from SQLite (skipped %d expired)",
-                    loaded, expired
+                    "[CACHE] Loaded %d entries from SQLite (skipped %d expired)", loaded, expired
                 )
         except Exception as e:
             logger.warning("[CACHE] Failed to load cache from SQLite: %s", e)
@@ -376,9 +371,7 @@ class PersistentTTLCache:
         try:
             now = datetime.now().isoformat()
             with get_db() as conn:
-                cursor = conn.execute(
-                    "DELETE FROM service_cache WHERE expires_at < ?", (now,)
-                )
+                cursor = conn.execute("DELETE FROM service_cache WHERE expires_at < ?", (now,))
                 removed += cursor.rowcount
         except Exception as e:
             logger.error("[CACHE] Failed to cleanup SQLite expired entries: %s", e)
@@ -414,9 +407,7 @@ class PersistentTTLCache:
             with get_db() as conn:
                 # Delete removed keys
                 for key in deleted_keys:
-                    conn.execute(
-                        "DELETE FROM service_cache WHERE cache_key = ?", (key,)
-                    )
+                    conn.execute("DELETE FROM service_cache WHERE cache_key = ?", (key,))
                     deleted += 1
 
                 # Upsert dirty keys
@@ -461,12 +452,14 @@ class PersistentTTLCache:
             pending_writes = len(self._dirty_keys)
             pending_deletes = len(self._deleted_keys)
 
-        base_stats.update({
-            "persistent": True,
-            "pending_writes": pending_writes,
-            "pending_deletes": pending_deletes,
-            "flush_interval_seconds": self._flush_interval,
-        })
+        base_stats.update(
+            {
+                "persistent": True,
+                "pending_writes": pending_writes,
+                "pending_deletes": pending_deletes,
+                "flush_interval_seconds": self._flush_interval,
+            }
+        )
 
         return base_stats
 

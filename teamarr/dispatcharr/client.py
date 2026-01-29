@@ -168,14 +168,21 @@ class DispatcharrClient:
                         delay = _calculate_backoff(attempt)
                         logger.warning(
                             "[DISPATCHARR] Retryable HTTP %d for %s %s, retry %d/%d after %.1fs",
-                            response.status_code, method, endpoint, attempt + 1, self._max_retries, delay,
+                            response.status_code,
+                            method,
+                            endpoint,
+                            attempt + 1,
+                            self._max_retries,
+                            delay,
                         )
                         time.sleep(delay)
                         continue
                     else:
                         logger.error(
                             "[DISPATCHARR] Max retries exceeded for %s %s (HTTP %d)",
-                            method, endpoint, response.status_code,
+                            method,
+                            endpoint,
+                            response.status_code,
                         )
 
                 return response
@@ -187,11 +194,18 @@ class DispatcharrClient:
                     delay = _calculate_backoff(attempt)
                     logger.warning(
                         "[DISPATCHARR] Retryable error for %s %s: %s, retry %d/%d after %.1fs",
-                        method, endpoint, type(e).__name__, attempt + 1, self._max_retries, delay,
+                        method,
+                        endpoint,
+                        type(e).__name__,
+                        attempt + 1,
+                        self._max_retries,
+                        delay,
                     )
                     time.sleep(delay)
                 else:
-                    logger.error("[DISPATCHARR] Max retries exceeded for %s %s: %s", method, endpoint, e)
+                    logger.error(
+                        "[DISPATCHARR] Max retries exceeded for %s %s: %s", method, endpoint, e
+                    )
 
             except httpx.RequestError as e:
                 # Non-retryable request exception
@@ -200,7 +214,11 @@ class DispatcharrClient:
 
         # All retries exhausted
         if last_exception:
-            logger.error("[DISPATCHARR] Request failed after %d retries: %s", self._max_retries, last_exception)
+            logger.error(
+                "[DISPATCHARR] Request failed after %d retries: %s",
+                self._max_retries,
+                last_exception,
+            )
         return None
 
     def get(self, endpoint: str) -> httpx.Response | None:

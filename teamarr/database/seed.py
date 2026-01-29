@@ -36,7 +36,7 @@ def load_tsdb_seed() -> dict | None:
             if "provider" not in team:
                 team["provider"] = "tsdb"
         return data
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.error("[SEED] Failed to read TSDB seed file: %s", e)
         return None
 
@@ -57,7 +57,7 @@ def seed_tsdb_cache(conn) -> dict:
     try:
         with open(SEED_FILE) as f:
             seed_data = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.error("[SEED] Failed to read TSDB seed file: %s", e)
         return {"seeded": False, "reason": "seed_file_error", "error": str(e)}
 
@@ -122,7 +122,9 @@ def seed_tsdb_cache(conn) -> dict:
 
     logger.info(
         "[SEED] TSDB cache seeded: %d leagues, %d teams (from %s)",
-        leagues_added, teams_added, seed_data.get('generated_at', 'unknown')
+        leagues_added,
+        teams_added,
+        seed_data.get("generated_at", "unknown"),
     )
 
     return {
@@ -169,11 +171,12 @@ def should_seed_tsdb_cache(conn) -> bool:
         if current_count < seed_count * 0.8:
             logger.info(
                 "[SEED] TSDB cache has %d teams, seed has %d. Recommending re-seed.",
-                current_count, seed_count
+                current_count,
+                seed_count,
             )
             return True
 
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         pass
 
     return False

@@ -198,7 +198,7 @@ class ChannelNumberingSettings:
     - sport_league_time: Sort by sport, then league, then event time
     - time: Sort by event time only
     - stream_order: Keep original stream order from M3U
-    """
+    """  # noqa: E501
 
     numbering_mode: str = "strict_block"  # 'strict_block', 'rational_block', 'strict_compact'
     sorting_scope: str = "per_group"  # 'per_group', 'global'
@@ -219,12 +219,8 @@ class AllSettings:
     api: APISettings = field(default_factory=APISettings)
     stream_filter: StreamFilterSettings = field(default_factory=StreamFilterSettings)
     team_filter: TeamFilterSettings = field(default_factory=TeamFilterSettings)
-    channel_numbering: ChannelNumberingSettings = field(
-        default_factory=ChannelNumberingSettings
-    )
-    stream_ordering: StreamOrderingSettings = field(
-        default_factory=StreamOrderingSettings
-    )
+    channel_numbering: ChannelNumberingSettings = field(default_factory=ChannelNumberingSettings)
+    stream_ordering: StreamOrderingSettings = field(default_factory=StreamOrderingSettings)
     update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
     epg_generation_counter: int = 0
     schema_version: int = 44

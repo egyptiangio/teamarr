@@ -14,9 +14,7 @@ def event_to_dict(event: Event) -> dict:
     # Serialize segment_times (datetime values to ISO strings)
     segment_times_dict = None
     if event.segment_times:
-        segment_times_dict = {
-            seg: dt.isoformat() for seg, dt in event.segment_times.items()
-        }
+        segment_times_dict = {seg: dt.isoformat() for seg, dt in event.segment_times.items()}
 
     return {
         "id": event.id,
@@ -77,8 +75,7 @@ def dict_to_event(data: dict) -> Event:
     segment_times = None
     if data.get("segment_times"):
         segment_times = {
-            seg: datetime.fromisoformat(dt_str)
-            for seg, dt_str in data["segment_times"].items()
+            seg: datetime.fromisoformat(dt_str) for seg, dt_str in data["segment_times"].items()
         }
 
     # Deserialize main_card_start

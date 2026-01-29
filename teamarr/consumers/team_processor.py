@@ -288,7 +288,7 @@ class TeamProcessor:
                         with in_progress_lock:
                             still_processing = list(in_progress)
                         if still_processing:
-                            msg = f"Finished {team.team_name}, now processing: {', '.join(still_processing[:3])}"
+                            msg = f"Finished {team.team_name}, now processing: {', '.join(still_processing[:3])}"  # noqa: E501
                             if len(still_processing) > 3:
                                 msg += f" (+{len(still_processing) - 3} more)"
                         else:

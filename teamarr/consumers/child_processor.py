@@ -291,7 +291,9 @@ class ChildStreamProcessor:
             with self._dispatcharr_lock:
                 channel = self._channel_manager.get_channel(dispatcharr_channel_id)
                 if not channel:
-                    logger.warning("[CHILD] Channel %d not found in Dispatcharr", dispatcharr_channel_id)
+                    logger.warning(
+                        "[CHILD] Channel %d not found in Dispatcharr", dispatcharr_channel_id
+                    )
                     return False
 
                 current_streams = list(channel.streams) if channel.streams else []

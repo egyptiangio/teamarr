@@ -317,14 +317,16 @@ class CronScheduler:
 
         # Update global status on completion
         if result.success:
-            complete_generation({
-                "success": True,
-                "programmes_count": result.programmes_total,
-                "teams_processed": result.teams_processed,
-                "groups_processed": result.groups_processed,
-                "duration_seconds": result.duration_seconds,
-                "run_id": result.run_id,
-            })
+            complete_generation(
+                {
+                    "success": True,
+                    "programmes_count": result.programmes_total,
+                    "teams_processed": result.teams_processed,
+                    "groups_processed": result.groups_processed,
+                    "duration_seconds": result.duration_seconds,
+                    "run_id": result.run_id,
+                }
+            )
         else:
             fail_generation(result.error or "Unknown error")
 

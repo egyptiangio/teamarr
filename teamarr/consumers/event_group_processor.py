@@ -13,11 +13,12 @@ This is the main entry point for event-based EPG generation.
 """
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from sqlite3 import Connection
-from typing import Any, Callable
+from typing import Any
 
 from teamarr.consumers.channel_lifecycle import (
     StreamProcessResult,
@@ -428,7 +429,9 @@ class EventGroupProcessor:
                             "- continuing with potentially stale data"
                         )
                 except Exception as e:
-                    logger.warning("[EVENT_EPG] Preview: M3U refresh error: %s - continuing anyway", e)
+                    logger.warning(
+                        "[EVENT_EPG] Preview: M3U refresh error: %s - continuing anyway", e
+                    )
 
             # Step 1: Fetch streams from M3U group
             try:
@@ -454,9 +457,9 @@ class EventGroupProcessor:
             result.filtered_stale = filter_result.filtered_stale
             # Combine all built-in eligibility filters into filtered_not_event
             result.filtered_not_event = (
-                filter_result.filtered_not_event +
-                filter_result.filtered_placeholder +
-                filter_result.filtered_unsupported_sport
+                filter_result.filtered_not_event
+                + filter_result.filtered_placeholder
+                + filter_result.filtered_unsupported_sport
             )
             result.filtered_include_regex = filter_result.filtered_include
             result.filtered_exclude_regex = filter_result.filtered_exclude
@@ -558,33 +561,42 @@ class EventGroupProcessor:
                 if progress_callback:
                     leagues_count = len(group.leagues) if group.leagues else 0
                     progress_callback(
-                        processed_count, total_groups,
-                        f"Loading {group.name}... ({leagues_count} leagues)"
+                        processed_count,
+                        total_groups,
+                        f"Loading {group.name}... ({leagues_count} leagues)",
                     )
 
                 # Create stream progress callback that reports during matching
                 stream_cb = None
                 if progress_callback:
+
                     def make_stream_cb(grp_name: str, grp_idx: int):
                         def cb(current: int, total: int, stream_name: str, matched: bool):
                             icon = "✓" if matched else "✗"
                             msg = f"{icon} {current}/{total} — {grp_name}: {stream_name}"
                             progress_callback(grp_idx, total_groups, msg)
+
                         return cb
+
                     stream_cb = make_stream_cb(group.name, processed_count + 1)
 
                 # Create status callback for post-matching phases
                 status_cb = None
                 if progress_callback:
                     grp_idx = processed_count + 1
+
                     def make_status_cb(grp_name: str, idx: int):
                         def cb(msg: str):
                             progress_callback(idx, total_groups, f"{grp_name}: {msg}")
+
                         return cb
+
                     status_cb = make_status_cb(group.name, grp_idx)
 
                 result = self._process_group_internal(
-                    conn, group, target_date,
+                    conn,
+                    group,
+                    target_date,
                     stream_progress_callback=stream_cb,
                     status_callback=status_cb,
                 )
@@ -601,33 +613,40 @@ class EventGroupProcessor:
                 # Send "Loading..." message before expensive fetch operations
                 if progress_callback:
                     progress_callback(
-                        processed_count, total_groups,
-                        f"Loading {group.name}... (child group)"
+                        processed_count, total_groups, f"Loading {group.name}... (child group)"
                     )
 
                 # Child groups use same stream progress pattern
                 stream_cb = None
                 if progress_callback:
+
                     def make_stream_cb(grp_name: str, grp_idx: int):
                         def cb(current: int, total: int, stream_name: str, matched: bool):
                             icon = "✓" if matched else "✗"
                             msg = f"{icon} {current}/{total} — {grp_name}: {stream_name}"
                             progress_callback(grp_idx, total_groups, msg)
+
                         return cb
+
                     stream_cb = make_stream_cb(group.name, processed_count + 1)
 
                 # Create status callback for prefetch progress
                 status_cb = None
                 if progress_callback:
                     grp_idx = processed_count + 1
+
                     def make_status_cb(grp_name: str, idx: int):
                         def cb(msg: str):
                             progress_callback(idx, total_groups, f"{grp_name}: {msg}")
+
                         return cb
+
                     status_cb = make_status_cb(group.name, grp_idx)
 
                 result = self._process_child_group_internal(
-                    conn, group, target_date,
+                    conn,
+                    group,
+                    target_date,
                     stream_progress_callback=stream_cb,
                     status_callback=status_cb,
                 )
@@ -644,32 +663,41 @@ class EventGroupProcessor:
                 if progress_callback:
                     leagues_count = len(group.leagues) if group.leagues else 0
                     progress_callback(
-                        processed_count, total_groups,
-                        f"Loading {group.name}... ({leagues_count} leagues)"
+                        processed_count,
+                        total_groups,
+                        f"Loading {group.name}... ({leagues_count} leagues)",
                     )
 
                 stream_cb = None
                 if progress_callback:
+
                     def make_stream_cb(grp_name: str, grp_idx: int):
                         def cb(current: int, total: int, stream_name: str, matched: bool):
                             icon = "✓" if matched else "✗"
                             msg = f"{icon} {current}/{total} — {grp_name}: {stream_name}"
                             progress_callback(grp_idx, total_groups, msg)
+
                         return cb
+
                     stream_cb = make_stream_cb(group.name, processed_count + 1)
 
                 # Create status callback for post-matching phases
                 status_cb = None
                 if progress_callback:
                     grp_idx = processed_count + 1
+
                     def make_status_cb(grp_name: str, idx: int):
                         def cb(msg: str):
                             progress_callback(idx, total_groups, f"{grp_name}: {msg}")
+
                         return cb
+
                     status_cb = make_status_cb(group.name, grp_idx)
 
                 result = self._process_group_internal(
-                    conn, group, target_date,
+                    conn,
+                    group,
+                    target_date,
                     stream_progress_callback=stream_cb,
                     status_callback=status_cb,
                 )
@@ -699,6 +727,7 @@ class EventGroupProcessor:
                 xmltv_contents = get_all_group_xmltv(conn, processed_group_ids)
                 if xmltv_contents:
                     from teamarr.database.settings import get_display_settings
+
                     display_settings = get_display_settings(conn)
                     batch_result.total_xmltv = merge_xmltv_content(
                         xmltv_contents,
@@ -804,9 +833,9 @@ class EventGroupProcessor:
             # Combine all built-in eligibility filters into filtered_not_event
             # (placeholder, unsupported_sport, and not_event are all controlled by skip_builtin)
             result.filtered_not_event = (
-                filter_result.filtered_not_event +
-                filter_result.filtered_placeholder +
-                filter_result.filtered_unsupported_sport
+                filter_result.filtered_not_event
+                + filter_result.filtered_placeholder
+                + filter_result.filtered_unsupported_sport
             )
             result.filtered_include_regex = filter_result.filtered_include
             result.filtered_exclude_regex = filter_result.filtered_exclude
@@ -863,7 +892,9 @@ class EventGroupProcessor:
 
             # Step 3: Match streams to events
             match_result = self._match_streams(
-                streams, group, target_date,
+                streams,
+                group,
+                target_date,
                 stream_progress_callback=stream_progress_callback,
                 status_callback=status_callback,
                 resolved_leagues=leagues,  # Pass inherited leagues for proper filtering
@@ -910,9 +941,7 @@ class EventGroupProcessor:
 
             # Build set of event IDs that passed the filter (segment-aware)
             passed_event_ids = {
-                _effective_event_id(m)
-                for m in matched_streams
-                if _effective_event_id(m)
+                _effective_event_id(m) for m in matched_streams if _effective_event_id(m)
             }
 
             # Cleanup existing channels that no longer pass team filter
@@ -1020,7 +1049,9 @@ class EventGroupProcessor:
             keyword_enforcer = KeywordEnforcer(self._db_factory, channel_manager)
             keyword_result = keyword_enforcer.enforce()
             if keyword_result.moved_count > 0:
-                logger.info("[EVENT_EPG] Keyword enforcement moved %d streams", keyword_result.moved_count)
+                logger.info(
+                    "[EVENT_EPG] Keyword enforcement moved %d streams", keyword_result.moved_count
+                )
         except Exception as e:
             logger.warning("[EVENT_EPG] Keyword enforcement failed: %s", e)
 
@@ -1124,9 +1155,9 @@ class EventGroupProcessor:
             # Combine all built-in eligibility filters into filtered_not_event
             # (placeholder, unsupported_sport, and not_event are all controlled by skip_builtin)
             result.filtered_not_event = (
-                filter_result.filtered_not_event +
-                filter_result.filtered_placeholder +
-                filter_result.filtered_unsupported_sport
+                filter_result.filtered_not_event
+                + filter_result.filtered_placeholder
+                + filter_result.filtered_unsupported_sport
             )
             result.filtered_include_regex = filter_result.filtered_include
             result.filtered_exclude_regex = filter_result.filtered_exclude
@@ -1178,7 +1209,9 @@ class EventGroupProcessor:
 
             # Step 3: Match streams to events (uses fingerprint cache)
             match_result = self._match_streams(
-                streams, group, target_date,
+                streams,
+                group,
+                target_date,
                 stream_progress_callback=stream_progress_callback,
                 status_callback=status_callback,
             )
@@ -1212,6 +1245,7 @@ class EventGroupProcessor:
 
             # Sort channels based on global channel numbering sort_by setting
             from teamarr.database.settings import get_channel_numbering_settings
+
             channel_numbering = get_channel_numbering_settings(conn)
             matched_streams = self._sort_matched_streams(matched_streams, channel_numbering.sort_by)
 
@@ -1242,9 +1276,7 @@ class EventGroupProcessor:
 
             # Build set of event IDs that passed the filter (segment-aware)
             passed_event_ids = {
-                _effective_event_id(m)
-                for m in matched_streams
-                if _effective_event_id(m)
+                _effective_event_id(m) for m in matched_streams if _effective_event_id(m)
             }
 
             # Cleanup existing channels that no longer pass team filter
@@ -1254,9 +1286,7 @@ class EventGroupProcessor:
             )
             if cleanup_count > 0:
                 result.channels_deleted = cleanup_count
-                logger.info(
-                    "[EVENT_EPG] Cleaned up %d channels due to team filter", cleanup_count
-                )
+                logger.info("[EVENT_EPG] Cleaned up %d channels due to team filter", cleanup_count)
 
             # Build stream dict for cleanup (fingerprint-based content change detection)
             current_streams = {s.get("id"): s for s in streams if s.get("id")}
@@ -1299,11 +1329,13 @@ class EventGroupProcessor:
                 # Step 5: Generate XMLTV from matched streams
                 # Filter out streams excluded by lifecycle (event_final, event_past, etc.)
                 excluded_event_ids = {
-                    excl.get("event_id") for excl in lifecycle_result.excluded
+                    excl.get("event_id")
+                    for excl in lifecycle_result.excluded
                     if excl.get("event_id")
                 }
                 xmltv_streams = [
-                    ms for ms in matched_streams
+                    ms
+                    for ms in matched_streams
                     if ms.get("event") and ms["event"].id not in excluded_event_ids
                 ]
 
@@ -1451,9 +1483,12 @@ class EventGroupProcessor:
 
         # Log filtering results
         filtered_total = (
-            result.filtered_stale + result.filtered_placeholder +
-            result.filtered_unsupported_sport + result.filtered_not_event +
-            result.filtered_include + result.filtered_exclude
+            result.filtered_stale
+            + result.filtered_placeholder
+            + result.filtered_unsupported_sport
+            + result.filtered_not_event
+            + result.filtered_include
+            + result.filtered_exclude
         )
         if filtered_total > 0:
             logger.info(
@@ -1503,14 +1538,20 @@ class EventGroupProcessor:
                 "SELECT event_match_days_ahead FROM settings WHERE id = 1"
             ).fetchone()
             days_back = 7  # Hardcoded for weekly sports
-            days_ahead = row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
+            days_ahead = (
+                row["event_match_days_ahead"] if row and row["event_match_days_ahead"] else 3
+            )
 
         # Build date range: [target - days_back, target + days_ahead]
         dates_to_fetch = [
-            target_date + timedelta(days=offset)
-            for offset in range(-days_back, days_ahead + 1)
+            target_date + timedelta(days=offset) for offset in range(-days_back, days_ahead + 1)
         ]
-        logger.debug("[EVENT_EPG] Fetching events from %s to %s (%d days)", dates_to_fetch[0], dates_to_fetch[-1], len(dates_to_fetch))
+        logger.debug(
+            "[EVENT_EPG] Fetching events from %s to %s (%d days)",
+            dates_to_fetch[0],
+            dates_to_fetch[-1],
+            len(dates_to_fetch),
+        )
 
         def fetch_league_events(league: str, fetch_date: date) -> tuple[str, date, list[Event]]:
             """Fetch events for a single league/date (for parallel execution)."""
@@ -1521,7 +1562,9 @@ class EventGroupProcessor:
                 events = self._service.get_events(league, fetch_date, cache_only=is_tsdb)
                 return (league, fetch_date, events)
             except Exception as e:
-                logger.warning("[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e)
+                logger.warning(
+                    "[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e
+                )
                 return (league, fetch_date, [])
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -1538,7 +1581,9 @@ class EventGroupProcessor:
                     all_events.extend(events)
                 except Exception as e:
                     league, fetch_date = futures[future]
-                    logger.warning("[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e)
+                    logger.warning(
+                        "[EVENT_EPG] Failed to fetch events for %s on %s: %s", league, fetch_date, e
+                    )
 
         return all_events
 
@@ -1575,9 +1620,7 @@ class EventGroupProcessor:
 
         # Load settings for event filtering
         with self._db_factory() as conn:
-            row = conn.execute(
-                "SELECT include_final_events FROM settings WHERE id = 1"
-            ).fetchone()
+            row = conn.execute("SELECT include_final_events FROM settings WHERE id = 1").fetchone()
             include_final_events = bool(row["include_final_events"]) if row else False
 
         sport_durations = self._load_sport_durations_cached()
@@ -1785,13 +1828,14 @@ class EventGroupProcessor:
                     filtered.append(match)
                 else:
                     filtered_count += 1
-                    logger.debug(
-                        f"Team filter excluded: {event.name} - "
-                        f"team in exclude list"
-                    )
+                    logger.debug(f"Team filter excluded: {event.name} - team in exclude list")
 
         if filtered_count > 0:
-            logger.info("[EVENT_EPG] Team filter: %d streams excluded, %d remaining", filtered_count, len(filtered))
+            logger.info(
+                "[EVENT_EPG] Team filter: %d streams excluded, %d remaining",
+                filtered_count,
+                len(filtered),
+            )
 
         return filtered, filtered_count
 
@@ -1915,9 +1959,7 @@ class EventGroupProcessor:
                 continue
 
             # Event was matched but didn't pass filter - delete the channel
-            success = self._delete_channel_for_team_filter(
-                conn, channel, reason="team_filter"
-            )
+            success = self._delete_channel_for_team_filter(conn, channel, reason="team_filter")
             if success:
                 deleted_count += 1
                 logger.info(
@@ -2145,8 +2187,12 @@ class EventGroupProcessor:
                         event_name=result.event.name if result.event else None,
                         event_date=event_date,
                         detected_league=result.league,
-                        home_team=result.event.home_team.name if result.event and result.event.home_team else None,
-                        away_team=result.event.away_team.name if result.event and result.event.away_team else None,
+                        home_team=result.event.home_team.name
+                        if result.event and result.event.home_team
+                        else None,
+                        away_team=result.event.away_team.name
+                        if result.event and result.event.away_team
+                        else None,
                         from_cache=getattr(result, "from_cache", False),
                         excluded=True,
                         exclusion_reason=result.exclusion_reason or "excluded_league",
@@ -2198,11 +2244,15 @@ class EventGroupProcessor:
         # Save to database
         if matched_list:
             save_matched_streams(conn, matched_list)
-            logger.debug("[EVENT_EPG] Saved %d matched streams for group %s", len(matched_list), group_name)
+            logger.debug(
+                "[EVENT_EPG] Saved %d matched streams for group %s", len(matched_list), group_name
+            )
 
         if failed_list:
             save_failed_matches(conn, failed_list)
-            logger.debug("[EVENT_EPG] Saved %d failed matches for group %s", len(failed_list), group_name)
+            logger.debug(
+                "[EVENT_EPG] Saved %d failed matches for group %s", len(failed_list), group_name
+            )
 
     def _process_channels(
         self,
@@ -2281,12 +2331,13 @@ class EventGroupProcessor:
         # V1 Parity Step 2: Cleanup deleted/missing/changed streams
         if current_streams is not None:
             try:
-                cleanup_result = lifecycle_service.cleanup_deleted_streams(group.id, current_streams)
+                cleanup_result = lifecycle_service.cleanup_deleted_streams(
+                    group.id, current_streams
+                )
                 combined_result.merge(cleanup_result)
                 if cleanup_result.deleted:
-                    logger.info(
-                        f"Deleted {len(cleanup_result.deleted)} channels with missing/changed streams"
-                    )
+                    deleted_count = len(cleanup_result.deleted)
+                    logger.info(f"Deleted {deleted_count} channels with missing/changed streams")
             except Exception as e:
                 logger.debug("[EVENT_EPG] Error cleaning up deleted streams: %s", e)
 
@@ -2383,7 +2434,10 @@ class EventGroupProcessor:
         # Generate filler if enabled in template
         if filler_config:
             filler_result = self._generate_filler_for_streams(
-                matched_streams, filler_config, options.sport_durations, lookback_hours,
+                matched_streams,
+                filler_config,
+                options.sport_durations,
+                lookback_hours,
                 prepend_postponed_label=options.prepend_postponed_label,
             )
             if filler_result.programmes:
@@ -2499,6 +2553,7 @@ class EventGroupProcessor:
                 )
                 # Create a modified event with segment start time
                 from dataclasses import replace
+
                 segment_event = replace(event, start_time=segment_start)
                 use_event = segment_event
                 use_options = segment_options
@@ -2517,7 +2572,9 @@ class EventGroupProcessor:
                 result.pregame_count += filler_result.pregame_count
                 result.postgame_count += filler_result.postgame_count
             except Exception as e:
-                logger.warning("[EVENT_EPG] Failed to generate filler for event %s: %s", event.id, e)
+                logger.warning(
+                    "[EVENT_EPG] Failed to generate filler for event %s: %s", event.id, e
+                )
 
         return result
 
@@ -2655,7 +2712,10 @@ class EventGroupProcessor:
                 if associated:
                     logger.info("[EVENT_EPG] Associated EPG data with %d channels", associated)
                 if not_found:
-                    logger.debug("[EVENT_EPG] EPG data not found for %d channels (pending refresh)", not_found)
+                    logger.debug(
+                        "[EVENT_EPG] EPG data not found for %d channels (pending refresh)",
+                        not_found,
+                    )
 
         except Exception as e:
             logger.warning("[EVENT_EPG] Error associating EPG with channels: %s", e)

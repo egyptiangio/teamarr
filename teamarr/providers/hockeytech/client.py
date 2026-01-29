@@ -10,6 +10,7 @@ Layer separation: Uses LeagueMappingSource for league routing (same as TSDB).
 API keys are constants since they're public keys from official league websites.
 """
 
+import logging
 import threading
 from datetime import date
 
@@ -17,7 +18,6 @@ import httpx
 
 from teamarr.core.interfaces import LeagueMappingSource
 from teamarr.utilities.cache import TTLCache, make_cache_key
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +70,12 @@ API_KEYS: dict[str, str] = {
     # USHL - United States Hockey League
     "ushl": "e828f89b243dc43f",
     # Canadian Junior A leagues
-    "ojhl": "77a0bd73d9d363d3",   # Ontario Junior Hockey League
-    "bchl": "ca4e9e599d4dae55",   # British Columbia Hockey League
-    "sjhl": "2fb5c2e84bf3e4a8",   # Saskatchewan Junior Hockey League
-    "ajhl": "cbe60a1d91c44ade",   # Alberta Junior Hockey League
-    "mjhl": "f894c324fe5fd8f0",   # Manitoba Junior Hockey League
-    "mhl": "4a948e7faf5ee58d",    # Maritime Junior Hockey League
+    "ojhl": "77a0bd73d9d363d3",  # Ontario Junior Hockey League
+    "bchl": "ca4e9e599d4dae55",  # British Columbia Hockey League
+    "sjhl": "2fb5c2e84bf3e4a8",  # Saskatchewan Junior Hockey League
+    "ajhl": "cbe60a1d91c44ade",  # Alberta Junior Hockey League
+    "mjhl": "f894c324fe5fd8f0",  # Manitoba Junior Hockey League
+    "mhl": "4a948e7faf5ee58d",  # Maritime Junior Hockey League
 }
 
 

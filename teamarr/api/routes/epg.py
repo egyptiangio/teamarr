@@ -134,11 +134,13 @@ def generate_epg(
     )
 
     # Mark generation as complete in status tracker
-    complete_generation({
-        "programmes_count": result.programmes_total,
-        "teams_processed": result.teams_processed,
-        "duration_seconds": result.duration_seconds,
-    })
+    complete_generation(
+        {
+            "programmes_count": result.programmes_total,
+            "teams_processed": result.teams_processed,
+            "duration_seconds": result.duration_seconds,
+        }
+    )
 
     # Fetch actual match stats from database
     match_stats = MatchStats(
@@ -740,9 +742,7 @@ def get_epg_analysis():
             "SELECT COUNT(*) FROM managed_channels WHERE deleted_at IS NULL"
         ).fetchone()[0]
         result["channels"]["event_based"] = event_channel_count
-        result["channels"]["total"] = (
-            result["channels"]["team_based"] + event_channel_count
-        )
+        result["channels"]["total"] = result["channels"]["team_based"] + event_channel_count
 
     return result
 

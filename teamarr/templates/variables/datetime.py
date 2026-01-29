@@ -136,7 +136,7 @@ def extract_days_until(ctx: TemplateContext, game_ctx: GameContext | None) -> st
     name="relative_day",
     category=Category.DATETIME,
     suffix_rules=SuffixRules.BASE_NEXT_ONLY,
-    description="Relative day: 'today', 'tonight', 'tomorrow', day of week (2-6 days), or date (7+ days)",
+    description="Relative day: 'today', 'tonight', 'tomorrow', day of week (2-6 days), or date (7+ days)",  # noqa: E501
 )
 def extract_relative_day(ctx: TemplateContext, game_ctx: GameContext | None) -> str:
     """Return relative day for natural language EPG descriptions.
@@ -185,5 +185,3 @@ def extract_relative_day_title(ctx: TemplateContext, game_ctx: GameContext | Non
         return dt.strftime("%A")
     else:
         return dt.strftime("%b %-d")
-
-

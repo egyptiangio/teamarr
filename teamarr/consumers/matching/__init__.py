@@ -10,11 +10,6 @@ Main entry point:
     result = matcher.match_all(streams, target_date)
 """
 
-# How far back to search for events when matching streams.
-# Allows matching streams for recently-finished events (for stats tracking).
-# The lifecycle layer filters out past events after matching.
-MATCH_WINDOW_DAYS = 30
-
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
     StreamCategory,
@@ -47,6 +42,11 @@ from teamarr.consumers.matching.team_matcher import (
     MatchContext,
     TeamMatcher,
 )
+
+# How far back to search for events when matching streams.
+# Allows matching streams for recently-finished events (for stats tracking).
+# The lifecycle layer filters out past events after matching.
+MATCH_WINDOW_DAYS = 30
 
 __all__ = [
     # Constants

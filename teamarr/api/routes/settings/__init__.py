@@ -17,9 +17,6 @@ from .dispatcharr import router as dispatcharr_router
 from .display import router as display_router
 from .epg import router as epg_router
 from .lifecycle import router as lifecycle_router
-from .stream_ordering import router as stream_ordering_router
-from .team_filter import router as team_filter_router
-from .update_check import router as update_check_router
 from .models import (
     AllSettingsModel,
     ChannelNumberingSettingsModel,
@@ -35,6 +32,9 @@ from .models import (
     TeamFilterSettingsModel,
     UpdateCheckSettingsModel,
 )
+from .stream_ordering import router as stream_ordering_router
+from .team_filter import router as team_filter_router
+from .update_check import router as update_check_router
 
 # Main router that includes all sub-routers
 router = APIRouter()

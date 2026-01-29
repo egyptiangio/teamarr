@@ -253,7 +253,7 @@ class CricbuzzProvider(SportsProvider):
             venue = self._parse_venue(data.get("venueInfo", {}))
 
             # Build event name
-            series_name = data.get("seriesName", "")
+            data.get("seriesName", "")
             match_desc = data.get("matchDesc", "")
             event_name = f"{away_team.name} vs {home_team.name}"
             if match_desc:
@@ -277,7 +277,9 @@ class CricbuzzProvider(SportsProvider):
             )
 
         except Exception as e:
-            logger.warning("[CRICBUZZ] Failed to parse match %s: %s", data.get('matchId', 'unknown'), e)
+            logger.warning(
+                "[CRICBUZZ] Failed to parse match %s: %s", data.get("matchId", "unknown"), e
+            )
             return None
 
     def _parse_team(self, data: dict, league: str) -> Team | None:

@@ -480,9 +480,7 @@ def update_channel_numbering_settings(
     query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
     cursor = conn.execute(query, values)
     if cursor.rowcount > 0:
-        logger.info(
-            "[CHANNEL_NUM] Updated settings: %s", [u.split(" = ")[0] for u in updates]
-        )
+        logger.info("[CHANNEL_NUM] Updated settings: %s", [u.split(" = ")[0] for u in updates])
         return True
     return False
 
@@ -537,11 +535,13 @@ def update_stream_ordering_rules(
             )
             rule_priority = 99
 
-        validated_rules.append({
-            "type": rule_type,
-            "value": rule_value,
-            "priority": rule_priority,
-        })
+        validated_rules.append(
+            {
+                "type": rule_type,
+                "value": rule_value,
+                "priority": rule_priority,
+            }
+        )
 
     # Store as JSON
     rules_json = json.dumps(validated_rules)

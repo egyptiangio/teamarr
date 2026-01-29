@@ -176,9 +176,7 @@ def upsert_sort_priority(
         return False
 
 
-def delete_sort_priority(
-    conn: Connection, sport: str, league_code: str | None = None
-) -> bool:
+def delete_sort_priority(conn: Connection, sport: str, league_code: str | None = None) -> bool:
     """Delete a sort priority entry.
 
     Args:
@@ -202,9 +200,7 @@ def delete_sort_priority(
             )
 
         if cursor.rowcount > 0:
-            logger.info(
-                "[SORT_PRIORITY] Deleted: sport=%s, league=%s", sport, league_code
-            )
+            logger.info("[SORT_PRIORITY] Deleted: sport=%s, league=%s", sport, league_code)
         return True
     except Exception as e:
         logger.error("[SORT_PRIORITY] Failed to delete: %s", e)
@@ -299,9 +295,7 @@ def auto_populate_sort_priorities(conn: Connection) -> int:
         return 0
 
     # Get existing priorities
-    existing = {
-        (p.sport, p.league_code) for p in get_all_sort_priorities(conn)
-    }
+    existing = {(p.sport, p.league_code) for p in get_all_sort_priorities(conn)}
 
     # Get max priority to append new entries at end
     cursor = conn.execute(
@@ -366,9 +360,7 @@ def get_sort_priorities_with_channel_counts(
 
     # Get league display names
     cursor = conn.execute("SELECT league_code, display_name FROM leagues")
-    league_names = {
-        row["league_code"]: row["display_name"] for row in cursor.fetchall()
-    }
+    league_names = {row["league_code"]: row["display_name"] for row in cursor.fetchall()}
 
     # Get channel counts per sport/league
     cursor = conn.execute("""
@@ -380,9 +372,7 @@ def get_sort_priorities_with_channel_counts(
           AND mc.deleted_at IS NULL
         GROUP BY mc.sport, mc.league
     """)
-    channel_counts = {
-        (row["sport"], row["league"]): row["count"] for row in cursor.fetchall()
-    }
+    channel_counts = {(row["sport"], row["league"]): row["count"] for row in cursor.fetchall()}
 
     # Also get sport-level counts
     sport_channel_counts: dict[str, int] = {}

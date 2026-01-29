@@ -167,7 +167,6 @@ TEAM_ALIASES: dict[str, str] = {
     "whitesox": "chicago white sox",
     "dodgers": "los angeles dodgers",
     "cards": "st louis cardinals",
-    "cards": "saint louis cardinals",
     "jays": "toronto blue jays",
     # College Basketball - ESPN uses short forms
     "appalachian state": "app state",
@@ -482,7 +481,10 @@ SPORT_HINT_PATTERNS: list[tuple[str, str]] = [
     (r"\bncaaw\b", "Basketball"),
     # Soccer/Football (association)
     (r"\bsoccer\b", "Soccer"),
-    (r"\bfootball\b(?!\s*(nfl|american|college))", "Soccer"),  # "Football" without NFL context = Soccer
+    (
+        r"\bfootball\b(?!\s*(nfl|american|college))",
+        "Soccer",
+    ),  # "Football" without NFL context = Soccer
     # Baseball
     (r"\bbaseball\b", "Baseball"),
     (r"\bmlb\b", "Baseball"),

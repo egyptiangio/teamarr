@@ -376,7 +376,7 @@ class CricbuzzClient:
             return None
 
         except Exception as e:
-            logger.debug("[CRICBUZZ] Failed to parse match info for %s: %s", match_id, e)
+            logger.debug("[CRICBUZZ] Failed to parse match info: %s", e)
             return None
 
     def get_live_matches(self) -> list[dict]:
@@ -655,16 +655,16 @@ class CricbuzzClient:
 
         # Extract all series paths from the page
         # Format: cricket-series/12345/slug-name-year
-        pattern = r'cricket-series/(\d+)/([a-z0-9-]+)'
+        pattern = r"cricket-series/(\d+)/([a-z0-9-]+)"
         matches = re.findall(pattern, html.lower())
 
         # Build mapping: base slug -> full path
-        # Base slug = slug without year suffix (e.g., "indian-premier-league" from "indian-premier-league-2026")
+        # Base slug = slug without year suffix (e.g., "indian-premier-league" from "indian-premier-league-2026")  # noqa: E501
         series_map: dict[str, str] = {}
 
         for series_id, slug in matches:
             # Remove year suffix patterns like "-2025", "-2025-26", "-2026"
-            base_slug = re.sub(r'-\d{4}(-\d{2})?$', '', slug)
+            base_slug = re.sub(r"-\d{4}(-\d{2})?$", "", slug)
 
             full_path = f"{series_id}/{slug}"
 
@@ -673,7 +673,7 @@ class CricbuzzClient:
                 series_map[base_slug] = full_path
             else:
                 # Compare series IDs - higher is newer
-                existing_id = int(series_map[base_slug].split('/')[0])
+                existing_id = int(series_map[base_slug].split("/")[0])
                 if int(series_id) > existing_id:
                     series_map[base_slug] = full_path
 

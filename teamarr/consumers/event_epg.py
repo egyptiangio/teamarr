@@ -12,6 +12,7 @@ Data flow:
 - Scoreboard includes odds when betting lines are released (typically same-day)
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
@@ -20,7 +21,6 @@ from teamarr.database.templates import EventTemplateConfig
 from teamarr.services import SportsDataService
 from teamarr.templates.context_builder import ContextBuilder
 from teamarr.templates.resolver import TemplateResolver
-import logging
 from teamarr.utilities.sports import get_sport_duration
 
 logger = logging.getLogger(__name__)

@@ -25,7 +25,9 @@ class EventEPGGroup:
     channel_start_number: int | None = None
     channel_group_id: int | None = None
     channel_group_mode: str = "static"  # "static", "sport", "league"
-    channel_profile_ids: list[int | str] = field(default_factory=list)  # IDs or "{sport}", "{league}"
+    channel_profile_ids: list[int | str] = field(
+        default_factory=list
+    )  # IDs or "{sport}", "{league}"
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -118,7 +120,9 @@ def _row_to_group(row) -> EventEPGGroup:
         template_id=row["template_id"],
         channel_start_number=row["channel_start_number"],
         channel_group_id=row["channel_group_id"],
-        channel_group_mode=row["channel_group_mode"] if "channel_group_mode" in row.keys() else "static",
+        channel_group_mode=row["channel_group_mode"]
+        if "channel_group_mode" in row.keys()
+        else "static",
         channel_profile_ids=channel_profile_ids,
         duplicate_event_handling=row["duplicate_event_handling"] or "consolidate",
         channel_assignment_mode=row["channel_assignment_mode"] or "auto",
@@ -147,7 +151,9 @@ def _row_to_group(row) -> EventEPGGroup:
         custom_regex_time_enabled=bool(row["custom_regex_time_enabled"])
         if "custom_regex_time_enabled" in row.keys()
         else False,
-        custom_regex_league=row["custom_regex_league"] if "custom_regex_league" in row.keys() else None,
+        custom_regex_league=row["custom_regex_league"]
+        if "custom_regex_league" in row.keys()
+        else None,
         custom_regex_league_enabled=bool(row["custom_regex_league_enabled"])
         if "custom_regex_league_enabled" in row.keys()
         else False,
@@ -171,10 +177,18 @@ def _row_to_group(row) -> EventEPGGroup:
         or 0,
         streams_excluded=row["streams_excluded"] if "streams_excluded" in row.keys() else 0,
         # EXCLUDED breakdown by reason
-        excluded_event_final=row["excluded_event_final"] if "excluded_event_final" in row.keys() else 0,
-        excluded_event_past=row["excluded_event_past"] if "excluded_event_past" in row.keys() else 0,
-        excluded_before_window=row["excluded_before_window"] if "excluded_before_window" in row.keys() else 0,
-        excluded_league_not_included=row["excluded_league_not_included"] if "excluded_league_not_included" in row.keys() else 0,
+        excluded_event_final=row["excluded_event_final"]
+        if "excluded_event_final" in row.keys()
+        else 0,
+        excluded_event_past=row["excluded_event_past"]
+        if "excluded_event_past" in row.keys()
+        else 0,
+        excluded_before_window=row["excluded_before_window"]
+        if "excluded_before_window" in row.keys()
+        else 0,
+        excluded_league_not_included=row["excluded_league_not_included"]
+        if "excluded_league_not_included" in row.keys()
+        else 0,
         # Multi-sport enhancements
         channel_sort_order=row["channel_sort_order"] or "time",
         overlap_handling=row["overlap_handling"] or "add_stream",
@@ -224,7 +238,9 @@ def get_group(conn: Connection, group_id: int) -> EventEPGGroup | None:
     return _row_to_group(row) if row else None
 
 
-def get_group_by_name(conn: Connection, name: str, m3u_account_id: int | None = None) -> EventEPGGroup | None:
+def get_group_by_name(
+    conn: Connection, name: str, m3u_account_id: int | None = None
+) -> EventEPGGroup | None:
     """Get a single event EPG group by name (optionally scoped to account).
 
     Args:
@@ -238,7 +254,7 @@ def get_group_by_name(conn: Connection, name: str, m3u_account_id: int | None = 
     if m3u_account_id is not None:
         cursor = conn.execute(
             "SELECT * FROM event_epg_groups WHERE name = ? AND m3u_account_id = ?",
-            (name, m3u_account_id)
+            (name, m3u_account_id),
         )
     else:
         cursor = conn.execute("SELECT * FROM event_epg_groups WHERE name = ?", (name,))
@@ -367,7 +383,7 @@ def create_group(
             skip_builtin_filter,
             include_teams, exclude_teams, team_filter_mode,
             channel_sort_order, overlap_handling, enabled
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
         (
             name,
             display_name,
@@ -864,9 +880,7 @@ def delete_group(conn: Connection, group_id: int) -> bool:
         True if deleted
     """
     # Recursively delete child groups first
-    cursor = conn.execute(
-        "SELECT id FROM event_epg_groups WHERE parent_group_id = ?", (group_id,)
-    )
+    cursor = conn.execute("SELECT id FROM event_epg_groups WHERE parent_group_id = ?", (group_id,))
     for row in cursor.fetchall():
         delete_group(conn, row["id"])
 

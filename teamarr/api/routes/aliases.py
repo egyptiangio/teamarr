@@ -178,11 +178,11 @@ def create_new_alias(
             provider=request.provider,
         )
         return AliasResponse.from_db(alias)
-    except IntegrityError:
+    except IntegrityError as e:
         raise HTTPException(
             status_code=409,
             detail=f"Alias '{request.alias}' already exists for league '{request.league}'",
-        )
+        ) from e
 
 
 @router.patch("/{alias_id}", response_model=AliasResponse)

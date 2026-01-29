@@ -7,13 +7,13 @@ Also supports conditional descriptions - selecting the best template based on
 game conditions (is_home, win_streak, etc.) and priority.
 """
 
+import logging
 import re
 from typing import Any
 
 from teamarr.templates.conditions import get_condition_selector
 from teamarr.templates.context import GameContext, TemplateContext
 from teamarr.templates.variables import SuffixRules, get_registry
-import logging
 
 logger = logging.getLogger(__name__)
 

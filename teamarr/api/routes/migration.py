@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from teamarr.database.connection import get_connection, DEFAULT_DB_PATH
+from teamarr.database.connection import DEFAULT_DB_PATH, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +126,7 @@ async def archive_v1_database():
         )
     except Exception as e:
         logger.error("[MIGRATION] Failed to archive V1 database: %s", e)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to archive database: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to archive database: {e}") from e
 
 
 @router.get("/download-backup")
@@ -163,6 +161,7 @@ async def clear_v1_backup():
 
             # Move backup to subfolder with timestamp
             from datetime import datetime
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             dest_path = backups_dir / f"teamarr-v1-{timestamp}.db"
 
@@ -172,7 +171,7 @@ async def clear_v1_backup():
             return {"success": True, "message": f"Backup moved to {dest_path}"}
         except Exception as e:
             logger.error("[MIGRATION] Failed to move V1 backup: %s", e)
-            raise HTTPException(status_code=500, detail=f"Failed to move backup: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to move backup: {e}") from e
 
     return {"success": True, "message": "No backup to move"}
 
@@ -196,6 +195,7 @@ async def trigger_restart():
             backups_dir.mkdir(exist_ok=True)
 
             from datetime import datetime
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             dest_path = backups_dir / f"teamarr-v1-{timestamp}.db"
 

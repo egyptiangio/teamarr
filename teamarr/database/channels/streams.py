@@ -6,9 +6,9 @@ CRUD operations for managed_channel_streams table.
 import logging
 from sqlite3 import Connection
 
-logger = logging.getLogger(__name__)
-
 from .types import ManagedChannelStream
+
+logger = logging.getLogger(__name__)
 
 
 def add_stream_to_channel(
@@ -60,7 +60,12 @@ def add_stream_to_channel(
         values,
     )
     stream_id = cursor.lastrowid
-    logger.debug("[ATTACHED] Stream %d to channel %d priority=%d", dispatcharr_stream_id, managed_channel_id, priority)
+    logger.debug(
+        "[ATTACHED] Stream %d to channel %d priority=%d",
+        dispatcharr_stream_id,
+        managed_channel_id,
+        priority,
+    )
     return stream_id
 
 
@@ -91,7 +96,12 @@ def remove_stream_from_channel(
         (reason, managed_channel_id, dispatcharr_stream_id),
     )
     if cursor.rowcount > 0:
-        logger.debug("[DETACHED] Stream %d from channel %d reason=%s", dispatcharr_stream_id, managed_channel_id, reason)
+        logger.debug(
+            "[DETACHED] Stream %d from channel %d reason=%s",
+            dispatcharr_stream_id,
+            managed_channel_id,
+            reason,
+        )
         return True
     return False
 

@@ -4,6 +4,7 @@ Fetches data from HockeyTech API and normalizes into our dataclass format.
 Used for CHL leagues (OHL, WHL, QMJHL) plus AHL, PWHL, USHL.
 """
 
+import logging
 import re
 from datetime import UTC, date, datetime
 
@@ -17,7 +18,6 @@ from teamarr.core import (
     Venue,
 )
 from teamarr.providers.hockeytech.client import HockeyTechClient
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,9 @@ class HockeyTechProvider(SportsProvider):
             )
 
         except Exception as e:
-            logger.warning("[HOCKEYTECH] Failed to parse game %s: %s", game.get('game_id', 'unknown'), e)
+            logger.warning(
+                "[HOCKEYTECH] Failed to parse game %s: %s", game.get("game_id", "unknown"), e
+            )
             return None
 
     def _parse_team_from_game(

@@ -4,7 +4,6 @@ import json
 import logging
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
 
 from teamarr.api.models import (
     TemplateCreate,
@@ -56,7 +55,7 @@ def list_templates():
                    COALESCE((SELECT COUNT(*) FROM event_epg_groups WHERE template_id = t.id), 0) as group_count
             FROM templates t
             ORDER BY t.name
-            """
+            """  # noqa: E501
         )
         return [dict(row) for row in cursor.fetchall()]
 

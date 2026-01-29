@@ -694,6 +694,7 @@ def execute_reset_channels():
 
     # Mark all managed_channels as deleted
     import logging
+
     logger = logging.getLogger(__name__)
 
     with get_db() as conn:

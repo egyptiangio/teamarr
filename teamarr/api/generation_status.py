@@ -4,10 +4,11 @@ Provides global state for tracking EPG generation progress,
 used by both SSE streaming and polling endpoints.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass

@@ -265,7 +265,10 @@ class DynamicResolver:
         """
         logger.debug(
             "[RESOLVER] resolve_channel_group called: mode=%s, static_id=%s, sport=%s, league=%s",
-            mode, static_group_id, event_sport, event_league,
+            mode,
+            static_group_id,
+            event_sport,
+            event_league,
         )
 
         if mode == "static":
@@ -277,7 +280,9 @@ class DynamicResolver:
             group_id = self._get_or_create_group(display_name)
             logger.info(
                 "[RESOLVER] Sport mode: %s -> '%s' -> group_id=%s",
-                event_sport, display_name, group_id
+                event_sport,
+                display_name,
+                group_id,
             )
             return group_id
 
@@ -285,8 +290,7 @@ class DynamicResolver:
             alias = self.get_league_alias(event_league)
             group_id = self._get_or_create_group(alias)
             logger.info(
-                "[RESOLVER] League mode: %s -> '%s' -> group_id=%s",
-                event_league, alias, group_id
+                "[RESOLVER] League mode: %s -> '%s' -> group_id=%s", event_league, alias, group_id
             )
             return group_id
 
@@ -298,21 +302,24 @@ class DynamicResolver:
             if "{sport}" in resolved_name or "{league}" in resolved_name:
                 logger.warning(
                     "[RESOLVER] Pattern has unresolved wildcards: %s -> %s (sport=%s, league=%s)",
-                    mode, resolved_name, event_sport, event_league
+                    mode,
+                    resolved_name,
+                    event_sport,
+                    event_league,
                 )
                 return static_group_id  # Fallback
 
             group_id = self._get_or_create_group(resolved_name)
             logger.info(
-                "[RESOLVER] Pattern mode: %s -> '%s' -> group_id=%s",
-                mode, resolved_name, group_id
+                "[RESOLVER] Pattern mode: %s -> '%s' -> group_id=%s", mode, resolved_name, group_id
             )
             return group_id
 
         # Unknown mode, fallback
         logger.warning(
             "[RESOLVER] Unknown mode '%s', falling back to static_group_id=%s",
-            mode, static_group_id
+            mode,
+            static_group_id,
         )
         return static_group_id
 
@@ -353,7 +360,8 @@ class DynamicResolver:
                     if "{sport}" in resolved_name or "{league}" in resolved_name:
                         logger.warning(
                             "[RESOLVER] Profile pattern has unresolved wildcards: %s -> %s",
-                            item, resolved_name
+                            item,
+                            resolved_name,
                         )
                         continue  # Skip this pattern
 
@@ -362,7 +370,9 @@ class DynamicResolver:
                         resolved.append(pid)
                         logger.debug(
                             "[RESOLVER] Profile pattern: %s -> '%s' -> id=%s",
-                            item, resolved_name, pid
+                            item,
+                            resolved_name,
+                            pid,
                         )
 
         return resolved

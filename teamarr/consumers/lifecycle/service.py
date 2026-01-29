@@ -11,8 +11,8 @@ from datetime import datetime
 from sqlite3 import Connection
 from typing import Any
 
+from teamarr.consumers.event_epg import POSTPONED_LABEL, is_event_postponed
 from teamarr.core import Event
-from teamarr.consumers.event_epg import is_event_postponed, POSTPONED_LABEL
 from teamarr.templates import ContextBuilder, TemplateResolver
 
 from .dynamic_resolver import DynamicResolver
@@ -197,10 +197,16 @@ class ChannelLifecycleService:
                         )
                     else:
                         stats["errors"].append(f"Profile {profile_id}: {result.error}")
-                        logger.warning("[LIFECYCLE] Bulk profile update failed for profile %d: %s", profile_id, result.error)
+                        logger.warning(
+                            "[LIFECYCLE] Bulk profile update failed for profile %d: %s",
+                            profile_id,
+                            result.error,
+                        )
                 except Exception as e:
                     stats["errors"].append(f"Profile {profile_id}: {e}")
-                    logger.warning("[LIFECYCLE] Bulk profile update error for profile %d: %s", profile_id, e)
+                    logger.warning(
+                        "[LIFECYCLE] Bulk profile update error for profile %d: %s", profile_id, e
+                    )
 
         # Clear pending changes after applying
         self._pending_profile_changes = {}
@@ -282,7 +288,7 @@ class ChannelLifecycleService:
                 static_channel_group_id = group_config.get("channel_group_id")
                 channel_group_mode = group_config.get("channel_group_mode", "static")
 
-                # Parse profile IDs from group config (may contain wildcards like "{sport}", "{league}")
+                # Parse profile IDs from group config (may contain wildcards like "{sport}", "{league}")  # noqa: E501
                 # Returns None if not configured, [] if explicitly empty, [1,2,...] if set
                 raw_profile_ids = group_config.get("channel_profile_ids")
 
@@ -526,7 +532,10 @@ class ChannelLifecycleService:
             try:
                 self._apply_pending_profile_changes()
             except Exception as profile_err:
-                logger.debug("[LIFECYCLE] Failed to apply pending profile changes after error: %s", profile_err)
+                logger.debug(
+                    "[LIFECYCLE] Failed to apply pending profile changes after error: %s",
+                    profile_err,
+                )
 
         return result
 
@@ -703,9 +712,7 @@ class ChannelLifecycleService:
                         "reason": "no_existing_channel_for_add_only",
                     }
                 )
-                logger.debug(
-                    f"Skipped '{stream_name}' - add_only mode and no existing channel"
-                )
+                logger.debug(f"Skipped '{stream_name}' - add_only mode and no existing channel")
                 return result
             else:
                 # add_stream or skip mode with no existing channel: create new
@@ -756,8 +763,9 @@ class ChannelLifecycleService:
                         f"Dispatcharr, marking deleted and will create new: {existing.channel_name}"
                     )
                     mark_channel_deleted(
-                        conn, existing.id,
-                        reason=f"Missing from Dispatcharr (ID {existing.dispatcharr_channel_id})"
+                        conn,
+                        existing.id,
+                        reason=f"Missing from Dispatcharr (ID {existing.dispatcharr_channel_id})",
                     )
                     log_channel_history(
                         conn=conn,
@@ -795,7 +803,9 @@ class ChannelLifecycleService:
             # Add stream to existing channel if not already present
             if not stream_exists_on_channel(conn, existing.id, stream_id):
                 # Compute priority from ordering rules (or use sequential if no rules)
-                m3u_account_name = stream.get("m3u_account_name") or group_config.get("m3u_account_name")
+                m3u_account_name = stream.get("m3u_account_name") or group_config.get(
+                    "m3u_account_name"
+                )
                 source_group_id = group_config.get("id")
                 priority = compute_stream_priority_from_rules(
                     conn, stream_name, m3u_account_name, source_group_id
@@ -959,7 +969,9 @@ class ChannelLifecycleService:
                 #   None = not configured → default to [0] (all profiles, backwards compat)
                 #   [] = explicitly no profiles → send [] (no profiles)
                 #   [1, 2, ...] = specific profiles → send those
-                effective_profile_ids = channel_profile_ids if channel_profile_ids is not None else [0]
+                effective_profile_ids = (
+                    channel_profile_ids if channel_profile_ids is not None else [0]
+                )
                 logger.debug(
                     f"Channel '{channel_name}' profile assignment: "
                     f"configured={channel_profile_ids}, effective={effective_profile_ids}"
@@ -1005,7 +1017,9 @@ class ChannelLifecycleService:
                 home_team=event.home_team.name if event.home_team else None,
                 away_team=event.away_team.name if event.away_team else None,
                 # Use segment-specific start time for UFC segments, otherwise event start
-                event_date=(segment_start or event.start_time).isoformat() if (segment_start or event.start_time) else None,
+                event_date=(segment_start or event.start_time).isoformat()
+                if (segment_start or event.start_time)
+                else None,
                 event_name=event.name,
                 league=event.league,
                 sport=event.sport,
@@ -1044,7 +1058,9 @@ class ChannelLifecycleService:
                         f"Cleaned up Dispatcharr channel {dispatcharr_channel_id} after DB failure"
                     )
                 except Exception as cleanup_err:
-                    logger.warning("[LIFECYCLE] Failed to cleanup Dispatcharr channel: %s", cleanup_err)
+                    logger.warning(
+                        "[LIFECYCLE] Failed to cleanup Dispatcharr channel: %s", cleanup_err
+                    )
 
             return ChannelCreationResult(
                 success=False,
@@ -1300,7 +1316,7 @@ class ChannelLifecycleService:
             update_data = {}
             db_updates = {}
             changes_made = []
-            group_id = group_config.get("id")
+            group_config.get("id")
 
             # 1. Check channel name (template resolution) - V1 parity
             matched_keyword = getattr(existing, "exception_keyword", None)
@@ -1312,9 +1328,13 @@ class ChannelLifecycleService:
 
             # 2. Check channel number - Teamarr DB is source of truth
             # Handle channel numbers that may be floats as strings (e.g., "8121.0")
-            expected_number = int(float(existing.channel_number)) if existing.channel_number else None
+            expected_number = (
+                int(float(existing.channel_number)) if existing.channel_number else None
+            )
             current_number = (
-                int(float(current_channel.channel_number)) if current_channel.channel_number else None
+                int(float(current_channel.channel_number))
+                if current_channel.channel_number
+                else None
             )
             if expected_number and expected_number != current_number:
                 update_data["channel_number"] = expected_number
@@ -1468,7 +1488,11 @@ class ChannelLifecycleService:
                     reason = "URL changed" if logo_url != stored_logo_url else "missing logo_id"
                     logger.debug(
                         "[LIFECYCLE] Logo sync for '%s': %s (stored=%s, new=%s, logo_id=%s)",
-                        existing.channel_name, reason, stored_logo_url, logo_url, current_logo_id
+                        existing.channel_name,
+                        reason,
+                        stored_logo_url,
+                        logo_url,
+                        current_logo_id,
                     )
                     with self._dispatcharr_lock:
                         # Upload new logo
@@ -1547,7 +1571,9 @@ class ChannelLifecycleService:
                 )
 
         except Exception as e:
-            logger.debug("[LIFECYCLE] Error syncing settings for channel %s: %s", existing.channel_name, e)
+            logger.debug(
+                "[LIFECYCLE] Error syncing settings for channel %s: %s", existing.channel_name, e
+            )
 
         return result
 
@@ -1768,11 +1794,15 @@ class ChannelLifecycleService:
                     continue
 
                 expected_delete_str = expected_delete_time.isoformat()
-                stored_delete_str = str(channel.scheduled_delete_at) if channel.scheduled_delete_at else None
+                stored_delete_str = (
+                    str(channel.scheduled_delete_at) if channel.scheduled_delete_at else None
+                )
 
                 # Update if different
                 if expected_delete_str != stored_delete_str:
-                    update_managed_channel(conn, channel.id, {"scheduled_delete_at": expected_delete_str})
+                    update_managed_channel(
+                        conn, channel.id, {"scheduled_delete_at": expected_delete_str}
+                    )
                     updated_count += 1
                     logger.debug(
                         f"Updated scheduled_delete_at for '{channel.channel_name}': "
@@ -1780,11 +1810,15 @@ class ChannelLifecycleService:
                     )
 
             except Exception as e:
-                logger.debug("[LIFECYCLE] Error recalculating delete time for channel %d: %s", channel.id, e)
+                logger.debug(
+                    "[LIFECYCLE] Error recalculating delete time for channel %d: %s", channel.id, e
+                )
                 continue
 
         if updated_count > 0:
-            logger.info("[LIFECYCLE] Recalculated scheduled_delete_at for %d channels", updated_count)
+            logger.info(
+                "[LIFECYCLE] Recalculated scheduled_delete_at for %d channels", updated_count
+            )
 
         return updated_count
 
@@ -1841,11 +1875,15 @@ class ChannelLifecycleService:
                         )
                     result["associated"] += 1
                 except Exception as e:
-                    logger.debug("[LIFECYCLE] Failed to associate EPG for channel %s: %s", channel.channel_name, e)
+                    logger.debug(
+                        "[LIFECYCLE] Failed to associate EPG for channel %s: %s",
+                        channel.channel_name,
+                        e,
+                    )
                     result["errors"] += 1
 
         if result["associated"]:
-            logger.info("[LIFECYCLE] Associated EPG data with %d channels", result['associated'])
+            logger.info("[LIFECYCLE] Associated EPG data with %d channels", result["associated"])
 
         return result
 
@@ -1935,11 +1973,13 @@ class ChannelLifecycleService:
                                 current_fp = compute_fingerprint(group_id, stream_id, current_name)
 
                                 if stored_fp != current_fp:
-                                    changed_streams.append({
-                                        "stream": s,
-                                        "old_name": stored_name,
-                                        "new_name": current_name,
-                                    })
+                                    changed_streams.append(
+                                        {
+                                            "stream": s,
+                                            "old_name": stored_name,
+                                            "new_name": current_name,
+                                        }
+                                    )
                                     continue
 
                             valid_streams.append(s)
@@ -2003,7 +2043,7 @@ class ChannelLifecycleService:
                                     managed_channel_id=channel.id,
                                     change_type="stream_removed",
                                     change_source="lifecycle",
-                                    notes=f"Stream {stream_id} content changed: '{changed['old_name']}' -> '{changed['new_name']}'",
+                                    notes=f"Stream {stream_id} content changed: '{changed['old_name']}' -> '{changed['new_name']}'",  # noqa: E501
                                 )
                                 logger.debug(
                                     f"Removed stream {stream_id} from channel "
@@ -2025,7 +2065,9 @@ class ChannelLifecycleService:
             result.errors.append({"error": str(e)})
 
         if result.deleted:
-            logger.info("[LIFECYCLE] Deleted %d channels with missing/changed streams", len(result.deleted))
+            logger.info(
+                "[LIFECYCLE] Deleted %d channels with missing/changed streams", len(result.deleted)
+            )
 
         return result
 
@@ -2075,13 +2117,16 @@ class ChannelLifecycleService:
 
                 # Sort by current channel number to maintain relative order
                 sorted_channels = sorted(
-                    channels, key=lambda c: int(float(c.channel_number)) if c.channel_number else 9999
+                    channels,
+                    key=lambda c: int(float(c.channel_number)) if c.channel_number else 9999,
                 )
 
                 # Reassign to compact range
                 next_number = range_start
                 for channel in sorted_channels:
-                    current_number = int(float(channel.channel_number)) if channel.channel_number else None
+                    current_number = (
+                        int(float(channel.channel_number)) if channel.channel_number else None
+                    )
 
                     if current_number == next_number:
                         # Already at correct position
@@ -2141,7 +2186,11 @@ class ChannelLifecycleService:
             result["errors"].append({"error": str(e)})
 
         if result["reassigned"]:
-            logger.info("[LIFECYCLE] Reassigned %d channels in group %d", len(result['reassigned']), group_id)
+            logger.info(
+                "[LIFECYCLE] Reassigned %d channels in group %d",
+                len(result["reassigned"]),
+                group_id,
+            )
 
         return result
 
@@ -2228,7 +2277,8 @@ class ChannelLifecycleService:
                         continue
 
                     sorted_channels = sorted(
-                        channels, key=lambda c: int(float(c.channel_number)) if c.channel_number else 9999
+                        channels,
+                        key=lambda c: int(float(c.channel_number)) if c.channel_number else 9999,
                     )
 
                     # Reassign to ideal range
@@ -2330,7 +2380,9 @@ class ChannelLifecycleService:
                 if not orphans:
                     return result
 
-                logger.info("[LIFECYCLE] Found %d orphan Dispatcharr channel(s) to clean up", len(orphans))
+                logger.info(
+                    "[LIFECYCLE] Found %d orphan Dispatcharr channel(s) to clean up", len(orphans)
+                )
 
                 for orphan in orphans:
                     try:
@@ -2366,7 +2418,7 @@ class ChannelLifecycleService:
             result["errors"].append({"error": str(e)})
 
         if result["deleted"] > 0:
-            logger.info("[LIFECYCLE] Cleaned up %d orphan Dispatcharr channels", result['deleted'])
+            logger.info("[LIFECYCLE] Cleaned up %d orphan Dispatcharr channels", result["deleted"])
 
         return result
 
@@ -2410,9 +2462,7 @@ class ChannelLifecycleService:
                     group_name = group.name
 
                     # Get channels for this disabled group
-                    channels = get_managed_channels_for_group(
-                        conn, group_id, include_deleted=False
-                    )
+                    channels = get_managed_channels_for_group(conn, group_id, include_deleted=False)
 
                     for channel in channels:
                         try:
@@ -2451,9 +2501,7 @@ class ChannelLifecycleService:
             result["errors"].append({"error": str(e)})
 
         if result["deleted"]:
-            logger.info(
-                f"Cleaned up {len(result['deleted'])} channel(s) from disabled groups"
-            )
+            logger.info(f"Cleaned up {len(result['deleted'])} channel(s) from disabled groups")
 
         return result
 

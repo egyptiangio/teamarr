@@ -59,5 +59,3 @@ def extract_venue_full(ctx: TemplateContext, game_ctx: GameContext | None) -> st
     venue = game_ctx.event.venue
     parts = [p for p in [venue.name, venue.city, venue.state] if p]
     return ", ".join(parts)
-
-

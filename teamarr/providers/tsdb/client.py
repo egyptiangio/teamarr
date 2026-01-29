@@ -25,6 +25,7 @@ Dependencies are injected via constructor:
 This client has NO direct database access - all config is injected.
 """
 
+import logging
 import threading
 import time
 from collections import deque
@@ -35,7 +36,6 @@ import httpx
 
 from teamarr.core import LeagueMappingSource
 from teamarr.utilities.cache import TTLCache, make_cache_key
-import logging
 
 logger = logging.getLogger(__name__)
 
