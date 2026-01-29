@@ -240,7 +240,7 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
         # Only adjust if NO US timezone marker (assumes European source)
         if not has_us_tz:
             extracted_date = extracted_date - timedelta(days=1)
-            logger.debug(
+            logger.info(
                 "[NORMALIZE] Adjusted date -1 day for European timezone: %s (time=%s)",
                 text[:50], extracted_time
             )
