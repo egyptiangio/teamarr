@@ -257,6 +257,81 @@ def list_patterns(group_id: int | None = None):
     )
 
 
+class PatternUpdate(BaseModel):
+    """Update pattern request."""
+
+    regex: str | None = None
+    description: str | None = None
+
+
+@router.put("/patterns/{pattern_id}", response_model=PatternResponse)
+def update_pattern(pattern_id: str, request: PatternUpdate):
+    """Update a learned pattern (regex or description)."""
+    import re
+    from teamarr.database.ai_patterns import get_all_patterns
+
+    # Validate regex if provided
+    if request.regex:
+        try:
+            re.compile(request.regex)
+        except re.error as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid regex: {e}",
+            )
+
+    with get_db() as conn:
+        # Find the pattern
+        patterns = get_all_patterns(conn)
+        pattern = next((p for p in patterns if p["pattern_id"] == pattern_id), None)
+
+        if not pattern:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pattern {pattern_id} not found",
+            )
+
+        # Build update query
+        updates = []
+        values = []
+        if request.regex is not None:
+            updates.append("regex = ?")
+            values.append(request.regex)
+        if request.description is not None:
+            updates.append("description = ?")
+            values.append(request.description)
+
+        if updates:
+            from datetime import datetime, timezone
+            updates.append("updated_at = ?")
+            values.append(datetime.now(timezone.utc).isoformat())
+            values.append(pattern_id)
+
+            conn.execute(
+                f"UPDATE ai_patterns SET {', '.join(updates)} WHERE pattern_id = ?",
+                values,
+            )
+            conn.commit()
+
+        # Fetch updated pattern
+        patterns = get_all_patterns(conn)
+        updated = next((p for p in patterns if p["pattern_id"] == pattern_id), pattern)
+
+    logger.info("[AI] Updated pattern: %s", pattern_id)
+
+    return PatternResponse(
+        pattern_id=updated["pattern_id"],
+        regex=updated["regex"],
+        description=updated.get("description", ""),
+        example_streams=updated.get("example_streams", []),
+        field_map=updated.get("field_map", {}),
+        confidence=updated.get("confidence", 0.0),
+        match_count=updated.get("match_count", 0),
+        fail_count=updated.get("fail_count", 0),
+        group_id=updated.get("group_id"),
+    )
+
+
 @router.delete("/patterns/{pattern_id}")
 def delete_pattern(pattern_id: str) -> dict:
     """Delete a learned pattern."""
@@ -517,3 +592,87 @@ def test_parse(request: TestParseRequest):
         )
     finally:
         parser.close()
+
+
+# =============================================================================
+# TEST REGEX PATTERN
+# =============================================================================
+
+
+class TestRegexRequest(BaseModel):
+    """Request to test a regex pattern against streams."""
+
+    regex: str
+    streams: list[str] = Field(..., min_length=1, max_length=100)
+
+
+class RegexMatchResult(BaseModel):
+    """Result of testing regex against a stream."""
+
+    stream: str
+    matched: bool
+    groups: dict[str, str] = {}
+
+
+class TestRegexResponse(BaseModel):
+    """Response from regex testing."""
+
+    success: bool
+    valid_regex: bool
+    matches: int
+    total: int
+    results: list[RegexMatchResult]
+    error: str | None = None
+
+
+@router.post("/test-regex", response_model=TestRegexResponse)
+def test_regex(request: TestRegexRequest):
+    """Test a regex pattern against provided streams.
+
+    Useful for verifying/editing patterns before saving.
+    """
+    import re
+
+    # Validate regex
+    try:
+        pattern = re.compile(request.regex, re.IGNORECASE)
+    except re.error as e:
+        return TestRegexResponse(
+            success=False,
+            valid_regex=False,
+            matches=0,
+            total=len(request.streams),
+            results=[],
+            error=f"Invalid regex: {e}",
+        )
+
+    results = []
+    matches = 0
+
+    for stream in request.streams:
+        match = pattern.search(stream)
+        if match:
+            matches += 1
+            results.append(
+                RegexMatchResult(
+                    stream=stream,
+                    matched=True,
+                    groups=match.groupdict(),
+                )
+            )
+        else:
+            results.append(
+                RegexMatchResult(
+                    stream=stream,
+                    matched=False,
+                    groups={},
+                )
+            )
+
+    return TestRegexResponse(
+        success=True,
+        valid_regex=True,
+        matches=matches,
+        total=len(request.streams),
+        results=results,
+    )

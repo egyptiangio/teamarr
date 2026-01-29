@@ -4,6 +4,7 @@ import { MainLayout } from "@/layouts/MainLayout"
 import { GenerationProvider } from "@/contexts/GenerationContext"
 import { StartupOverlay } from "@/components/StartupOverlay"
 import {
+  AI,
   Dashboard,
   Templates,
   TemplateForm,
@@ -92,6 +93,7 @@ function AppContent() {
             <Route path="event-groups/import" element={<EventGroupImport />} />
             <Route path="epg" element={<EPG />} />
             <Route path="channels" element={<Channels />} />
+            <Route path="ai" element={<AI />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
