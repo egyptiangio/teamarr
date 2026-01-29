@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import {
   Brain,
@@ -14,6 +14,7 @@ import {
   FlaskConical,
   ChevronDown,
   ChevronRight,
+  Square,
 } from "lucide-react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -25,12 +26,23 @@ import { cn } from "@/lib/utils"
 import {
   getAIStatus,
   getAIPatterns,
-  learnPatterns,
   deleteAIPattern,
   deleteGroupPatterns,
+  startPatternLearning,
+  getPatternLearningStatus,
+  abortPatternLearning,
   type AIPattern,
+  type PatternLearningStatus,
 } from "@/api/settings"
 import { useGroups } from "@/hooks/useGroups"
+
+// Format seconds as "Xm Ys" or "Xs"
+function formatETA(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
+}
 
 // API functions for pattern management
 async function updatePattern(patternId: string, data: { regex?: string; description?: string }) {
@@ -309,21 +321,77 @@ export function AI() {
     groupsQuery.data?.groups?.map(g => [g.id, g.name]) ?? []
   )
 
-  // Mutations
-  const learnMutation = useMutation({
-    mutationFn: (groupIds: number[]) => learnPatterns(undefined, groupIds),
+  // Pattern learning status polling
+  const [learningStatus, setLearningStatus] = useState<PatternLearningStatus | null>(null)
+  const [isPolling, setIsPolling] = useState(false)
+
+  const pollLearningStatus = useCallback(async () => {
+    try {
+      const status = await getPatternLearningStatus()
+      setLearningStatus(status)
+
+      if (status.in_progress) {
+        // Continue polling
+        setIsPolling(true)
+      } else {
+        // Done - show result and refresh patterns
+        setIsPolling(false)
+        if (status.status === "complete") {
+          toast.success(`Learned ${status.patterns_learned} patterns from ${status.groups_completed} group(s) (${status.avg_coverage.toFixed(0)}% avg coverage)`)
+          queryClient.invalidateQueries({ queryKey: ["ai", "patterns"] })
+          setSelectedGroupIds(new Set())
+        } else if (status.status === "error") {
+          toast.error(status.error || "Pattern learning failed")
+        } else if (status.status === "aborted") {
+          toast.warning("Pattern learning was aborted")
+          queryClient.invalidateQueries({ queryKey: ["ai", "patterns"] })
+        }
+      }
+    } catch (err) {
+      console.error("Failed to poll learning status:", err)
+    }
+  }, [queryClient])
+
+  // Poll for status when learning is in progress
+  useEffect(() => {
+    if (!isPolling) return
+
+    const interval = setInterval(pollLearningStatus, 1000)
+    return () => clearInterval(interval)
+  }, [isPolling, pollLearningStatus])
+
+  // Check for in-progress learning on mount
+  useEffect(() => {
+    pollLearningStatus()
+  }, [pollLearningStatus])
+
+  // Start learning mutation
+  const startLearnMutation = useMutation({
+    mutationFn: (groupIds: number[]) => startPatternLearning(undefined, groupIds),
     onSuccess: (data) => {
       if (data.success) {
-        const groupCount = data.group_results?.length || 1
-        toast.success(`Learned ${data.patterns_learned} patterns from ${groupCount} group(s) (${data.coverage_percent.toFixed(0)}% avg coverage)`)
-        queryClient.invalidateQueries({ queryKey: ["ai", "patterns"] })
-        setSelectedGroupIds(new Set())
+        toast.info(data.message)
+        setIsPolling(true)
+        pollLearningStatus()
       } else {
-        toast.error(data.error || "Failed to learn patterns")
+        toast.error("Failed to start pattern learning")
       }
     },
     onError: (err: Error) => toast.error(err.message),
   })
+
+  // Abort learning mutation
+  const abortLearnMutation = useMutation({
+    mutationFn: abortPatternLearning,
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.info("Aborting pattern learning...")
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const isLearning = learningStatus?.in_progress ?? false
 
   const deleteMutation = useMutation({
     mutationFn: (patternId: string) => deleteAIPattern(patternId),
@@ -497,38 +565,93 @@ export function AI() {
             ))}
           </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => learnMutation.mutate([...selectedGroupIds])}
-              disabled={selectedGroupIds.size === 0 || learnMutation.isPending || !status?.available}
-            >
-              {learnMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Brain className="h-4 w-4 mr-1" />
+          {/* Action buttons / Progress display */}
+          {isLearning ? (
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+              {/* Progress header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="font-medium">Learning Patterns...</span>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => abortLearnMutation.mutate()}
+                  disabled={abortLearnMutation.isPending || learningStatus?.status === "aborted"}
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Abort
+                </Button>
+              </div>
+
+              {/* Progress bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Group {learningStatus?.current_group ?? 0} of {learningStatus?.total_groups ?? 0}
+                  </span>
+                  <span className="font-medium">{learningStatus?.percent ?? 0}%</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${learningStatus?.percent ?? 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Current group and ETA */}
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span className="truncate max-w-[60%]">
+                  {learningStatus?.current_group_name || learningStatus?.message || "Starting..."}
+                </span>
+                {learningStatus?.eta_seconds != null && learningStatus.eta_seconds > 0 && (
+                  <span>ETA: {formatETA(learningStatus.eta_seconds)}</span>
+                )}
+              </div>
+
+              {/* Stats */}
+              {(learningStatus?.patterns_learned ?? 0) > 0 && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Patterns learned so far: </span>
+                  <span className="font-medium">{learningStatus?.patterns_learned}</span>
+                </div>
               )}
-              Learn Patterns for {selectedGroupIds.size} Group{selectedGroupIds.size !== 1 ? "s" : ""}
-            </Button>
-            {selectedGroupIds.size > 0 && [...selectedGroupIds].some(id => groupsWithPatterns.includes(id)) && (
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
               <Button
-                variant="outline"
-                onClick={() => {
-                  // Delete patterns for all selected groups that have patterns
-                  const toDelete = [...selectedGroupIds].filter(id => groupsWithPatterns.includes(id))
-                  toDelete.forEach(id => deleteGroupMutation.mutate(id))
-                }}
-                disabled={deleteGroupMutation.isPending}
+                onClick={() => startLearnMutation.mutate([...selectedGroupIds])}
+                disabled={selectedGroupIds.size === 0 || startLearnMutation.isPending || !status?.available}
               >
-                {deleteGroupMutation.isPending ? (
+                {startLearnMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-1" />
+                  <Brain className="h-4 w-4 mr-1" />
                 )}
-                Clear Selected Patterns
+                Learn Patterns for {selectedGroupIds.size} Group{selectedGroupIds.size !== 1 ? "s" : ""}
               </Button>
-            )}
-          </div>
+              {selectedGroupIds.size > 0 && [...selectedGroupIds].some(id => groupsWithPatterns.includes(id)) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Delete patterns for all selected groups that have patterns
+                    const toDelete = [...selectedGroupIds].filter(id => groupsWithPatterns.includes(id))
+                    toDelete.forEach(id => deleteGroupMutation.mutate(id))
+                  }}
+                  disabled={deleteGroupMutation.isPending}
+                >
+                  {deleteGroupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-1" />
+                  )}
+                  Clear Selected Patterns
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

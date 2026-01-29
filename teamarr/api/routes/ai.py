@@ -2,16 +2,18 @@
 
 Provides REST API for:
 - AI service status and health checks
-- Pattern learning for event groups
+- Pattern learning for event groups (with background task support)
 - AI settings management
 - Pattern management (list, delete)
 """
 
 import logging
+import threading
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel, Field
 
+from teamarr.api import pattern_learning_status as pls
 from teamarr.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -587,6 +589,163 @@ def learn_patterns(request: LearnPatternsRequest):
         error=None if overall_success else "Some groups failed",
         group_results=group_results if len(group_ids) > 1 else None,
     )
+
+
+# =============================================================================
+# BACKGROUND PATTERN LEARNING
+# =============================================================================
+
+
+class PatternLearningStatusResponse(BaseModel):
+    """Status of background pattern learning task."""
+
+    in_progress: bool
+    status: str
+    message: str
+    percent: int
+    current_group: int
+    total_groups: int
+    current_group_name: str
+    started_at: str | None
+    completed_at: str | None
+    error: str | None
+    eta_seconds: int | None
+    groups_completed: int
+    patterns_learned: int
+    avg_coverage: float
+    group_results: list[dict] = Field(default_factory=list)
+
+
+def _run_pattern_learning_task(group_ids: list[int], settings, dispatcharr_conn) -> None:
+    """Background task to learn patterns for multiple groups."""
+    try:
+        for i, gid in enumerate(group_ids):
+            # Check for abort
+            if pls.is_abort_requested():
+                logger.info("[AI] Pattern learning aborted by user")
+                pls.abort_learning()
+                return
+
+            # Get group name for progress display
+            with get_db() as conn:
+                from teamarr.database.groups import get_group
+                group = get_group(conn, gid)
+                group_name = group.name if group else f"Group {gid}"
+
+            pls.update_progress(
+                current_group=i + 1,
+                group_name=group_name,
+                message=f"Learning patterns for {group_name}...",
+            )
+
+            # Learn patterns for this group
+            result = _learn_patterns_for_single_group(gid, settings, dispatcharr_conn)
+
+            # Add result
+            pls.add_group_result({
+                "group_id": result.group_id,
+                "group_name": result.group_name,
+                "success": result.success,
+                "patterns_learned": result.patterns_learned,
+                "coverage_percent": result.coverage_percent,
+                "error": result.error,
+            })
+
+        pls.complete_learning()
+
+    except Exception as e:
+        logger.exception("[AI] Pattern learning task failed: %s", e)
+        pls.fail_learning(str(e))
+
+
+@router.post("/learn/start")
+def start_pattern_learning(request: LearnPatternsRequest, background_tasks: BackgroundTasks):
+    """Start pattern learning as a background task.
+
+    Returns immediately with task status. Poll /learn/status for progress.
+    """
+    from teamarr.database.settings import get_ai_settings
+    from teamarr.dispatcharr import get_factory
+
+    # Check if already in progress
+    if pls.is_in_progress():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pattern learning already in progress",
+        )
+
+    # Determine which groups to process
+    group_ids = []
+    if request.group_ids:
+        group_ids = request.group_ids
+    elif request.group_id:
+        group_ids = [request.group_id]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either group_id or group_ids must be provided",
+        )
+
+    with get_db() as conn:
+        settings = get_ai_settings(conn)
+
+    if not settings.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI is disabled. Enable it in settings first.",
+        )
+
+    if not settings.learn_patterns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pattern learning is disabled. Enable learn_patterns in settings.",
+        )
+
+    # Get Dispatcharr connection
+    factory = get_factory(get_db)
+    if not factory:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dispatcharr not configured",
+        )
+
+    dispatcharr_conn = factory.get_connection()
+    if not dispatcharr_conn or not dispatcharr_conn.m3u:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dispatcharr connection failed",
+        )
+
+    # Start the background task
+    if not pls.start_learning(len(group_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pattern learning already in progress",
+        )
+
+    # Run in a thread (BackgroundTasks runs after response, but we want true parallel)
+    thread = threading.Thread(
+        target=_run_pattern_learning_task,
+        args=(group_ids, settings, dispatcharr_conn),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"success": True, "message": f"Started learning patterns for {len(group_ids)} groups"}
+
+
+@router.get("/learn/status", response_model=PatternLearningStatusResponse)
+def get_pattern_learning_status():
+    """Get current pattern learning status."""
+    return pls.get_status()
+
+
+@router.post("/learn/abort")
+def abort_pattern_learning():
+    """Request abort of pattern learning task."""
+    if pls.request_abort():
+        return {"success": True, "message": "Abort requested"}
+    return {"success": False, "message": "No pattern learning in progress"}
 
 
 # =============================================================================

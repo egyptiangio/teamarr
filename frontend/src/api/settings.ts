@@ -540,6 +540,50 @@ export async function learnPatterns(groupId?: number, groupIds?: number[]): Prom
   return api.post("/ai/learn", body)
 }
 
+// Background pattern learning task
+export interface PatternLearningStatus {
+  in_progress: boolean
+  status: string
+  message: string
+  percent: number
+  current_group: number
+  total_groups: number
+  current_group_name: string
+  started_at: string | null
+  completed_at: string | null
+  error: string | null
+  eta_seconds: number | null
+  groups_completed: number
+  patterns_learned: number
+  avg_coverage: number
+  group_results: Array<{
+    group_id: number
+    group_name: string
+    success: boolean
+    patterns_learned: number
+    coverage_percent: number
+    error: string | null
+  }>
+}
+
+export async function startPatternLearning(groupId?: number, groupIds?: number[]): Promise<{ success: boolean; message: string }> {
+  const body: { group_id?: number; group_ids?: number[] } = {}
+  if (groupIds && groupIds.length > 0) {
+    body.group_ids = groupIds
+  } else if (groupId) {
+    body.group_id = groupId
+  }
+  return api.post("/ai/learn/start", body)
+}
+
+export async function getPatternLearningStatus(): Promise<PatternLearningStatus> {
+  return api.get("/ai/learn/status")
+}
+
+export async function abortPatternLearning(): Promise<{ success: boolean; message: string }> {
+  return api.post("/ai/learn/abort")
+}
+
 export async function testParse(streams: string[]): Promise<TestParseResponse> {
   return api.post("/ai/test-parse", { streams })
 }
