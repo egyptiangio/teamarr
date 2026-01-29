@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from teamarr.api.routes import (
+    ai,
     aliases,
     backup,
     cache,
@@ -381,6 +382,7 @@ def create_app() -> FastAPI:
     app.include_router(dispatcharr.router, prefix="/api/v1", tags=["Dispatcharr"])
     app.include_router(migration.router, prefix="/api/v1", tags=["Migration"])
     app.include_router(backup.router, prefix="/api/v1", tags=["Backup"])
+    app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI"])
 
     # Serve React UI static files
     frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

@@ -512,3 +512,103 @@ def get_update_check_settings(conn: Connection) -> UpdateCheckSettings:
         return UpdateCheckSettings()
 
     return _build_update_check_settings(row)
+
+
+def get_ai_settings(conn: Connection) -> AISettings:
+    """Get AI/Ollama integration settings.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        AISettings object with AI configuration
+    """
+    cursor = conn.execute(
+        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_use_for_parsing,
+                  ai_use_for_matching, ai_batch_size, ai_learn_patterns,
+                  ai_fallback_to_regex
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return AISettings()
+
+    return AISettings(
+        enabled=bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False,
+        ollama_url=row["ai_ollama_url"] or "http://localhost:11434",
+        model=row["ai_model"] or "qwen2.5:7b",
+        use_for_parsing=bool(row["ai_use_for_parsing"])
+        if row["ai_use_for_parsing"] is not None
+        else True,
+        use_for_matching=bool(row["ai_use_for_matching"])
+        if row["ai_use_for_matching"] is not None
+        else False,
+        batch_size=row["ai_batch_size"] or 10,
+        learn_patterns=bool(row["ai_learn_patterns"])
+        if row["ai_learn_patterns"] is not None
+        else True,
+        fallback_to_regex=bool(row["ai_fallback_to_regex"])
+        if row["ai_fallback_to_regex"] is not None
+        else True,
+    )
+
+
+def update_ai_settings(
+    conn: Connection,
+    enabled: bool | None = None,
+    ollama_url: str | None = None,
+    model: str | None = None,
+    use_for_parsing: bool | None = None,
+    use_for_matching: bool | None = None,
+    batch_size: int | None = None,
+    learn_patterns: bool | None = None,
+    fallback_to_regex: bool | None = None,
+) -> None:
+    """Update AI/Ollama integration settings.
+
+    Only provided (non-None) values will be updated.
+
+    Args:
+        conn: Database connection
+        enabled: Master toggle for AI features
+        ollama_url: Ollama API base URL
+        model: Model to use for AI tasks
+        use_for_parsing: Use AI for stream parsing
+        use_for_matching: Use AI for team matching (experimental)
+        batch_size: Streams per AI batch call
+        learn_patterns: Learn regex patterns from AI results
+        fallback_to_regex: Fall back to builtin regex if AI fails
+    """
+    updates = []
+    values = []
+
+    if enabled is not None:
+        updates.append("ai_enabled = ?")
+        values.append(int(enabled))
+    if ollama_url is not None:
+        updates.append("ai_ollama_url = ?")
+        values.append(ollama_url)
+    if model is not None:
+        updates.append("ai_model = ?")
+        values.append(model)
+    if use_for_parsing is not None:
+        updates.append("ai_use_for_parsing = ?")
+        values.append(int(use_for_parsing))
+    if use_for_matching is not None:
+        updates.append("ai_use_for_matching = ?")
+        values.append(int(use_for_matching))
+    if batch_size is not None:
+        updates.append("ai_batch_size = ?")
+        values.append(batch_size)
+    if learn_patterns is not None:
+        updates.append("ai_learn_patterns = ?")
+        values.append(int(learn_patterns))
+    if fallback_to_regex is not None:
+        updates.append("ai_fallback_to_regex = ?")
+        values.append(int(fallback_to_regex))
+
+    if updates:
+        sql = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+        conn.execute(sql, values)
+        conn.commit()
