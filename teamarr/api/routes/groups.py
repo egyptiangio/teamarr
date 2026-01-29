@@ -1522,10 +1522,12 @@ def get_raw_streams(group_id: int):
         account_id=group.m3u_account_id,
     )
 
-    streams = [
-        RawStreamModel(stream_id=s.id, stream_name=s.name)
-        for s in raw
-    ]
+    from teamarr.api.routes import natural_sort_key
+
+    streams = sorted(
+        (RawStreamModel(stream_id=s.id, stream_name=s.name) for s in raw),
+        key=lambda s: natural_sort_key(s.stream_name),
+    )
 
     return RawStreamsResponse(
         group_id=group_id,
