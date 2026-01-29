@@ -226,20 +226,22 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
             result = re.sub(pattern, f" {mask} ", result, count=1, flags=re.IGNORECASE)
             break
 
-    # Adjust date for UK/GMT timezone streams showing US evening games
-    # UK streams show after-midnight times for US evening games (7pm ET = midnight UK)
-    # ONLY adjust if explicitly marked as UK/GMT/CET - don't assume based on time alone
+    # Adjust date for European timezone streams showing US evening games
+    # European streams show after-midnight times for US evening games
+    # e.g., 7pm ET = 1am CET next day, so "Thu 29 Jan 01:35" = Wed Jan 28 US time
+    # Adjust if time is 00:00-05:59 AND no US timezone marker present
     if extracted_date and extracted_time and extracted_time.hour < 6:
         text_upper = text.upper()
 
-        # Check for UK/European timezone indicators - ONLY adjust if explicitly marked
-        uk_tz_pattern = r'\b(UK|GMT|BST|CET|CEST)\b'
-        has_uk_tz = re.search(uk_tz_pattern, text_upper)
+        # Check for US timezone indicators - if present, don't adjust
+        us_tz_pattern = r'\b(ET|EST|EDT|PT|PST|PDT|CT|CST|CDT|MT|MST|MDT|EASTERN|PACIFIC|CENTRAL)\b'
+        has_us_tz = re.search(us_tz_pattern, text_upper)
 
-        if has_uk_tz:
+        # Only adjust if NO US timezone marker (assumes European source)
+        if not has_us_tz:
             extracted_date = extracted_date - timedelta(days=1)
             logger.debug(
-                "[NORMALIZE] Adjusted date -1 day for UK timezone: %s (time=%s)",
+                "[NORMALIZE] Adjusted date -1 day for European timezone: %s (time=%s)",
                 text[:50], extracted_time
             )
 
