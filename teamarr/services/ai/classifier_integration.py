@@ -59,36 +59,32 @@ class AIClassifier:
 
     @property
     def parser(self) -> AIStreamParser:
-        """Lazy-load the AI parser using the assigned provider.
-
-        Note: Currently AIStreamParser only supports Ollama.
-        TODO: Update AIStreamParser to accept any AIProviderClient.
-        """
+        """Lazy-load the AI parser using the assigned provider."""
         if self._parser is None:
             # Get provider from task assignments
             provider_name = self.settings.task_assignments.stream_parsing
+            provider_settings = self._get_provider_settings(provider_name)
 
-            # For now, only Ollama is supported for parsing
-            # Use the assigned provider's settings if it's Ollama, otherwise fallback
-            if provider_name == "ollama" and self.settings.ollama.enabled:
-                ollama_config = OllamaConfig(
-                    base_url=self.settings.ollama.url,
-                    model=self.settings.ollama.model,
-                    timeout=float(self.settings.ollama.timeout),
-                )
-            else:
-                # Fallback to legacy settings
+            if provider_settings:
+                client = get_provider_client(provider_name, provider_settings)
+                if client:
+                    logger.info("[AI] Using %s for stream parsing", provider_name)
+                    self._parser = AIStreamParser(client=client)
+                else:
+                    logger.warning(
+                        "[AI] Failed to create %s client for parsing, falling back to Ollama",
+                        provider_name
+                    )
+
+            # Fallback to Ollama if provider not configured
+            if self._parser is None:
+                logger.info("[AI] Using ollama for stream parsing (fallback)")
                 ollama_config = OllamaConfig(
                     base_url=self.settings.ollama_url,
                     model=self.settings.model,
                     timeout=float(self.settings.timeout),
                 )
-                if provider_name != "ollama":
-                    logger.warning(
-                        "[AI] Stream parsing assigned to %s but only Ollama is currently supported",
-                        provider_name
-                    )
-            self._parser = AIStreamParser(ollama_config)
+                self._parser = AIStreamParser(config=ollama_config)
         return self._parser
 
     @property

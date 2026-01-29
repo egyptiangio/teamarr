@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from teamarr.services.ai.client import OllamaClient, OllamaConfig
+from teamarr.services.ai.providers import AIProviderClient
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,21 @@ Return a JSON array with one object per stream, in order."""
 class AIStreamParser:
     """Parse stream names using AI."""
 
-    def __init__(self, config: OllamaConfig | None = None):
-        self.client = OllamaClient(config)
+    def __init__(
+        self,
+        config: OllamaConfig | None = None,
+        client: AIProviderClient | None = None,
+    ):
+        """Initialize stream parser.
+
+        Args:
+            config: OllamaConfig for backwards compatibility (creates OllamaClient)
+            client: Any AIProviderClient - takes precedence over config if provided
+        """
+        if client is not None:
+            self.client = client
+        else:
+            self.client = OllamaClient(config)
 
     def parse_single(self, stream_name: str) -> ParsedStream | None:
         """Parse a single stream name.
