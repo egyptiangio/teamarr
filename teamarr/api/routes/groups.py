@@ -548,8 +548,12 @@ def list_groups(
                 custom_regex_league=g.custom_regex_league,
                 custom_regex_league_enabled=g.custom_regex_league_enabled,
                 skip_builtin_filter=g.skip_builtin_filter,
-                include_teams=[TeamFilterEntry(**t) for t in g.include_teams] if g.include_teams else None,
-                exclude_teams=[TeamFilterEntry(**t) for t in g.exclude_teams] if g.exclude_teams else None,
+                include_teams=[TeamFilterEntry(**t) for t in g.include_teams]
+                if g.include_teams
+                else None,
+                exclude_teams=[TeamFilterEntry(**t) for t in g.exclude_teams]
+                if g.exclude_teams
+                else None,
                 team_filter_mode=g.team_filter_mode,
                 last_refresh=g.last_refresh.isoformat() if g.last_refresh else None,
                 stream_count=g.stream_count,
@@ -632,8 +636,12 @@ def create_group(request: GroupCreate):
             custom_regex_league=request.custom_regex_league,
             custom_regex_league_enabled=request.custom_regex_league_enabled,
             skip_builtin_filter=request.skip_builtin_filter,
-            include_teams=[t.model_dump() for t in request.include_teams] if request.include_teams is not None else None,
-            exclude_teams=[t.model_dump() for t in request.exclude_teams] if request.exclude_teams is not None else None,
+            include_teams=[t.model_dump() for t in request.include_teams]
+            if request.include_teams is not None
+            else None,
+            exclude_teams=[t.model_dump() for t in request.exclude_teams]
+            if request.exclude_teams is not None
+            else None,
             team_filter_mode=request.team_filter_mode,
             channel_sort_order=request.channel_sort_order,
             overlap_handling=request.overlap_handling,
@@ -675,8 +683,12 @@ def create_group(request: GroupCreate):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
-        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
-        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams]
+        if group.include_teams
+        else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams]
+        if group.exclude_teams
+        else None,
         team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
@@ -726,13 +738,15 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                 # Check for duplicate name within same M3U account
                 existing = get_group_by_name(conn, item.m3u_group_name, item.m3u_account_id)
                 if existing:
-                    results.append(BulkGroupCreateResult(
-                        m3u_group_id=item.m3u_group_id,
-                        m3u_account_id=item.m3u_account_id,
-                        name=item.m3u_group_name,
-                        success=False,
-                        error=f"Group already exists for this M3U account",
-                    ))
+                    results.append(
+                        BulkGroupCreateResult(
+                            m3u_group_id=item.m3u_group_id,
+                            m3u_account_id=item.m3u_account_id,
+                            name=item.m3u_group_name,
+                            success=False,
+                            error="Group already exists for this M3U account",
+                        )
+                    )
                     total_failed += 1
                     continue
 
@@ -756,23 +770,27 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     enabled=request.settings.enabled,
                 )
 
-                results.append(BulkGroupCreateResult(
-                    m3u_group_id=item.m3u_group_id,
-                    m3u_account_id=item.m3u_account_id,
-                    group_id=group_id,
-                    name=item.m3u_group_name,
-                    success=True,
-                ))
+                results.append(
+                    BulkGroupCreateResult(
+                        m3u_group_id=item.m3u_group_id,
+                        m3u_account_id=item.m3u_account_id,
+                        group_id=group_id,
+                        name=item.m3u_group_name,
+                        success=True,
+                    )
+                )
                 total_created += 1
 
             except Exception as e:
-                results.append(BulkGroupCreateResult(
-                    m3u_group_id=item.m3u_group_id,
-                    m3u_account_id=item.m3u_account_id,
-                    name=item.m3u_group_name,
-                    success=False,
-                    error=str(e),
-                ))
+                results.append(
+                    BulkGroupCreateResult(
+                        m3u_group_id=item.m3u_group_id,
+                        m3u_account_id=item.m3u_account_id,
+                        name=item.m3u_group_name,
+                        success=False,
+                        error=str(e),
+                    )
+                )
                 total_failed += 1
 
     logger.info("[BULK_IMPORT] Event groups: %d created, %d failed", total_created, total_failed)
@@ -813,12 +831,14 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                 # Verify group exists
                 group = get_group(conn, group_id)
                 if not group:
-                    results.append(BulkGroupUpdateResult(
-                        group_id=group_id,
-                        name=f"Group {group_id}",
-                        success=False,
-                        error="Group not found",
-                    ))
+                    results.append(
+                        BulkGroupUpdateResult(
+                            group_id=group_id,
+                            name=f"Group {group_id}",
+                            success=False,
+                            error="Group not found",
+                        )
+                    )
                     total_failed += 1
                     continue
 
@@ -840,21 +860,25 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     clear_channel_profile_ids=request.clear_channel_profile_ids,
                 )
 
-                results.append(BulkGroupUpdateResult(
-                    group_id=group_id,
-                    name=group.name,
-                    success=True,
-                ))
+                results.append(
+                    BulkGroupUpdateResult(
+                        group_id=group_id,
+                        name=group.name,
+                        success=True,
+                    )
+                )
                 total_updated += 1
 
             except Exception as e:
                 logger.exception("[BULK_UPDATE] Failed to update group %d: %s", group_id, e)
-                results.append(BulkGroupUpdateResult(
-                    group_id=group_id,
-                    name=f"Group {group_id}",
-                    success=False,
-                    error=str(e),
-                ))
+                results.append(
+                    BulkGroupUpdateResult(
+                        group_id=group_id,
+                        name=f"Group {group_id}",
+                        success=False,
+                        error=str(e),
+                    )
+                )
                 total_failed += 1
 
     logger.info("[BULK_UPDATE] Event groups: %d updated, %d failed", total_updated, total_failed)
@@ -928,8 +952,12 @@ def get_group_by_id(group_id: int):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
-        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
-        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams]
+        if group.include_teams
+        else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams]
+        if group.exclude_teams
+        else None,
         team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
@@ -982,8 +1010,10 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         # Check for duplicate name if changing (within same M3U account)
         # Determine the target account_id (could be changing)
         target_account_id = (
-            None if request.clear_m3u_account_id
-            else request.m3u_account_id if request.m3u_account_id is not None
+            None
+            if request.clear_m3u_account_id
+            else request.m3u_account_id
+            if request.m3u_account_id is not None
             else group.m3u_account_id
         )
         target_name = request.name if request.name else group.name
@@ -1029,8 +1059,12 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             custom_regex_league=request.custom_regex_league,
             custom_regex_league_enabled=request.custom_regex_league_enabled,
             skip_builtin_filter=request.skip_builtin_filter,
-            include_teams=[t.model_dump() for t in request.include_teams] if request.include_teams is not None else None,
-            exclude_teams=[t.model_dump() for t in request.exclude_teams] if request.exclude_teams is not None else None,
+            include_teams=[t.model_dump() for t in request.include_teams]
+            if request.include_teams is not None
+            else None,
+            exclude_teams=[t.model_dump() for t in request.exclude_teams]
+            if request.exclude_teams is not None
+            else None,
             team_filter_mode=request.team_filter_mode,
             channel_sort_order=request.channel_sort_order,
             overlap_handling=request.overlap_handling,
@@ -1095,8 +1129,12 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         custom_regex_time=group.custom_regex_time,
         custom_regex_time_enabled=group.custom_regex_time_enabled,
         skip_builtin_filter=group.skip_builtin_filter,
-        include_teams=[TeamFilterEntry(**t) for t in group.include_teams] if group.include_teams else None,
-        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams] if group.exclude_teams else None,
+        include_teams=[TeamFilterEntry(**t) for t in group.include_teams]
+        if group.include_teams
+        else None,
+        exclude_teams=[TeamFilterEntry(**t) for t in group.exclude_teams]
+        if group.exclude_teams
+        else None,
         team_filter_mode=group.team_filter_mode,
         last_refresh=group.last_refresh.isoformat() if group.last_refresh else None,
         stream_count=group.stream_count,
@@ -1140,7 +1178,9 @@ def delete_group_by_id(group_id: int) -> dict:
         channel_count = get_group_channel_count(conn, group_id)
         delete_group(conn, group_id)
 
-    logger.info("[DELETED] Event group id=%d name=%s channels=%d", group_id, group.name, channel_count)
+    logger.info(
+        "[DELETED] Event group id=%d name=%s channels=%d", group_id, group.name, channel_count
+    )
 
     return {
         "success": True,
@@ -1227,7 +1267,9 @@ def clear_group_match_cache(group_id: int):
     cache = StreamMatchCache(get_db)
     entries_cleared = cache.clear_group(group_id)
 
-    logger.info("[CACHE_CLEAR] group_id=%d name=%s entries=%d", group_id, group.name, entries_cleared)
+    logger.info(
+        "[CACHE_CLEAR] group_id=%d name=%s entries=%d", group_id, group.name, entries_cleared
+    )
 
     return ClearCacheResponse(
         success=True,
@@ -1468,13 +1510,17 @@ def preview_group(group_id: int):
 
 
 class RawStreamModel(BaseModel):
-    """Minimal stream info for regex testing."""
+    """Stream info for regex testing with builtin filter status."""
+
     stream_id: int
     stream_name: str
+    # Builtin filter results (None if passes, string describing why filtered)
+    builtin_filtered: str | None = None
 
 
 class RawStreamsResponse(BaseModel):
     """Response for raw streams endpoint."""
+
     group_id: int
     group_name: str
     total: int
@@ -1523,9 +1569,33 @@ def get_raw_streams(group_id: int):
     )
 
     from teamarr.api.routes import natural_sort_key
+    from teamarr.services.stream_filter import (
+        UNSUPPORTED_SPORTS,
+        detect_sport_hint,
+        is_event_stream,
+        is_placeholder,
+    )
+
+    def get_builtin_filter_reason(name: str) -> str | None:
+        """Check all builtin filters and return reason if filtered."""
+        if is_placeholder(name):
+            return "placeholder"
+        sport = detect_sport_hint(name)
+        if sport and sport in UNSUPPORTED_SPORTS:
+            return f"unsupported_sport:{sport}"
+        if not is_event_stream(name):
+            return "not_event"
+        return None
 
     streams = sorted(
-        (RawStreamModel(stream_id=s.id, stream_name=s.name) for s in raw),
+        (
+            RawStreamModel(
+                stream_id=s.id,
+                stream_name=s.name,
+                builtin_filtered=get_builtin_filter_reason(s.name),
+            )
+            for s in raw
+        ),
         key=lambda s: natural_sort_key(s.stream_name),
     )
 

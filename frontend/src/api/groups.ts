@@ -78,6 +78,8 @@ export async function previewGroup(
 export interface RawStream {
   stream_id: number
   stream_name: string
+  /** Reason stream would be filtered by builtin filters (null if passes) */
+  builtin_filtered: string | null
 }
 
 export interface RawStreamsResponse {

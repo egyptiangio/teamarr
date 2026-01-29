@@ -10,22 +10,17 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { StreamItem } from "./StreamItem"
 import { getMatchRanges, testMatch } from "@/lib/regex-utils"
 import type { PatternState } from "./index"
+import type { RawStream } from "@/api/groups"
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 interface StreamListProps {
-  streams: string[]
+  streams: RawStream[]
   patterns: PatternState
   onTextSelect?: (text: string, streamName: string) => void
 }
-
-// Simple placeholder detection (mirrors backend logic for live preview)
-const PLACEHOLDER_RE =
-  /\b(ESPN\+|coming\s+soon|off\s+air|no\s+broadcast|TBA|placeholder)\b/i
-const UNSUPPORTED_SPORT_RE =
-  /\b(swimming|diving|gymnastics|water\s+polo|equestrian|sailing|rowing|fencing|archery|shooting|triathlon|pentathlon|surfing|skateboarding|climbing|canoe|kayak)\b/i
 
 // ---------------------------------------------------------------------------
 // Component
@@ -36,7 +31,9 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
 
   // Pre-compute match results for all streams
   const results = useMemo(() => {
-    return streams.map((name) => {
+    return streams.map((stream) => {
+      const name = stream.stream_name
+
       // Extraction ranges (teams, date, time, league)
       const extractionRanges = [
         ...(patterns.custom_regex_teams_enabled && patterns.custom_regex_teams
@@ -62,7 +59,7 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
           : []),
       ]
 
-      // Include/exclude
+      // Include/exclude (user-defined regex)
       const includeMatch =
         patterns.stream_include_regex_enabled && patterns.stream_include_regex
           ? testMatch(patterns.stream_include_regex, name)
@@ -73,11 +70,10 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
           ? testMatch(patterns.stream_exclude_regex, name)
           : false
 
-      // Built-in filter match (always computed; skip_builtin decides display treatment)
-      const matchesBuiltinFilter =
-        PLACEHOLDER_RE.test(name) || UNSUPPORTED_SPORT_RE.test(name)
+      // Built-in filter result comes from backend (single source of truth)
+      const builtinFilterReason = stream.builtin_filtered
 
-      return { extractionRanges, includeMatch, excludeMatch, matchesBuiltinFilter }
+      return { extractionRanges, includeMatch, excludeMatch, builtinFilterReason }
     })
   }, [streams, patterns])
 
@@ -90,10 +86,10 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
 
     for (const r of results) {
       // Count streams matching builtin filters (tracked separately)
-      if (r.matchesBuiltinFilter) builtinFiltered++
+      if (r.builtinFilterReason) builtinFiltered++
 
       // For inclusion stats, respect skip_builtin_filter setting
-      const effectivelyFiltered = !patterns.skip_builtin_filter && r.matchesBuiltinFilter
+      const effectivelyFiltered = !patterns.skip_builtin_filter && r.builtinFilterReason
       if (effectivelyFiltered) continue
       if (r.excludeMatch) excluded++
       else if (r.includeMatch === false) excluded++
@@ -133,7 +129,7 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
         )}
         {stats.builtinFiltered > 0 && (
           <span className={stats.skipBuiltin ? "text-yellow-500" : "text-muted-foreground/50"}>
-            {stats.builtinFiltered} {stats.skipBuiltin ? "would be filtered (builtin skipped)" : "filtered (builtin)"}
+            {stats.builtinFiltered} {stats.skipBuiltin ? "match builtin filters (skipped)" : "filtered (builtin)"}
           </span>
         )}
       </div>
@@ -152,6 +148,7 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const idx = virtualRow.index
+            const stream = streams[idx]
             const r = results[idx]
             return (
               <div
@@ -166,12 +163,12 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
                 }}
               >
                 <StreamItem
-                  name={streams[idx]}
+                  name={stream.stream_name}
                   index={idx}
                   extractionRanges={r.extractionRanges}
                   includeMatch={r.includeMatch}
                   excludeMatch={r.excludeMatch}
-                  matchesBuiltinFilter={r.matchesBuiltinFilter}
+                  builtinFilterReason={r.builtinFilterReason}
                   skipBuiltinFilter={patterns.skip_builtin_filter}
                   onTextSelect={onTextSelect}
                 />

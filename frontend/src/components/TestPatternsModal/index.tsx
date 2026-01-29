@@ -115,7 +115,7 @@ export function TestPatternsModal({
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   })
 
-  const streamNames = streamsData?.streams.map((s) => s.stream_name) ?? []
+  const streams = streamsData?.streams ?? []
 
   const handlePatternChange = useCallback((update: Partial<PatternState>) => {
     setPatterns((prev) => ({ ...prev, ...update }))
@@ -158,7 +158,7 @@ export function TestPatternsModal({
 
         <div className="flex flex-1 min-h-0">
           {/* Left: Pattern panel */}
-          <div className="w-80 shrink-0 border-r border-border overflow-y-auto">
+          <div className="w-96 shrink-0 border-r border-border overflow-y-auto">
             <PatternPanel patterns={patterns} onChange={handlePatternChange} />
           </div>
 
@@ -181,7 +181,7 @@ export function TestPatternsModal({
               </div>
             )}
 
-            {!isLoading && !error && streamNames.length === 0 && (
+            {!isLoading && !error && streams.length === 0 && (
               <div className="flex-1 flex items-center justify-center">
                 <span className="text-sm text-muted-foreground">
                   No streams found for this group.
@@ -189,9 +189,9 @@ export function TestPatternsModal({
               </div>
             )}
 
-            {!isLoading && !error && streamNames.length > 0 && (
+            {!isLoading && !error && streams.length > 0 && (
               <StreamList
-                streams={streamNames}
+                streams={streams}
                 patterns={patterns}
                 onTextSelect={handleTextSelect}
               />

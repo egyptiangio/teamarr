@@ -3,7 +3,7 @@
  *
  * Each extraction field (teams, date, time, league) gets a distinct color.
  * Include/exclude matches are shown as green borders or red strike-through.
- * Built-in filter matches are dimmed.
+ * Built-in filter matches are shown with filter reason badge.
  */
 
 import { useMemo } from "react"
@@ -35,9 +35,9 @@ export interface StreamItemProps {
   includeMatch: boolean | null // null = no include regex set
   /** Whether stream matches the exclude regex */
   excludeMatch: boolean
-  /** Whether stream matches built-in filter patterns */
-  matchesBuiltinFilter: boolean
-  /** Whether built-in filtering is skipped (shows "would be filtered" vs "filtered") */
+  /** Reason stream would be filtered by builtin filters (null if passes) */
+  builtinFilterReason: string | null
+  /** Whether built-in filtering is skipped */
   skipBuiltinFilter: boolean
   /** Called when user selects text for interactive pattern generation */
   onTextSelect?: (text: string, streamName: string) => void
@@ -91,6 +91,16 @@ function buildSegments(text: string, ranges: MatchRange[]): Segment[] {
   return segments
 }
 
+/** Format builtin filter reason for display */
+function formatFilterReason(reason: string): string {
+  if (reason === "placeholder") return "placeholder"
+  if (reason === "not_event") return "no event pattern"
+  if (reason.startsWith("unsupported_sport:")) {
+    return reason.replace("unsupported_sport:", "").toLowerCase()
+  }
+  return reason
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -101,7 +111,7 @@ export function StreamItem({
   extractionRanges,
   includeMatch,
   excludeMatch,
-  matchesBuiltinFilter,
+  builtinFilterReason,
   skipBuiltinFilter,
   onTextSelect,
 }: StreamItemProps) {
@@ -111,8 +121,8 @@ export function StreamItem({
   )
 
   // When skip is OFF: actually filtered; when skip is ON: just marked (not filtered)
-  const isBuiltinFiltered = !skipBuiltinFilter && matchesBuiltinFilter
-  const wouldBeBuiltinFiltered = skipBuiltinFilter && matchesBuiltinFilter
+  const isBuiltinFiltered = !skipBuiltinFilter && builtinFilterReason !== null
+  const wouldBeBuiltinFiltered = skipBuiltinFilter && builtinFilterReason !== null
 
   const isExcluded = excludeMatch || isBuiltinFiltered
   const isFilteredByInclude = includeMatch === false // include regex set but doesn't match
@@ -133,7 +143,7 @@ export function StreamItem({
         "flex items-start gap-2 px-3 py-1.5 text-xs font-mono border-l-2",
         isExcluded && "opacity-40 line-through border-l-destructive/50",
         isFilteredByInclude && "opacity-40 border-l-muted",
-        wouldBeBuiltinFiltered && "opacity-70 border-l-yellow-500/70 border-dashed",
+        wouldBeBuiltinFiltered && "opacity-70 border-l-yellow-500/70",
         !isExcluded && !isFilteredByInclude && !wouldBeBuiltinFiltered && includeMatch && "border-l-success/70",
         !isExcluded && !isFilteredByInclude && !wouldBeBuiltinFiltered && includeMatch === null && "border-l-transparent",
       )}
@@ -142,7 +152,7 @@ export function StreamItem({
       <span className="text-muted-foreground/50 w-8 text-right shrink-0 select-none">
         {index + 1}
       </span>
-      <span className="break-all select-text">
+      <span className="break-all select-text flex-1">
         {segments.map((seg, i) => {
           if (seg.groups.length === 0) {
             return <span key={i}>{seg.text}</span>
@@ -167,6 +177,20 @@ export function StreamItem({
           )
         })}
       </span>
+      {/* Show filter reason badge when stream matches builtin filter */}
+      {builtinFilterReason && (
+        <span
+          className={cn(
+            "shrink-0 text-[10px] px-1.5 py-0.5 rounded",
+            skipBuiltinFilter
+              ? "bg-yellow-500/20 text-yellow-400"
+              : "bg-red-500/20 text-red-400"
+          )}
+          title={skipBuiltinFilter ? "Would be filtered (builtin skipped)" : "Filtered by builtin filter"}
+        >
+          {formatFilterReason(builtinFilterReason)}
+        </span>
+      )}
     </div>
   )
 }
