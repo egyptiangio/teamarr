@@ -24,7 +24,8 @@ from teamarr.services import SportsDataService, create_default_service
 from teamarr.utilities.xmltv import programmes_to_xmltv
 
 # Number of parallel workers for team processing
-MAX_WORKERS = 100
+# Keep low to avoid overwhelming ESPN API (each team = 30+ API calls)
+MAX_WORKERS = 10
 
 logger = logging.getLogger(__name__)
 

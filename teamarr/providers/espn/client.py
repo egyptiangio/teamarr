@@ -40,7 +40,7 @@ class ESPNClient:
 
     def __init__(
         self,
-        timeout: float = 10.0,
+        timeout: float = 15.0,
         retry_count: int = 3,
         retry_delay: float = 1.0,
     ):
@@ -57,7 +57,8 @@ class ESPNClient:
                 if self._client is None:
                     self._client = httpx.Client(
                         timeout=self._timeout,
-                        limits=httpx.Limits(max_connections=100, max_keepalive_connections=10),
+                        # Limit concurrent connections to avoid overwhelming ESPN API
+                        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
                     )
         return self._client
 
