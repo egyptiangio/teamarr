@@ -522,6 +522,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _add_column_if_not_exists(conn, "settings", "ai_enabled", "BOOLEAN DEFAULT 0")
     _add_column_if_not_exists(conn, "settings", "ai_ollama_url", "TEXT DEFAULT 'http://localhost:11434'")
     _add_column_if_not_exists(conn, "settings", "ai_model", "TEXT DEFAULT 'qwen2.5:7b'")
+    _add_column_if_not_exists(conn, "settings", "ai_timeout", "INTEGER DEFAULT 180")
     _add_column_if_not_exists(conn, "settings", "ai_use_for_parsing", "BOOLEAN DEFAULT 1")
     _add_column_if_not_exists(conn, "settings", "ai_use_for_matching", "BOOLEAN DEFAULT 0")
     _add_column_if_not_exists(conn, "settings", "ai_batch_size", "INTEGER DEFAULT 10")

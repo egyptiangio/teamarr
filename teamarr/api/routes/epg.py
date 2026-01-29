@@ -11,10 +11,13 @@ from fastapi.responses import Response, StreamingResponse
 
 from teamarr.api.dependencies import get_sports_service
 from teamarr.api.generation_status import (
+    abort_generation,
     complete_generation,
     fail_generation,
     get_status,
+    is_abort_requested,
     is_in_progress,
+    request_abort,
     start_generation,
     update_status,
 )
@@ -195,6 +198,19 @@ def get_generation_status():
     return get_status()
 
 
+@router.post("/epg/generate/abort")
+def abort_epg_generation():
+    """Request abort of in-progress EPG generation.
+
+    Returns:
+    - success: bool - whether abort was requested
+    - message: str - status message
+    """
+    if request_abort():
+        return {"success": True, "message": "Abort requested"}
+    return {"success": False, "message": "No generation in progress"}
+
+
 @router.get("/epg/generate/stream")
 def generate_epg_stream():
     """Stream EPG generation progress using Server-Sent Events.
@@ -268,7 +284,14 @@ def generate_epg_stream():
                 db_factory=get_db,
                 dispatcharr_client=dispatcharr_client,
                 progress_callback=progress_callback,
+                abort_check=is_abort_requested,
             )
+
+            # Check if aborted
+            if result.error == "Aborted by user":
+                abort_generation()
+                progress_queue.put(get_status())
+                return
 
             if result.success:
                 # Fetch match stats from database

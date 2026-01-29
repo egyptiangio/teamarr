@@ -524,9 +524,9 @@ def get_ai_settings(conn: Connection) -> AISettings:
         AISettings object with AI configuration
     """
     cursor = conn.execute(
-        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_use_for_parsing,
-                  ai_use_for_matching, ai_batch_size, ai_learn_patterns,
-                  ai_fallback_to_regex
+        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_timeout,
+                  ai_use_for_parsing, ai_use_for_matching, ai_batch_size,
+                  ai_learn_patterns, ai_fallback_to_regex
            FROM settings WHERE id = 1"""
     )
     row = cursor.fetchone()
@@ -538,6 +538,7 @@ def get_ai_settings(conn: Connection) -> AISettings:
         enabled=bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False,
         ollama_url=row["ai_ollama_url"] or "http://localhost:11434",
         model=row["ai_model"] or "qwen2.5:7b",
+        timeout=row["ai_timeout"] or 180,
         use_for_parsing=bool(row["ai_use_for_parsing"])
         if row["ai_use_for_parsing"] is not None
         else True,
@@ -559,6 +560,7 @@ def update_ai_settings(
     enabled: bool | None = None,
     ollama_url: str | None = None,
     model: str | None = None,
+    timeout: int | None = None,
     use_for_parsing: bool | None = None,
     use_for_matching: bool | None = None,
     batch_size: int | None = None,
@@ -574,6 +576,7 @@ def update_ai_settings(
         enabled: Master toggle for AI features
         ollama_url: Ollama API base URL
         model: Model to use for AI tasks
+        timeout: Request timeout in seconds
         use_for_parsing: Use AI for stream parsing
         use_for_matching: Use AI for team matching (experimental)
         batch_size: Streams per AI batch call
@@ -592,6 +595,9 @@ def update_ai_settings(
     if model is not None:
         updates.append("ai_model = ?")
         values.append(model)
+    if timeout is not None:
+        updates.append("ai_timeout = ?")
+        values.append(timeout)
     if use_for_parsing is not None:
         updates.append("ai_use_for_parsing = ?")
         values.append(int(use_for_parsing))

@@ -19,6 +19,12 @@ _generation_lock = threading.Lock()
 _generation_running = False
 
 
+class AbortedError(Exception):
+    """Raised when generation is aborted by user."""
+
+    pass
+
+
 @dataclass
 class GenerationResult:
     """Result of a full EPG generation run."""
@@ -60,11 +66,15 @@ class GenerationResult:
 # (phase: str, percent: int, message: str, current: int, total: int, item_name: str) -> None
 ProgressCallback = Callable[[str, int, str, int, int, str], None]
 
+# () -> bool - returns True if abort requested
+AbortCheck = Callable[[], bool]
+
 
 def run_full_generation(
     db_factory: Callable[[], Any],
     dispatcharr_client: Any | None = None,
     progress_callback: ProgressCallback | None = None,
+    abort_check: AbortCheck | None = None,
 ) -> GenerationResult:
     """Run the complete EPG generation workflow.
 
@@ -191,6 +201,15 @@ def run_full_generation(
             result.error = f"Failed to acquire lock: {e}"
             return result
 
+    def check_abort() -> bool:
+        """Check if abort was requested and handle it."""
+        if abort_check and abort_check():
+            logger.info("[GENERATION] Abort requested, stopping...")
+            result.success = False
+            result.error = "Aborted by user"
+            return True
+        return False
+
     try:
         # Increment generation counter ONCE at start of full EPG run
         # This ensures all groups in this run share the same generation
@@ -215,6 +234,10 @@ def run_full_generation(
         if dispatcharr_client:
             result.m3u_refresh = _refresh_m3u_accounts(db_factory, dispatcharr_client)
 
+        # Check for abort before teams
+        if check_abort():
+            raise AbortedError("Generation aborted before team processing")
+
         # Step 2: Process all teams (5-50%) - 45% budget
         update_progress("teams", 5, "Processing teams...")
 
@@ -238,6 +261,10 @@ def run_full_generation(
         team_result = process_all_teams(db_factory=db_factory, progress_callback=team_progress)
         result.teams_processed = team_result.teams_processed
         result.teams_programmes = team_result.total_programmes
+
+        # Check for abort before event groups
+        if check_abort():
+            raise AbortedError("Generation aborted before event group processing")
 
         # Transition message - teams done, starting groups
         logger.info("[GENERATION] Sending transition message: teams -> groups")
@@ -284,6 +311,10 @@ def run_full_generation(
         result.groups_processed = group_result.groups_processed
         result.groups_programmes = group_result.total_programmes
         result.programmes_total = result.teams_programmes + result.groups_programmes
+
+        # Check for abort before saving/dispatcharr sync
+        if check_abort():
+            raise AbortedError("Generation aborted before saving XMLTV")
 
         # Step 3b: Global channel reassignment (if enabled)
         # Applies when sorting_scope is "global" - interleaves channels by sport/league/time

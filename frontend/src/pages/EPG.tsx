@@ -241,7 +241,7 @@ export function EPG() {
   }
 
   // Generation progress (non-blocking toast)
-  const { startGeneration, isGenerating } = useGenerationProgress()
+  const { startGeneration, abortGeneration, isGenerating } = useGenerationProgress()
 
   const handleGenerate = () => {
     startGeneration(() => {
@@ -477,6 +477,16 @@ export function EPG() {
           )}
           {isGenerating ? "Generating..." : "Generate"}
         </Button>
+        {isGenerating && (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={abortGeneration}
+          >
+            <XCircle className="h-4 w-4 mr-1" />
+            Abort
+          </Button>
+        )}
         {stats?.last_run && (
           <span className="text-xs text-muted-foreground">
             Last: {formatRelativeTime(stats.last_run)}
