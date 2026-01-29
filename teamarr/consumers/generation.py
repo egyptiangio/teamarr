@@ -202,6 +202,26 @@ def run_full_generation(
             dispatcharr_settings = get_dispatcharr_settings(conn)
             display_settings = get_display_settings(conn)
 
+        # Step 0: Generate Regular TV Playlist (if enabled)
+        # This ensures the local M3U is ready for the "Regular_TV" event group if it exists
+        update_progress("init", 1, "Generating Regular TV playlist...")
+        try:
+            from teamarr.services.regular_tv import RegularTVService
+            rtv_service = RegularTVService()
+            rtv_result = rtv_service.generate_playlist()
+            
+            if rtv_result.get("status") == "skipped":
+                logger.debug("[GENERATION] Regular TV generation skipped")
+            elif rtv_result.get("status") == "error":
+                logger.warning("[GENERATION] Regular TV generation failed: %s", rtv_result.get("warnings"))
+            else:
+                logger.info(
+                    "[GENERATION] Regular TV playlist generated: %d streams", 
+                    rtv_result.get("matched_streams", 0)
+                )
+        except Exception as e:
+            logger.warning("[GENERATION] Regular TV generation error: %s", e)
+
         # Step 1: Refresh M3U accounts (0-5%)
         update_progress("init", 3, "Refreshing M3U accounts...")
         if dispatcharr_client:

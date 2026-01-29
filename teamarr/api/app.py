@@ -22,6 +22,7 @@ from teamarr.api.routes import (
     matching,
     migration,
     presets,
+    regular_tv,
     settings,
     sort_priorities,
     stats,
@@ -339,6 +340,7 @@ def create_app() -> FastAPI:
     app.include_router(teams.router, prefix="/api/v1", tags=["Teams"])
     app.include_router(templates.router, prefix="/api/v1", tags=["Templates"])
     app.include_router(presets.router, prefix="/api/v1/presets", tags=["Condition Presets"])
+    app.include_router(regular_tv.router, prefix="/api/v1/regular-tv", tags=["Regular TV"])
     app.include_router(groups.router, prefix="/api/v1/groups", tags=["Event Groups"])
     app.include_router(aliases.router, prefix="/api/v1", tags=["Team Aliases"])
     app.include_router(epg.router, prefix="/api/v1", tags=["EPG"])

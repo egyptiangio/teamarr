@@ -109,7 +109,7 @@ class EventTemplateConfig:
 
     title_format: str = "{away_team} @ {home_team}"
     channel_name_format: str = "{away_team_abbrev} @ {home_team_abbrev}"
-    description_format: str = "{matchup} | {venue_full} | {broadcast_simple}"
+    description_format: str = ""
     subtitle_format: str = "{venue_city}"
     program_art_url: str | None = None
     event_channel_logo_url: str | None = None

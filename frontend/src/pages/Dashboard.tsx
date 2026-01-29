@@ -232,6 +232,14 @@ export function Dashboard() {
               <Plus className="h-4 w-4 mr-1" />
               Import Event Group
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate("/regular-tv")}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Import Regular TV Groups
+            </Button>
             <Button size="sm" onClick={handleGenerateEPG} disabled={isGenerating}>
               <Rocket className="h-4 w-4 mr-1" />
               {isGenerating ? "Generating..." : "Generate EPG"}

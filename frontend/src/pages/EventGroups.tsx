@@ -828,6 +828,7 @@ export function EventGroups() {
             <p className="text-destructive">
               Error loading groups: {error.message}
             </p>
+            <p className="text-destructive">Error loading groups: {error instanceof Error ? error.message : "An unknown error occurred"}</p>
             <Button className="mt-4" onClick={() => refetch()}>
               Retry
             </Button>

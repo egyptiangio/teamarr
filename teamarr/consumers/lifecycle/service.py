@@ -1119,9 +1119,15 @@ class ChannelLifecycleService:
         # e.g., "Team A @ Team B ()" → "Team A @ Team B"
         base_name = self._clean_empty_wrappers(base_name)
 
+        # Fallback if name is empty or just a separator (e.g. "@", "vs") due to missing variables
+        if not base_name or base_name.strip().lower() in ["@", "vs", "at", "v", "-"]:
+            home_name = (event.home_team.short_name or event.home_team.name) if event.home_team else "Home"
+            away_name = (event.away_team.short_name or event.away_team.name) if event.away_team else "Away"
+            base_name = f"{away_name} @ {home_name}"
+
         # Auto-append keyword only if template didn't use {exception_keyword}
         if exception_keyword and not template_uses_keyword:
-            base_name = f"{base_name} ({exception_keyword.title()})"
+            return f"{base_name} ({exception_keyword.title()})"
 
         # Prepend "POSTPONED | " if event is postponed and setting is enabled
         if is_event_postponed(event):

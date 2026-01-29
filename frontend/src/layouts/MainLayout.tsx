@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: "/templates", label: "Templates" },
   { to: "/teams", label: "Teams" },
   { to: "/event-groups", label: "Event Groups" },
+  { to: "/regular-tv", label: "Regular TV Groups" },
   { to: "/epg", label: "EPG" },
   { to: "/channels", label: "Channels" },
   { to: "/settings", label: "Settings" },

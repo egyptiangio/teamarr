@@ -17,6 +17,8 @@ import {
   Settings,
   V1UpgradePage,
 } from "@/pages"
+import { RegularTV } from "@/pages/RegularTV"
+import { RegularTVImport } from "@/pages/RegularTVImport"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +28,7 @@ const queryClient = new QueryClient({
     },
   },
 })
+
 
 interface MigrationStatus {
   is_v1_database: boolean
@@ -84,6 +87,8 @@ function AppContent() {
             <Route path="templates" element={<Templates />} />
             <Route path="templates/new" element={<TemplateForm />} />
             <Route path="templates/:templateId" element={<TemplateForm />} />
+            <Route path="regular-tv" element={<RegularTV />} />
+            <Route path="regular-tv/import" element={<RegularTVImport />} />
             <Route path="teams" element={<Teams />} />
             <Route path="teams/import" element={<TeamImport />} />
             <Route path="event-groups" element={<EventGroups />} />

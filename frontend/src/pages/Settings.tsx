@@ -64,7 +64,7 @@ import { SortPriorityManager } from "@/components/SortPriorityManager"
 import { StreamOrderingManager } from "@/components/StreamOrderingManager"
 import { getLeagues, getSports } from "@/api/teams"
 import { downloadBackup, restoreBackup } from "@/api/backup"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation } from "@tanstack/react-query"
 import { useCacheStatus, useRefreshCache } from "@/hooks/useEPG"
 import { useDateFormat } from "@/hooks/useDateFormat"
 import type {
@@ -120,12 +120,13 @@ function CronPreview({ expression }: { expression: string }) {
   )
 }
 
-type SettingsTab = "general" | "teams" | "events" | "channels" | "epg" | "integrations" | "advanced"
+type SettingsTab = "general" | "teams" | "events" | "regular_tv" | "channels" | "epg" | "integrations" | "advanced"
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "teams", label: "Teams" },
   { id: "events", label: "Event Groups" },
+  { id: "regular_tv", label: "Regular TV" },
   { id: "channels", label: "Channel Management" },
   { id: "epg", label: "EPG Generation" },
   { id: "integrations", label: "Integrations" },
@@ -182,6 +183,62 @@ export function Settings() {
   const updateInfoQuery = useCheckForUpdates(updateCheckData?.enabled ?? true)
   const forceCheckUpdates = useForceCheckForUpdates()
   const { formatDateTime } = useDateFormat()
+  // Add Regular TV settings query and mutation
+  const { data: regularTVSettingsData, refetch: refetchRegularTVSettings } = useQuery({
+    queryKey: ["regular-tv-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/v1/regular-tv/settings")
+      if (res.status === 404) {
+        return {
+          enabled: false,
+          lookback_hours: 0,
+          lookahead_hours: 24,
+          epg_source_id: null,
+        }
+      }
+      if (!res.ok) throw new Error("Failed to fetch Regular TV settings")
+      return res.json() as Promise<{
+        enabled: boolean
+        lookback_hours: number
+        lookahead_hours: number
+        epg_source_id: number | null
+      }>
+    },
+    retry: false,
+  })
+
+  const updateRegularTVSettings = useMutation({
+    mutationFn: async (data: {
+      enabled: boolean
+      lookback_hours: number
+      lookahead_hours: number
+      epg_source_id: number | null
+    }) => {
+      const payload = {
+        enabled: data.enabled,
+        lookback_hours: data.lookback_hours,
+        lookahead_hours: data.lookahead_hours,
+        epg_source_id: data.epg_source_id ?? null,
+      }
+      const res = await fetch("/api/v1/regular-tv/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.detail || "Failed to save settings")
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Regular TV settings saved")
+      refetchRegularTVSettings()
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save settings")
+    }
+  })
 
   const { data: leaguesData } = useQuery({
     queryKey: ["cache", "leagues"],
@@ -226,6 +283,13 @@ export function Settings() {
   })
   const [newKeyword, setNewKeyword] = useState({ label: "", match_terms: "", behavior: "consolidate" })
   const [editingKeyword, setEditingKeyword] = useState<{ id: number; label: string; match_terms: string } | null>(null)
+  const [regularTVSettings, setRegularTVSettings] = useState({
+    enabled: true,
+    lookback_hours: 0,
+    lookahead_hours: 24,
+    epg_source_id: null as number | null,
+  })
+
 
   // Local state for channel range inputs (allows free typing)
   const [channelRangeStart, setChannelRangeStart] = useState("")
@@ -284,6 +348,18 @@ export function Settings() {
       setUpdateCheck(updateCheckData)
     }
   }, [updateCheckData])
+
+  // Sync regular TV settings when data loads
+  useEffect(() => {
+    if (regularTVSettingsData) {
+      setRegularTVSettings({
+        enabled: regularTVSettingsData.enabled ?? true,
+        lookback_hours: regularTVSettingsData.lookback_hours ?? 0,
+        lookahead_hours: regularTVSettingsData.lookahead_hours ?? 24,
+        epg_source_id: regularTVSettingsData.epg_source_id ?? null,
+      })
+    }
+  }, [regularTVSettingsData])
 
   // Sync channel range inputs from lifecycle on initial load only
   const channelRangeInitializedRef = useRef(false)
@@ -531,6 +607,7 @@ export function Settings() {
         <Card className="border-destructive">
           <CardContent className="pt-6">
             <p className="text-destructive">Error loading settings: {error.message}</p>
+            <p className="text-destructive">Error loading settings: {error instanceof Error ? error.message : "An unknown error occurred"}</p>
             <Button className="mt-4" onClick={() => refetch()}>
               Retry
             </Button>
@@ -1119,6 +1196,87 @@ export function Settings() {
               Save Default Filter
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      </>
+      )}
+
+      {/* Regular TV Tab */}
+      {activeTab === "regular_tv" && (
+      <>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">Regular TV</h2>
+        <p className="text-sm text-muted-foreground">Configure settings for 24/7 channel generation</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Regular TV Generation</CardTitle>
+          <CardDescription>
+            Configure the global time window and EPG source for Regular TV channel generation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="regular-tv-enabled"
+              checked={regularTVSettings.enabled}
+              onCheckedChange={(checked) => setRegularTVSettings({ ...regularTVSettings, enabled: checked })}
+            />
+            <Label htmlFor="regular-tv-enabled">Enable Regular TV Generation</Label>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="regular-tv-epg">EPG Source</Label>
+              <Select
+                id="regular-tv-epg"
+                value={regularTVSettings.epg_source_id?.toString() ?? ""}
+                onChange={(e) =>
+                  setRegularTVSettings({
+                    ...regularTVSettings,
+                    epg_source_id: e.target.value ? parseInt(e.target.value) : null,
+                  })
+                }
+                disabled={!dispatcharrStatus.data?.connected}
+              >
+                <option value="">Select EPG source...</option>
+                {epgSourcesQuery.data?.sources?.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.name} ({source.source_type})
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Source for program data (XMLTV)
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="regular-tv-lookahead">Lookahead (hours)</Label>
+              <Input id="regular-tv-lookahead" type="number" min={1} value={regularTVSettings.lookahead_hours} onChange={(e) => setRegularTVSettings({ ...regularTVSettings, lookahead_hours: parseFloat(e.target.value) || 24 })} />
+              <p className="text-xs text-muted-foreground">
+                How far forward to look for programs in the EPG.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="regular-tv-lookback">Lookback (hours)</Label>
+              <Input id="regular-tv-lookback" type="number" min={0} value={regularTVSettings.lookback_hours} onChange={(e) => setRegularTVSettings({ ...regularTVSettings, lookback_hours: parseFloat(e.target.value) || 0 })} />
+              <p className="text-xs text-muted-foreground">
+                How far back to look for programs in the EPG.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => updateRegularTVSettings.mutate(regularTVSettings)}
+            disabled={updateRegularTVSettings.isPending}
+          >
+            {updateRegularTVSettings.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save Regular TV Settings
+          </Button>
         </CardContent>
       </Card>
       </>

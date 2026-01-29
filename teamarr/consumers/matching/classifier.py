@@ -564,6 +564,10 @@ def _clean_team_name(name: str) -> str:
     name = re.sub(r"\bDATE_MASK\b", "", name)
     name = re.sub(r"\bTIME_MASK\b", "", name)
 
+    # Remove parentheses left empty/near-empty after datetime mask removal
+    # Handles: () (   ) (:05) (  -- ) (  --  :40) etc.
+    name = re.sub(r"\(\s*[\s:\-]*\d{0,2}\s*\)", "", name)
+
     # Clean up "@ ET", "@ EST", "@ PT", etc. at end
     name = re.sub(r"\s*@\s*[A-Z]{2,4}T?\s*$", "", name, flags=re.IGNORECASE)
 
@@ -632,6 +636,12 @@ def _clean_team_name(name: str) -> str:
         first_is_league = detect_league_hint(first_part + ":") is not None
         first_is_sport = detect_sport_hint(first_part) is not None
 
+        # Check if first part is a provider/channel prefix pattern
+        # Handles: "US (Paramount 010)", "UK (Sky Sports 042)", "CA (TSN 3)"
+        first_is_provider = bool(re.match(
+            r"^[A-Z]{2,3}\s*\(.*\d+\)$", first_part, re.IGNORECASE
+        ))
+
         # Also strip if first part is mostly datetime placeholders
         first_stripped = re.sub(r"\bDATE_MASK\b", "", first_part)
         first_stripped = re.sub(r"\bTIME_MASK\b", "", first_stripped)
@@ -639,7 +649,7 @@ def _clean_team_name(name: str) -> str:
         first_stripped = re.sub(r"[\s\-:.,]+", " ", first_stripped).strip()
         first_is_datetime_noise = len(first_stripped) < 3
 
-        if first_is_league or first_is_sport or first_is_datetime_noise:
+        if first_is_league or first_is_sport or first_is_datetime_noise or first_is_provider:
             # First part is prefix noise - take the rest
             # Check for colon in rest (show name prefix pattern)
             if ":" in rest:

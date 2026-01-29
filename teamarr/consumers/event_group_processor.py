@@ -13,9 +13,11 @@ This is the main entry point for event-based EPG generation.
 """
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from sqlite3 import Connection
 from typing import Any, Callable
 
@@ -400,52 +402,51 @@ class EventGroupProcessor:
 
             result = PreviewResult(group_id=group_id, group_name=group.name)
 
-            # Step 0: Refresh M3U account before fetching streams (skip if recent)
-            if not self._dispatcharr_client:
-                result.errors.append("Dispatcharr not configured")
-                return result
+            # Check if this is Regular_TV group
+            is_regular_tv = group.name == "Regular_TV" or group.m3u_group_name == "Regular_TV"
 
-            if group.m3u_account_id:
-                try:
-                    refresh_result = self._dispatcharr_client.m3u.wait_for_refresh(
-                        group.m3u_account_id,
-                        timeout=180,
-                        skip_if_recent_minutes=60,
-                    )
-                    if refresh_result.skipped:
-                        logger.debug(
-                            f"Preview: M3U account {group.m3u_account_id} "
-                            "recently refreshed, skipping"
+            # Step 0: Refresh M3U account before fetching streams (skip if recent)
+            if not is_regular_tv:
+                if not self._dispatcharr_client:
+                    result.errors.append("Dispatcharr not configured")
+                    return result
+
+                if group.m3u_account_id:
+                    try:
+                        refresh_result = self._dispatcharr_client.m3u.wait_for_refresh(
+                            group.m3u_account_id,
+                            timeout=180,
+                            skip_if_recent_minutes=60,
                         )
-                    elif refresh_result.success:
-                        logger.debug(
-                            f"Preview: M3U account {group.m3u_account_id} "
-                            f"refreshed in {refresh_result.duration:.1f}s"
-                        )
-                    else:
-                        logger.warning(
-                            f"Preview: M3U refresh failed: {refresh_result.message} "
-                            "- continuing with potentially stale data"
-                        )
-                except Exception as e:
-                    logger.warning("[EVENT_EPG] Preview: M3U refresh error: %s - continuing anyway", e)
+                        if refresh_result.skipped:
+                            logger.debug(
+                                f"Preview: M3U account {group.m3u_account_id} "
+                                "recently refreshed, skipping"
+                            )
+                        elif refresh_result.success:
+                            logger.debug(
+                                f"Preview: M3U account {group.m3u_account_id} "
+                                f"refreshed in {refresh_result.duration:.1f}s"
+                            )
+                        else:
+                            logger.warning(
+                                f"Preview: M3U refresh failed: {refresh_result.message} "
+                                "- continuing with potentially stale data"
+                            )
+                    except Exception as e:
+                        logger.warning("[EVENT_EPG] Preview: M3U refresh error: %s - continuing anyway", e)
 
             # Step 1: Fetch streams from M3U group
             try:
-                raw_streams = self._dispatcharr_client.m3u.list_streams(
-                    group_id=group.m3u_group_id,
-                    account_id=group.m3u_account_id,
-                )
+                streams = self._fetch_streams(group)
             except Exception as e:
                 result.errors.append(f"Failed to fetch streams: {e}")
                 return result
 
-            if not raw_streams:
-                result.errors.append("No streams found in M3U group")
+            if not streams:
+                result.errors.append("No streams found in group")
                 return result
 
-            # Convert DispatcharrStream objects to dict format
-            streams = [{"id": s.id, "name": s.name} for s in raw_streams]
             result.total_streams = len(streams)
 
             # Step 2: Apply stream filtering
@@ -837,7 +838,7 @@ class EventGroupProcessor:
 
             events = self._fetch_events(leagues, target_date)
 
-            if not events:
+            if not events and leagues:
                 result.errors.append(f"No events found for leagues: {leagues}")
                 result.completed_at = datetime.now()
                 stats_run.complete(status="completed", error="No events found")
@@ -1367,6 +1368,10 @@ class EventGroupProcessor:
 
         Uses group's m3u_group_id to filter streams.
         """
+        # Special handling for Regular_TV group - fetch from local file
+        if group.name == "Regular_TV" or group.m3u_group_name == "Regular_TV":
+            return self._fetch_local_regular_tv_streams()
+
         if not self._dispatcharr_client:
             logger.warning("[EVENT_EPG] Dispatcharr not configured - cannot fetch streams")
             return []
@@ -1402,6 +1407,65 @@ class EventGroupProcessor:
         except Exception as e:
             logger.error("[EVENT_EPG] Failed to fetch streams: %s", e)
             return []
+
+    def _fetch_local_regular_tv_streams(self) -> list[dict]:
+        """Fetch streams from local Regular TV M3U file."""
+        m3u_path = Path("data/regular_tv.m3u")
+        if not m3u_path.exists():
+            logger.warning("[EVENT_EPG] Regular TV M3U file not found at %s", m3u_path)
+            return []
+
+        streams = []
+        try:
+            content = m3u_path.read_text(encoding="utf-8")
+            # Parse #EXTINF lines
+            # Format: #EXTINF:-1 tvg-id="..." ... group-title="Regular_TV",Title
+            
+            lines = content.splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith("#EXTINF:"):
+                    # Extract title - handle potential commas in title
+                    # Look for the comma after group-title="..."
+                    title_match = re.search(r'group-title="[^"]*",\s*(.*)$', line)
+                    if title_match:
+                        title = title_match.group(1).strip()
+                    else:
+                        # Fallback for lines without group-title or other formats
+                        title = line.rsplit(",", 1)[-1].strip()
+                    
+                    # Extract tvg-id if present
+                    tvg_id = None
+                    tvg_match = re.search(r'tvg-id="([^"]+)"', line)
+                    if tvg_match:
+                        tvg_id = tvg_match.group(1)
+                        
+                    # URL is next line
+                    url = None
+                    if i + 1 < len(lines) and not lines[i+1].startswith("#"):
+                        url = lines[i+1].strip()
+                    
+                    # Use a negative ID to indicate local/fake stream
+                    # Use index as ID to ensure uniqueness within list
+                    stream_id = -(i + 1)
+                    
+                    streams.append({
+                        "id": stream_id,
+                        "name": title,
+                        "tvg_id": tvg_id,
+                        "tvg_name": title,
+                        "channel_group": "Regular_TV",
+                        "channel_group_id": None,
+                        "m3u_account_id": None,
+                        "is_stale": False,
+                        "url": url
+                    })
+                    
+            logger.info("[EVENT_EPG] Fetched %d streams from local Regular TV M3U", len(streams))
+            
+        except Exception as e:
+            logger.error("[EVENT_EPG] Failed to parse Regular TV M3U: %s", e)
+            
+        return streams
 
     def _filter_streams(
         self,

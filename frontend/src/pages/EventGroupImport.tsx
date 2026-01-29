@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import { api } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,6 +71,20 @@ interface BulkCreateResponse {
   created: Array<{ group_id: number; name: string; success: boolean }>
 }
 
+const REGULAR_TV_ACCOUNT_ID = -1
+const REGULAR_TV_GROUP_ID = -1
+
+const REGULAR_TV_ACCOUNT: M3UAccount = {
+  id: REGULAR_TV_ACCOUNT_ID,
+  name: "Regular TV",
+}
+
+const REGULAR_TV_GROUP: M3UGroup = {
+  id: REGULAR_TV_GROUP_ID,
+  name: "Regular_TV",
+  stream_count: 0,
+}
+
 // Fetch functions
 async function fetchM3UAccounts(): Promise<M3UAccount[]> {
   return api.get("/dispatcharr/m3u-accounts")
@@ -126,12 +141,30 @@ export function EventGroupImport() {
   // Queries
   const accountsQuery = useQuery({
     queryKey: ["dispatcharr-m3u-accounts"],
-    queryFn: fetchM3UAccounts,
+    queryFn: async () => {
+      const accounts = await fetchM3UAccounts()
+      return [...accounts, REGULAR_TV_ACCOUNT]
+    },
   })
 
   const groupsQuery = useQuery({
     queryKey: ["dispatcharr-m3u-groups", selectedAccount?.id],
-    queryFn: () => fetchM3UGroups(selectedAccount!.id),
+    queryFn: async () => {
+      if (selectedAccount?.id === REGULAR_TV_ACCOUNT_ID) {
+        try {
+          const res = await fetch("/api/v1/regular-tv/playlist")
+          if (res.ok) {
+            const text = await res.text()
+            const count = (text.match(/^#EXTINF:/gm) || []).length
+            return [{ ...REGULAR_TV_GROUP, stream_count: count }]
+          }
+        } catch (e) {
+          console.error("Failed to fetch Regular TV playlist stats", e)
+        }
+        return [REGULAR_TV_GROUP]
+      }
+      return fetchM3UGroups(selectedAccount!.id)
+    },
     enabled: !!selectedAccount,
   })
 
@@ -142,7 +175,33 @@ export function EventGroupImport() {
 
   const streamsQuery = useQuery({
     queryKey: ["dispatcharr-group-streams", selectedAccount?.id, previewGroup?.id],
-    queryFn: () => fetchGroupStreams(selectedAccount!.id, previewGroup!.id),
+    queryFn: async () => {
+      if (selectedAccount?.id === REGULAR_TV_ACCOUNT_ID) {
+        try {
+          const res = await fetch("/api/v1/regular-tv/playlist")
+          if (res.ok) {
+            const text = await res.text()
+            const streams: Stream[] = []
+            const lines = text.split("\n")
+            let id = 1
+            for (const line of lines) {
+              if (line.startsWith("#EXTINF:")) {
+                const commaIndex = line.lastIndexOf(",")
+                if (commaIndex !== -1) {
+                  const name = line.substring(commaIndex + 1).trim()
+                  streams.push({ id: id++, name })
+                }
+              }
+            }
+            return streams
+          }
+        } catch (e) {
+          console.error("Failed to fetch Regular TV playlist streams", e)
+        }
+        return []
+      }
+      return fetchGroupStreams(selectedAccount!.id, previewGroup!.id)
+    },
     enabled: !!selectedAccount && !!previewGroup,
   })
 

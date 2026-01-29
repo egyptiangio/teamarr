@@ -1078,6 +1078,24 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 44 (update check settings)")
         current_version = 44
 
+    # Version 45: Add Table for Regular TV Groups to be considered as events
+    if current_version < 45:
+        _create_regular_tv_groups(conn)
+        conn.execute("UPDATE settings SET schema_version = 45 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 45 (ensure epg_source_id column)")
+        current_version = 45
+
+    # Version 46: Add regular_tv_enabled to settings
+    if current_version < 46:
+        _add_column_if_not_exists(conn, "settings", "regular_tv_enabled", "BOOLEAN DEFAULT 0")
+        _add_column_if_not_exists(conn, "settings", "regular_tv_lookback_hours", "INTEGER DEFAULT 12")
+        _add_column_if_not_exists(conn, "settings", "regular_tv_lookahead_hours", "INTEGER DEFAULT 24")
+        _add_column_if_not_exists(conn, "settings", "regular_tv_epg_source_id", "INTEGER")
+        
+        conn.execute("UPDATE settings SET schema_version = 46 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 46 (regular_tv_enabled)")
+        current_version = 46
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS
@@ -2389,6 +2407,23 @@ def _remove_group_timing_columns_via_recreation(
         conn.execute("PRAGMA foreign_keys = ON")
 
     logger.info("[MIGRATE] Recreated event_epg_groups table without timing columns")
+
+
+def _create_regular_tv_groups(conn: sqlite3.Connection) -> None:
+    """Create regular_tv_groups table with simplified schema."""
+    conn.execute("""
+        CREATE TABLE regular_tv_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            name TEXT NOT NULL,
+            m3u_group_name TEXT NOT NULL,
+            m3u_account_id INTEGER,
+            enabled BOOLEAN DEFAULT 1,
+            epg_source_id INTEGER,
+            m3u_group_id, INTEGER
+        )
+    """)
 
 
 def reset_db(db_path: Path | str | None = None) -> None:

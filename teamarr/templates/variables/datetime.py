@@ -5,6 +5,7 @@ All times are converted to the user's configured timezone.
 """
 
 from datetime import datetime
+import platform
 
 from teamarr.templates.context import GameContext, TemplateContext
 from teamarr.templates.variables.registry import (
@@ -36,7 +37,8 @@ def extract_game_date(ctx: TemplateContext, game_ctx: GameContext | None) -> str
     dt = _get_local_time(game_ctx)
     if not dt:
         return ""
-    return dt.strftime("%A, %B %-d, %Y")
+    fmt = "%A, %B %#d, %Y" if platform.system() == "Windows" else "%A, %B %-d, %Y"
+    return dt.strftime(fmt)
 
 
 @register_variable(
@@ -49,7 +51,8 @@ def extract_game_date_short(ctx: TemplateContext, game_ctx: GameContext | None) 
     dt = _get_local_time(game_ctx)
     if not dt:
         return ""
-    return dt.strftime("%b %-d")
+    directive = "%#d" if platform.system() == "Windows" else "%-d"
+    return dt.strftime(f"%b {directive}")
 
 
 @register_variable(
@@ -160,8 +163,8 @@ def extract_relative_day(ctx: TemplateContext, game_ctx: GameContext | None) -> 
     elif delta <= 6:
         return dt.strftime("%A").lower()
     else:
-        return dt.strftime("%b %-d")  # Keep month title case (Jan 25)
-
+        flag = "#" if platform.system() == "Windows" else "-"
+        return dt.strftime(f"%b %{flag}d")
 
 @register_variable(
     name="relative_day_title",
@@ -184,6 +187,7 @@ def extract_relative_day_title(ctx: TemplateContext, game_ctx: GameContext | Non
     elif delta <= 6:
         return dt.strftime("%A")
     else:
-        return dt.strftime("%b %-d")
+        flag = "#" if platform.system() == "Windows" else "-"
+        return dt.strftime(f"%b %{flag}d")
 
 

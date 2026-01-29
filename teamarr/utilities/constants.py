@@ -25,9 +25,9 @@ CITY_TRANSLATIONS: dict[str, str] = {
     "braunschweig": "brunswick",
     # Italian cities
     "milano": "milan",
-    "roma": "rome",
-    "napoli": "naples",
-    "torino": "turin",
+    # "roma", "napoli", "torino" removed — conflicts with team aliases
+    # (AS Roma, SSC Napoli, Torino FC). Both sides of fuzzy match go through
+    # the same normalizer so translation is redundant, but it breaks alias lookup.
     "firenze": "florence",
     "venezia": "venice",
     "genova": "genoa",
@@ -363,21 +363,21 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     # ==========================================================================
     # Major US/Canadian Pro Leagues
     # ==========================================================================
-    (r"^nfl[:\s-]", "nfl"),
-    (r"^nba[:\s-]", "nba"),
-    (r"^nhl[:\s-]", "nhl"),
-    (r"^mlb[:\s-]", "mlb"),
-    (r"^mls[:\s-]", "usa.1"),
-    (r"^wnba[:\s-]", "wnba"),
-    (r"^nwsl[:\s-]", "usa.nwsl"),
-    (r"^g[\s-]?league[:\s-]", "nba-development"),
+    (r"\bnfl[:\s-]", "nfl"),
+    (r"\bnba[:\s-]", "nba"),
+    (r"\bnhl[:\s-]", "nhl"),
+    (r"\bmlb[:\s-]", "mlb"),
+    (r"\bmls[:\s-]", "usa.1"),
+    (r"\bwnba[:\s-]", "wnba"),
+    (r"\bnwsl[:\s-]", "usa.nwsl"),
+    (r"\bg[\s-]?league[:\s-]", "nba-development"),
     # ==========================================================================
     # US College Sports
     # ==========================================================================
-    (r"^ncaaf[:\s-]", "college-football"),
-    (r"^ncaam[:\s-]", "mens-college-basketball"),
-    (r"^ncaaw[:\s-]", "womens-college-basketball"),
-    (r"^ncaab[:\s-]", "mens-college-basketball"),  # Alternate abbreviation
+    (r"\bncaaf[:\s-]", "college-football"),
+    (r"\bncaam[:\s-]", "mens-college-basketball"),
+    (r"\bncaaw[:\s-]", "womens-college-basketball"),
+    (r"\bncaab[:\s-]", "mens-college-basketball"),  # Alternate abbreviation
     # ==========================================================================
     # Soccer / Football - Multi-league umbrella brands first
     # ==========================================================================
@@ -400,29 +400,30 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     # FA Cup
     (r"\bfa\s+cup[:\s-]", "eng.fa"),
     # Premier League
-    (r"^epl[:\s-]", "eng.1"),
-    (r"^premier\s+league[:\s-]", "eng.1"),
+    (r"\bepl[:\s-]", "eng.1"),
+    (r"\bpremier\s+league[:\s-]", "eng.1"),
     # Other top European leagues
-    (r"^la\s+liga[:\s-]", "esp.1"),
-    (r"^bundesliga[:\s-]", "ger.1"),
-    (r"^serie\s+a[:\s-]", "ita.1"),
-    (r"^ligue\s+1[:\s-]", "fra.1"),
-    (r"^ucl[:\s-]", "uefa.champions"),
-    (r"^champions\s+league[:\s-]", "uefa.champions"),
-    (r"^spl[:\s-]", "ksa.1"),  # Saudi Pro League
+    (r"\bla\s+liga[:\s-]", "esp.1"),
+    (r"\bbundesliga[:\s-]", "ger.1"),
+    (r"\bserie\s+a[:\s-]", "ita.1"),
+    (r"\bligue\s+1[:\s-]", "fra.1"),
+    (r"\buefa\s+champions\s+league[:\s-]", "uefa.champions"),
+    (r"\bucl[:\s-]", "uefa.champions"),
+    (r"\bchampions\s+league[:\s-]", "uefa.champions"),
+    (r"\bspl[:\s-]", "ksa.1"),  # Saudi Pro League
     # ==========================================================================
     # Hockey - Multi-league umbrella brands first
     # ==========================================================================
     # CHL = Canadian Hockey League (OHL, WHL, QMJHL)
-    (r"^chl[:\s-]", ["ohl", "whl", "qmjhl"]),
-    (r"^canadian\s+hockey\s+league[:\s-]", ["ohl", "whl", "qmjhl"]),
+    (r"\bchl[:\s-]", ["ohl", "whl", "qmjhl"]),
+    (r"\bcanadian\s+hockey\s+league[:\s-]", ["ohl", "whl", "qmjhl"]),
     # Specific CHL leagues
-    (r"^pwhl[:\s-]", "pwhl"),
-    (r"^ahl[:\s-]", "ahl"),
-    (r"^ohl[:\s-]", "ohl"),
-    (r"^whl[:\s-]", "whl"),
-    (r"^qmjhl[:\s-]", "qmjhl"),
-    (r"^ushl[:\s-]", "ushl"),
+    (r"\bpwhl[:\s-]", "pwhl"),
+    (r"\bahl[:\s-]", "ahl"),
+    (r"\bohl[:\s-]", "ohl"),
+    (r"\bwhl[:\s-]", "whl"),
+    (r"\bqmjhl[:\s-]", "qmjhl"),
+    (r"\bushl[:\s-]", "ushl"),
     # ==========================================================================
     # Combat Sports (event_card types)
     # ==========================================================================
@@ -448,8 +449,8 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     # ==========================================================================
     # Rugby
     # ==========================================================================
-    (r"^nrl[:\s-]", "nrl"),
-    (r"^super\s+rugby[:\s-]", "super-rugby"),
+    (r"\bnrl[:\s-]", "nrl"),
+    (r"\bsuper\s+rugby[:\s-]", "super-rugby"),
 ]
 
 

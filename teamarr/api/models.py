@@ -263,6 +263,54 @@ class TemplateFullResponse(TemplateResponse):
 
 
 # =============================================================================
+# Regular TV Groups
+# =============================================================================
+
+
+class RegularTVGroupCreate(BaseModel):
+    """Request body for creating a Regular TV group."""
+
+    name: str
+    m3u_group_name: str
+    m3u_account_id: int
+    enabled: bool = True
+
+
+class BulkRegularTVGroupCreate(BaseModel):
+    """Request body for bulk creating Regular TV groups."""
+
+    groups: list[RegularTVGroupCreate]
+
+
+class RegularTVGroupUpdate(BaseModel):
+    """Request body for updating a Regular TV group."""
+
+    name: str | None = None
+    m3u_group_name: str | None = None
+    m3u_account_id: int | None = None
+    enabled: bool | None = None
+
+
+class RegularTVGroupResponse(RegularTVGroupCreate):
+    """Response body for a Regular TV group."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegularTVSettings(BaseModel):
+    """Global settings for Regular TV."""
+
+    lookback_hours: float = Field(0.0, description="How many hours in the past to look for matching programs.")
+    lookahead_hours: float = Field(24.0, description="How many hours in the future to look for matching programs.")
+    m3u_account_id: int | None = Field(None, description="Global M3U account ID for Regular TV")
+    epg_source_id: int | None = Field(None, description="Global EPG source ID for Regular TV")
+
+
+# =============================================================================
 # EPG
 # =============================================================================
 

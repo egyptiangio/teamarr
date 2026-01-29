@@ -622,36 +622,64 @@ def _normalize_data_v43(conn: sqlite3.Connection) -> None:
 
         # Convert old enum values to pattern format (if column exists)
         if "channel_group_mode" in columns:
-            conn.execute("""
-                UPDATE event_epg_groups
-                SET channel_group_mode = '{sport}'
-                WHERE channel_group_mode = 'sport'
-            """)
-            conn.execute("""
-                UPDATE event_epg_groups
-                SET channel_group_mode = '{league}'
-                WHERE channel_group_mode = 'league'
-            """)
+            # Check if table has CHECK constraint that would block the UPDATE
+            # If so, we need to recreate the table (constraint removal)
+            cursor = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='event_epg_groups'"
+            )
+            row = cursor.fetchone()
+            table_sql = row[0] if row else ""
 
-        # Fix invalid enum values (v42 recovery) - only if columns exist
-        if "channel_assignment_mode" in columns:
-            conn.execute("""
-                UPDATE event_epg_groups
-                SET channel_assignment_mode = 'auto'
-                WHERE channel_assignment_mode NOT IN ('auto', 'manual')
-            """)
-        if "channel_sort_order" in columns:
-            conn.execute("""
-                UPDATE event_epg_groups
-                SET channel_sort_order = 'time'
-                WHERE channel_sort_order NOT IN ('time', 'sport_time', 'league_time')
-            """)
-        if "overlap_handling" in columns:
-            conn.execute("""
-                UPDATE event_epg_groups
-                SET overlap_handling = 'add_stream'
-                WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
-            """)
+            has_check_constraint = (
+                "channel_group_mode" in table_sql and
+                "CHECK" in table_sql and
+                "'sport'" in table_sql and
+                "'league'" in table_sql
+            )
+
+            if has_check_constraint:
+                # Table has CHECK constraint - must recreate table to remove it
+                # Import and use the proper migration function from connection.py
+                from teamarr.database.connection import _migrate_channel_group_mode_to_patterns
+                logger.info("[CHECKPOINT] Recreating event_epg_groups to remove CHECK constraint")
+                _migrate_channel_group_mode_to_patterns(conn)
+                # Restore FK state — the migration function re-enables foreign keys
+                # in its finally block, but the checkpoint needs them OFF for Phase 5
+                conn.execute("PRAGMA foreign_keys = OFF")
+                # Table recreation handles all column conversions, skip remaining UPDATEs
+            else:
+                # No CHECK constraint - safe to UPDATE in place
+                conn.execute("""
+                    UPDATE event_epg_groups
+                    SET channel_group_mode = '{sport}'
+                    WHERE channel_group_mode = 'sport'
+                """)
+                conn.execute("""
+                    UPDATE event_epg_groups
+                    SET channel_group_mode = '{league}'
+                    WHERE channel_group_mode = 'league'
+                """)
+
+                # Fix invalid enum values (v42 recovery) - only if columns exist
+                # (skipped if table was recreated above since values are already converted)
+                if "channel_assignment_mode" in columns:
+                    conn.execute("""
+                        UPDATE event_epg_groups
+                        SET channel_assignment_mode = 'auto'
+                        WHERE channel_assignment_mode NOT IN ('auto', 'manual')
+                    """)
+                if "channel_sort_order" in columns:
+                    conn.execute("""
+                        UPDATE event_epg_groups
+                        SET channel_sort_order = 'time'
+                        WHERE channel_sort_order NOT IN ('time', 'sport_time', 'league_time')
+                    """)
+                if "overlap_handling" in columns:
+                    conn.execute("""
+                        UPDATE event_epg_groups
+                        SET overlap_handling = 'add_stream'
+                        WHERE overlap_handling NOT IN ('add_stream', 'add_only', 'create_all', 'skip')
+                    """)
 
     # -------------------------------------------------------------------------
     # v35: Exception keywords label + match_terms restructure
