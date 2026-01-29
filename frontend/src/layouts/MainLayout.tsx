@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
-import { Moon, Sun, Brain } from "lucide-react"
+import { Moon, Sun } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { Toaster } from "sonner"
 import { useQuery } from "@tanstack/react-query"
@@ -99,7 +99,6 @@ export function MainLayout() {
                     }`
                   }
                 >
-                  {item.to === "/ai" && <Brain className="h-4 w-4 inline mr-1" />}
                   {item.label}
                 </NavLink>
               ))}
