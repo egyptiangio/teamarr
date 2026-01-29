@@ -518,6 +518,20 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn, "settings", "startup_cache_max_age_days", "INTEGER DEFAULT 1"
     )
 
+    # AI/Ollama settings
+    _add_column_if_not_exists(conn, "settings", "ai_enabled", "BOOLEAN DEFAULT 0")
+    _add_column_if_not_exists(conn, "settings", "ai_ollama_url", "TEXT DEFAULT 'http://localhost:11434'")
+    _add_column_if_not_exists(conn, "settings", "ai_model", "TEXT DEFAULT 'qwen2.5:7b'")
+    _add_column_if_not_exists(conn, "settings", "ai_use_for_parsing", "BOOLEAN DEFAULT 1")
+    _add_column_if_not_exists(conn, "settings", "ai_use_for_matching", "BOOLEAN DEFAULT 0")
+    _add_column_if_not_exists(conn, "settings", "ai_batch_size", "INTEGER DEFAULT 10")
+    _add_column_if_not_exists(conn, "settings", "ai_learn_patterns", "BOOLEAN DEFAULT 1")
+    _add_column_if_not_exists(conn, "settings", "ai_fallback_to_regex", "BOOLEAN DEFAULT 1")
+
+    # AI patterns table
+    from teamarr.database.ai_patterns import init_ai_tables
+    init_ai_tables(conn)
+
     # LEGACY v3-v43 migrations follow (all skipped because version is now 43)
 
     # Version 3: teams.league (TEXT) -> teams.primary_league + teams.leagues (JSON array)

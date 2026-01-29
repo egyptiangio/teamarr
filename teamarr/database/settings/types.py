@@ -209,6 +209,20 @@ class ChannelNumberingSettings:
 
 
 @dataclass
+class AISettings:
+    """AI/Ollama integration settings."""
+
+    enabled: bool = False
+    ollama_url: str = "http://localhost:11434"
+    model: str = "qwen2.5:7b"
+    use_for_parsing: bool = True  # Use AI for stream parsing
+    use_for_matching: bool = False  # Use AI for team matching (experimental)
+    batch_size: int = 10  # Streams per AI batch call
+    learn_patterns: bool = True  # Learn regex patterns from AI results
+    fallback_to_regex: bool = True  # Fall back to built-in regex if AI fails
+
+
+@dataclass
 class AllSettings:
     """Complete application settings."""
 
@@ -225,5 +239,6 @@ class AllSettings:
     channel_numbering: ChannelNumberingSettings = field(default_factory=ChannelNumberingSettings)
     stream_ordering: StreamOrderingSettings = field(default_factory=StreamOrderingSettings)
     update_check: UpdateCheckSettings = field(default_factory=UpdateCheckSettings)
+    ai: AISettings = field(default_factory=AISettings)
     epg_generation_counter: int = 0
     schema_version: int = 44

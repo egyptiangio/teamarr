@@ -7,6 +7,7 @@ import json
 from sqlite3 import Connection
 
 from .types import (
+    AISettings,
     AllSettings,
     APISettings,
     ChannelNumberingSettings,
@@ -167,6 +168,16 @@ def get_all_settings(conn: Connection) -> AllSettings:
             rules=_parse_stream_ordering_rules(row["stream_ordering_rules"])
         ),
         update_check=_build_update_check_settings(row),
+        ai=AISettings(
+            enabled=bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False,
+            ollama_url=row["ai_ollama_url"] or "http://localhost:11434",
+            model=row["ai_model"] or "qwen2.5:7b",
+            use_for_parsing=bool(row["ai_use_for_parsing"]) if row["ai_use_for_parsing"] is not None else True,
+            use_for_matching=bool(row["ai_use_for_matching"]) if row["ai_use_for_matching"] is not None else False,
+            batch_size=row["ai_batch_size"] or 10,
+            learn_patterns=bool(row["ai_learn_patterns"]) if row["ai_learn_patterns"] is not None else True,
+            fallback_to_regex=bool(row["ai_fallback_to_regex"]) if row["ai_fallback_to_regex"] is not None else True,
+        ),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
     )
