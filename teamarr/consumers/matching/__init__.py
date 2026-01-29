@@ -16,6 +16,12 @@ from teamarr.consumers.matching.classifier import (
     classify_stream,
     classify_streams,
 )
+from teamarr.consumers.matching.constants import (
+    ACCEPT_WITH_DATE_THRESHOLD,
+    BOTH_TEAMS_THRESHOLD,
+    HIGH_CONFIDENCE_THRESHOLD,
+    MATCH_WINDOW_DAYS,
+)
 from teamarr.consumers.matching.event_matcher import (
     EventCardMatcher,
     EventMatchContext,
@@ -43,14 +49,12 @@ from teamarr.consumers.matching.team_matcher import (
     TeamMatcher,
 )
 
-# How far back to search for events when matching streams.
-# Allows matching streams for recently-finished events (for stats tracking).
-# The lifecycle layer filters out past events after matching.
-MATCH_WINDOW_DAYS = 30
-
 __all__ = [
     # Constants
     "MATCH_WINDOW_DAYS",
+    "HIGH_CONFIDENCE_THRESHOLD",
+    "ACCEPT_WITH_DATE_THRESHOLD",
+    "BOTH_TEAMS_THRESHOLD",
     # Main entry point
     "StreamMatcher",
     "MatchedStreamResult",

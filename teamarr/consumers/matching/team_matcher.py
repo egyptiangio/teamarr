@@ -32,16 +32,13 @@ from teamarr.utilities.fuzzy_match import get_matcher, normalize_text
 logger = logging.getLogger(__name__)
 
 # Type alias for user-defined aliases: (alias_text, league) -> team_name
+from teamarr.consumers.matching.constants import (
+    ACCEPT_WITH_DATE_THRESHOLD,
+    BOTH_TEAMS_THRESHOLD,
+    HIGH_CONFIDENCE_THRESHOLD,
+)
+
 UserAliasCache = dict[tuple[str, str], str]
-
-# Thresholds for matching
-HIGH_CONFIDENCE_THRESHOLD = 85.0  # Accept without date validation
-ACCEPT_WITH_DATE_THRESHOLD = 75.0  # Accept only if date/time validates
-
-# Both-teams matching threshold - lower because min() of two scores is strict
-# e.g., "William Jessup" vs "Jessup Warriors" scores ~62%, combined with
-# "Sacred Heart" vs "Sacred Heart Pioneers" (~100%) gives min(62, 100) = 62
-BOTH_TEAMS_THRESHOLD = 60.0
 
 
 @dataclass
