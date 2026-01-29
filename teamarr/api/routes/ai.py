@@ -70,6 +70,32 @@ class GrokProviderConfig(BaseModel):
     timeout: int = Field(60, ge=30, le=300)
 
 
+class GroqProviderConfig(BaseModel):
+    """Groq (fast inference) provider configuration - FREE TIER."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "llama-3.1-8b-instant"
+    timeout: int = Field(60, ge=30, le=300)
+
+
+class GeminiProviderConfig(BaseModel):
+    """Google Gemini provider configuration - FREE TIER."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "gemini-1.5-flash"
+    timeout: int = Field(60, ge=30, le=300)
+
+
+class OpenRouterProviderConfig(BaseModel):
+    """OpenRouter provider configuration - FREE TIER available."""
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "meta-llama/llama-3.1-8b-instruct:free"
+    timeout: int = Field(60, ge=30, le=300)
+    site_url: str = ""
+    app_name: str = "Teamarr"
+
+
 class AITaskAssignmentsConfig(BaseModel):
     """Task-to-provider assignments."""
     pattern_learning: str = "ollama"
@@ -85,6 +111,10 @@ class AIProvidersConfig(BaseModel):
     openai: OpenAIProviderConfig = Field(default_factory=OpenAIProviderConfig)
     anthropic: AnthropicProviderConfig = Field(default_factory=AnthropicProviderConfig)
     grok: GrokProviderConfig = Field(default_factory=GrokProviderConfig)
+    # Free tier providers
+    groq: GroqProviderConfig = Field(default_factory=GroqProviderConfig)
+    gemini: GeminiProviderConfig = Field(default_factory=GeminiProviderConfig)
+    openrouter: OpenRouterProviderConfig = Field(default_factory=OpenRouterProviderConfig)
 
 
 class AISettingsResponse(BaseModel):
@@ -296,6 +326,26 @@ def _settings_to_response(settings) -> AISettingsResponse:
                 model=settings.grok.model,
                 timeout=settings.grok.timeout,
             ),
+            groq=GroqProviderConfig(
+                enabled=settings.groq.enabled,
+                api_key=settings.groq.api_key,
+                model=settings.groq.model,
+                timeout=settings.groq.timeout,
+            ),
+            gemini=GeminiProviderConfig(
+                enabled=settings.gemini.enabled,
+                api_key=settings.gemini.api_key,
+                model=settings.gemini.model,
+                timeout=settings.gemini.timeout,
+            ),
+            openrouter=OpenRouterProviderConfig(
+                enabled=settings.openrouter.enabled,
+                api_key=settings.openrouter.api_key,
+                model=settings.openrouter.model,
+                timeout=settings.openrouter.timeout,
+                site_url=settings.openrouter.site_url,
+                app_name=settings.openrouter.app_name,
+            ),
         ),
         task_assignments=AITaskAssignmentsConfig(
             pattern_learning=settings.task_assignments.pattern_learning,
@@ -363,6 +413,9 @@ def update_settings(request: AISettingsUpdate):
                 "openai": request.providers.openai.model_dump(),
                 "anthropic": request.providers.anthropic.model_dump(),
                 "grok": request.providers.grok.model_dump(),
+                "groq": request.providers.groq.model_dump(),
+                "gemini": request.providers.gemini.model_dump(),
+                "openrouter": request.providers.openrouter.model_dump(),
             }
             update_kwargs["providers_config"] = providers_config
 
@@ -1029,11 +1082,13 @@ def test_regex(request: TestRegexRequest):
         match = pattern.search(stream)
         if match:
             matches += 1
+            # Filter out None values from groupdict (optional groups that didn't match)
+            groups = {k: v for k, v in match.groupdict().items() if v is not None}
             results.append(
                 RegexMatchResult(
                     stream=stream,
                     matched=True,
-                    groups=match.groupdict(),
+                    groups=groups,
                 )
             )
         else:

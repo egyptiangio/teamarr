@@ -250,6 +250,10 @@ export function Settings() {
       openai: { enabled: false, api_key: "", model: "gpt-4o-mini", timeout: 60, organization: "" },
       anthropic: { enabled: false, api_key: "", model: "claude-3-5-sonnet-20241022", timeout: 60 },
       grok: { enabled: false, api_key: "", model: "grok-2-latest", timeout: 60 },
+      // Free-tier providers
+      groq: { enabled: false, api_key: "", model: "llama-3.1-8b-instant", timeout: 60 },
+      gemini: { enabled: false, api_key: "", model: "gemini-1.5-flash", timeout: 60 },
+      openrouter: { enabled: false, api_key: "", model: "meta-llama/llama-3.1-8b-instruct:free", timeout: 60, site_url: "", app_name: "Teamarr" },
     },
     task_assignments: {
       pattern_learning: "ollama",
@@ -2196,40 +2200,341 @@ export function Settings() {
           {/* Settings (shown when enabled) */}
           {aiSettings.enabled && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ollama-url">Ollama URL</Label>
-                  <Input
-                    id="ollama-url"
-                    value={aiSettings.ollama_url}
-                    onChange={(e) => setAISettings({ ...aiSettings, ollama_url: e.target.value })}
-                    placeholder="http://localhost:11434"
-                  />
+              {/* Providers Section */}
+              <div className="space-y-4 pt-2 border-t">
+                <div>
+                  <Label className="text-sm font-medium">AI Providers</Label>
+                  <p className="text-xs text-muted-foreground">Configure one or more AI providers. Providers marked FREE have generous free tiers.</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ollama-model">Model</Label>
-                  <Input
-                    id="ollama-model"
-                    value={aiSettings.model}
-                    onChange={(e) => setAISettings({ ...aiSettings, model: e.target.value })}
-                    placeholder="qwen2.5:7b"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Recommended: qwen2.5:7b for accuracy, qwen2.5:3b for speed
-                  </p>
+
+                {/* Ollama (Local) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.ollama.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, ollama: { ...aiSettings.providers.ollama, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">Ollama (Local)</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">FREE</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.ollama.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">URL</Label>
+                        <Input
+                          value={aiSettings.providers.ollama.url}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            ollama_url: e.target.value,
+                            providers: { ...aiSettings.providers, ollama: { ...aiSettings.providers.ollama, url: e.target.value } }
+                          })}
+                          placeholder="http://localhost:11434"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.ollama.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            model: e.target.value,
+                            providers: { ...aiSettings.providers, ollama: { ...aiSettings.providers.ollama, model: e.target.value } }
+                          })}
+                          placeholder="qwen2.5:7b"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Groq (FREE) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.groq.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, groq: { ...aiSettings.providers.groq, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">Groq (Llama)</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">FREE</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.groq.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={aiSettings.providers.groq.api_key}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, groq: { ...aiSettings.providers.groq, api_key: e.target.value } }
+                          })}
+                          placeholder="gsk_..."
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.groq.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, groq: { ...aiSettings.providers.groq, model: e.target.value } }
+                          })}
+                          placeholder="llama-3.1-8b-instant"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Google Gemini (FREE) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.gemini.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, gemini: { ...aiSettings.providers.gemini, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">Google Gemini</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">FREE</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.gemini.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={aiSettings.providers.gemini.api_key}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, gemini: { ...aiSettings.providers.gemini, api_key: e.target.value } }
+                          })}
+                          placeholder="AIza..."
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.gemini.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, gemini: { ...aiSettings.providers.gemini, model: e.target.value } }
+                          })}
+                          placeholder="gemini-1.5-flash"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* OpenRouter (FREE tier available) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.openrouter.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, openrouter: { ...aiSettings.providers.openrouter, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">OpenRouter</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded">FREE</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.openrouter.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={aiSettings.providers.openrouter.api_key}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, openrouter: { ...aiSettings.providers.openrouter, api_key: e.target.value } }
+                          })}
+                          placeholder="sk-or-..."
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.openrouter.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, openrouter: { ...aiSettings.providers.openrouter, model: e.target.value } }
+                          })}
+                          placeholder="meta-llama/llama-3.1-8b-instruct:free"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* OpenAI (Paid) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.openai.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, openai: { ...aiSettings.providers.openai, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">OpenAI (ChatGPT)</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded">PAID</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.openai.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={aiSettings.providers.openai.api_key}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, openai: { ...aiSettings.providers.openai, api_key: e.target.value } }
+                          })}
+                          placeholder="sk-..."
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.openai.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, openai: { ...aiSettings.providers.openai, model: e.target.value } }
+                          })}
+                          placeholder="gpt-4o-mini"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Anthropic (Paid) */}
+                <div className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={aiSettings.providers.anthropic.enabled}
+                        onCheckedChange={(checked) => setAISettings({
+                          ...aiSettings,
+                          providers: { ...aiSettings.providers, anthropic: { ...aiSettings.providers.anthropic, enabled: checked } }
+                        })}
+                      />
+                      <span className="font-medium">Anthropic (Claude)</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded">PAID</span>
+                    </div>
+                  </div>
+                  {aiSettings.providers.anthropic.enabled && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={aiSettings.providers.anthropic.api_key}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, anthropic: { ...aiSettings.providers.anthropic, api_key: e.target.value } }
+                          })}
+                          placeholder="sk-ant-..."
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          value={aiSettings.providers.anthropic.model}
+                          onChange={(e) => setAISettings({
+                            ...aiSettings,
+                            providers: { ...aiSettings.providers, anthropic: { ...aiSettings.providers.anthropic, model: e.target.value } }
+                          })}
+                          placeholder="claude-3-5-sonnet-20241022"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2 border-t">
-                <Label className="text-sm font-medium">Features</Label>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={aiSettings.use_for_parsing}
-                      onCheckedChange={(checked) => setAISettings({ ...aiSettings, use_for_parsing: checked })}
-                    />
-                    <Label className="text-sm">Use AI for stream parsing</Label>
+              {/* Task Assignments */}
+              <div className="space-y-3 pt-2 border-t">
+                <div>
+                  <Label className="text-sm font-medium">Task Assignments</Label>
+                  <p className="text-xs text-muted-foreground">Assign each AI task to a specific provider.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Pattern Learning</Label>
+                    <select
+                      className="w-full h-8 px-2 text-sm border rounded-md bg-background"
+                      value={aiSettings.task_assignments.pattern_learning}
+                      onChange={(e) => setAISettings({
+                        ...aiSettings,
+                        task_assignments: { ...aiSettings.task_assignments, pattern_learning: e.target.value }
+                      })}
+                    >
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="groq">Groq (Llama)</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Stream Parsing</Label>
+                    <select
+                      className="w-full h-8 px-2 text-sm border rounded-md bg-background"
+                      value={aiSettings.task_assignments.stream_parsing}
+                      onChange={(e) => setAISettings({
+                        ...aiSettings,
+                        task_assignments: { ...aiSettings.task_assignments, stream_parsing: e.target.value }
+                      })}
+                    >
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="groq">Groq (Llama)</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* General Options */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-medium">Options</Label>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={aiSettings.learn_patterns}

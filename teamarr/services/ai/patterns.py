@@ -59,15 +59,21 @@ Return JSON:
   "confidence": 0.0-1.0 how well this pattern captures the format
 }}
 
-Rules:
-- Use (?P<team1>...), (?P<team2>...), etc. for named groups
-- IMPORTANT: Each group name can only appear ONCE in the pattern (no duplicate names)
-- Make the pattern flexible enough to handle variations
-- Use \\s* for flexible whitespace
-- Use non-greedy quantifiers where appropriate
-- Escape special regex characters
-- Only include groups for fields actually present in the examples
-- Use alternation (|) inside a single group instead of multiple groups with same name"""
+CRITICAL RULES:
+1. Each named group can ONLY appear ONCE in the entire pattern. Python regex does NOT allow duplicate group names.
+   WRONG: (?P<team1>\\w+).*(?P<team1>\\w+)  <- ERROR: 'team1' used twice
+   RIGHT: (?P<team1>\\w+).*(?P<team2>\\w+)  <- OK: different names
+
+2. Use EXACTLY these group names: team1, team2, league, sport, date, time
+   Do NOT use variations like team1_alt, team1_2, first_team, etc.
+
+3. For alternatives, use alternation INSIDE a single group:
+   RIGHT: (?P<team1>\\w+|TBD)
+   WRONG: (?P<team1>\\w+)|(?P<team1_alt>TBD)
+
+4. Make the pattern flexible with \\s* for whitespace
+5. Use non-greedy quantifiers (.*?) where appropriate
+6. Only include groups for fields actually present in the examples"""
 
 
 CLASSIFY_FORMAT_PROMPT = """Analyze these stream names and identify distinct FORMAT PATTERNS. Group streams that follow the same naming convention.
@@ -145,7 +151,10 @@ def _fix_duplicate_named_groups(regex: str) -> str:
     """Rename duplicate named groups to make regex valid.
 
     Python regex doesn't allow the same group name to be used twice.
-    This function finds duplicates and renames them (team1 -> team1_2, team1_3, etc.)
+    This function finds duplicates and renames them with _alt suffix.
+
+    Note: This is a fallback fix. The AI prompt should be generating
+    patterns without duplicates in the first place.
     """
     # Pattern to find named groups: (?P<name>
     named_group_pattern = re.compile(r'\(\?P<([^>]+)>')
@@ -154,6 +163,7 @@ def _fix_duplicate_named_groups(regex: str) -> str:
     name_counts: dict[str, int] = {}
     result_parts: list[str] = []
     last_end = 0
+    had_duplicates = False
 
     for match in named_group_pattern.finditer(regex):
         group_name = match.group(1)
@@ -166,17 +176,23 @@ def _fix_duplicate_named_groups(regex: str) -> str:
             # First occurrence - keep as is
             result_parts.append(match.group(0))
         else:
-            # Duplicate - rename it
-            new_name = f"{group_name}_{name_counts[group_name]}"
+            # Duplicate - rename it with _alt or _altN suffix
+            had_duplicates = True
+            suffix = "_alt" if name_counts[group_name] == 2 else f"_alt{name_counts[group_name]-1}"
+            new_name = f"{group_name}{suffix}"
             result_parts.append(f"(?P<{new_name}>")
-            logger.debug(
-                "[AI] Renamed duplicate group '%s' to '%s'", group_name, new_name
+            logger.warning(
+                "[AI] Renamed duplicate group '%s' to '%s' - AI should not generate duplicates",
+                group_name, new_name
             )
 
         last_end = match.end()
 
     # Add remaining text
     result_parts.append(regex[last_end:])
+
+    if had_duplicates:
+        logger.warning("[AI] Pattern had duplicate group names - quality may be reduced")
 
     return "".join(result_parts)
 

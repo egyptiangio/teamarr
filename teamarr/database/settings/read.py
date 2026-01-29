@@ -17,10 +17,13 @@ from .types import (
     DisplaySettings,
     DurationSettings,
     EPGSettings,
+    GeminiProviderSettings,
     GrokProviderSettings,
+    GroqProviderSettings,
     LifecycleSettings,
     OllamaProviderSettings,
     OpenAIProviderSettings,
+    OpenRouterProviderSettings,
     ReconciliationSettings,
     SchedulerSettings,
     StreamFilterSettings,
@@ -592,6 +595,33 @@ def get_ai_settings(conn: Connection) -> AISettings:
         timeout=grok_config.get("timeout", 60),
     )
 
+    # Free-tier providers
+    groq_config = providers_config.get("groq", {})
+    groq = GroqProviderSettings(
+        enabled=groq_config.get("enabled", False),
+        api_key=groq_config.get("api_key", ""),
+        model=groq_config.get("model", "llama-3.1-8b-instant"),
+        timeout=groq_config.get("timeout", 60),
+    )
+
+    gemini_config = providers_config.get("gemini", {})
+    gemini = GeminiProviderSettings(
+        enabled=gemini_config.get("enabled", False),
+        api_key=gemini_config.get("api_key", ""),
+        model=gemini_config.get("model", "gemini-1.5-flash"),
+        timeout=gemini_config.get("timeout", 60),
+    )
+
+    openrouter_config = providers_config.get("openrouter", {})
+    openrouter = OpenRouterProviderSettings(
+        enabled=openrouter_config.get("enabled", False),
+        api_key=openrouter_config.get("api_key", ""),
+        model=openrouter_config.get("model", "meta-llama/llama-3.1-8b-instruct:free"),
+        timeout=openrouter_config.get("timeout", 60),
+        site_url=openrouter_config.get("site_url", ""),
+        app_name=openrouter_config.get("app_name", "Teamarr"),
+    )
+
     # Build task assignments
     assignments = AITaskAssignments(
         pattern_learning=task_assignments.get("pattern_learning", "ollama"),
@@ -607,6 +637,9 @@ def get_ai_settings(conn: Connection) -> AISettings:
         openai=openai,
         anthropic=anthropic,
         grok=grok,
+        groq=groq,
+        gemini=gemini,
+        openrouter=openrouter,
         task_assignments=assignments,
         batch_size=row["ai_batch_size"] or 10,
         learn_patterns=bool(row["ai_learn_patterns"])

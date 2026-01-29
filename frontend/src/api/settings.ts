@@ -449,11 +449,39 @@ export interface GrokProviderConfig {
   timeout: number
 }
 
+// Free-tier providers
+export interface GroqProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface GeminiProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface OpenRouterProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+  site_url: string
+  app_name: string
+}
+
 export interface AIProvidersConfig {
   ollama: OllamaProviderConfig
   openai: OpenAIProviderConfig
   anthropic: AnthropicProviderConfig
   grok: GrokProviderConfig
+  // Free-tier providers
+  groq: GroqProviderConfig
+  gemini: GeminiProviderConfig
+  openrouter: OpenRouterProviderConfig
 }
 
 export interface AITaskAssignments {
@@ -474,10 +502,13 @@ export const AI_TASKS = [
 ] as const
 
 export const AI_PROVIDERS = [
-  { key: "ollama", label: "Ollama (Local)" },
-  { key: "openai", label: "OpenAI (ChatGPT)" },
-  { key: "anthropic", label: "Anthropic (Claude)" },
-  { key: "grok", label: "xAI (Grok)" },
+  { key: "ollama", label: "Ollama (Local)", free: true },
+  { key: "groq", label: "Groq (Llama)", free: true },
+  { key: "gemini", label: "Google Gemini", free: true },
+  { key: "openrouter", label: "OpenRouter", free: true },
+  { key: "openai", label: "OpenAI (ChatGPT)", free: false },
+  { key: "anthropic", label: "Anthropic (Claude)", free: false },
+  { key: "grok", label: "xAI (Grok)", free: false },
 ] as const
 
 export interface AISettings {

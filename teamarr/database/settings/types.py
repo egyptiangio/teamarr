@@ -258,6 +258,50 @@ class GrokProviderSettings:
     timeout: int = 60
 
 
+@dataclass
+class GroqProviderSettings:
+    """Groq (fast inference) provider settings.
+
+    Free tier available with generous rate limits.
+    Supports Llama, Mixtral, and other open models.
+    """
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "llama-3.1-8b-instant"  # Fast, free tier friendly
+    timeout: int = 60
+
+
+@dataclass
+class GeminiProviderSettings:
+    """Google Gemini provider settings.
+
+    Free tier available for Gemini 1.5 Flash.
+    """
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "gemini-1.5-flash"  # Free tier model
+    timeout: int = 60
+
+
+@dataclass
+class OpenRouterProviderSettings:
+    """OpenRouter provider settings.
+
+    Aggregator with access to many models.
+    Some models have free tiers or very low costs.
+    """
+
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "meta-llama/llama-3.1-8b-instruct:free"  # Free model
+    timeout: int = 60
+    # Optional: site URL and app name for rankings
+    site_url: str = ""
+    app_name: str = "Teamarr"
+
+
 # AI Task types - used for task-to-provider assignment
 AI_TASKS = [
     "pattern_learning",  # Learning regex patterns from streams
@@ -296,7 +340,10 @@ class AISettings:
     - ollama: Local Ollama instance (free, private)
     - openai: OpenAI API (ChatGPT)
     - anthropic: Anthropic API (Claude)
-    - grok: xAI API (Grok)
+    - grok: xAI API (Grok) - paid
+    - groq: Groq (fast inference) - FREE TIER
+    - gemini: Google Gemini - FREE TIER
+    - openrouter: OpenRouter (aggregator) - FREE TIER available
 
     Each task can be assigned to a specific provider via task_assignments.
     """
@@ -309,6 +356,9 @@ class AISettings:
     openai: OpenAIProviderSettings = field(default_factory=OpenAIProviderSettings)
     anthropic: AnthropicProviderSettings = field(default_factory=AnthropicProviderSettings)
     grok: GrokProviderSettings = field(default_factory=GrokProviderSettings)
+    groq: GroqProviderSettings = field(default_factory=GroqProviderSettings)
+    gemini: GeminiProviderSettings = field(default_factory=GeminiProviderSettings)
+    openrouter: OpenRouterProviderSettings = field(default_factory=OpenRouterProviderSettings)
 
     # Task-to-provider assignments
     task_assignments: AITaskAssignments = field(default_factory=AITaskAssignments)
