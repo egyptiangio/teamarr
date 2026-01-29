@@ -229,8 +229,8 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
     # Adjust date for European timezone streams showing US evening games
     # European streams show after-midnight times for US evening games
     # e.g., 7pm ET = 1am CET next day, so "Thu 29 Jan 01:35" = Wed Jan 28 US time
-    # Adjust if time is 00:00-05:59 AND no US timezone marker present
-    if extracted_date and extracted_time and extracted_time.hour < 6:
+    # Adjust if time is 00:00-06:29 AND no US timezone marker present
+    if extracted_date and extracted_time and (extracted_time.hour < 6 or (extracted_time.hour == 6 and extracted_time.minute < 30)):
         text_upper = text.upper()
 
         # Check for US timezone indicators - if present, don't adjust
