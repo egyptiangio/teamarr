@@ -135,11 +135,15 @@ class GroqClient(AIProviderClient):
     def is_available(self) -> bool:
         """Check if Groq is reachable and API key is valid."""
         if not self.config.api_key:
+            logger.warning("[Groq] No API key configured")
             return False
         try:
             response = self.client.get("/models")
+            if response.status_code != 200:
+                logger.warning("[Groq] API returned status %d: %s", response.status_code, response.text[:200])
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.warning("[Groq] Connection failed: %s", e)
             return False
 
     def close(self):
@@ -237,12 +241,16 @@ class GeminiClient(AIProviderClient):
     def is_available(self) -> bool:
         """Check if Gemini is reachable and API key is valid."""
         if not self.config.api_key:
+            logger.warning("[Gemini] No API key configured")
             return False
         try:
             url = f"/models?key={self.config.api_key}"
             response = self.client.get(url)
+            if response.status_code != 200:
+                logger.warning("[Gemini] API returned status %d: %s", response.status_code, response.text[:200])
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.warning("[Gemini] Connection failed: %s", e)
             return False
 
     def close(self):
@@ -359,11 +367,15 @@ class OpenRouterClient(AIProviderClient):
     def is_available(self) -> bool:
         """Check if OpenRouter is reachable and API key is valid."""
         if not self.config.api_key:
+            logger.warning("[OpenRouter] No API key configured")
             return False
         try:
             response = self.client.get("/models")
+            if response.status_code != 200:
+                logger.warning("[OpenRouter] API returned status %d: %s", response.status_code, response.text[:200])
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.warning("[OpenRouter] Connection failed: %s", e)
             return False
 
     def close(self):

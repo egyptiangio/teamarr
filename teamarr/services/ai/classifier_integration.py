@@ -53,6 +53,7 @@ class AIClassifier:
         self.settings = config.settings
         self._parser: AIStreamParser | None = None
         self._learner: PatternLearner | None = None
+        self._learner_provider: str = "ollama"  # Track which provider is used
         self._patterns: list[dict] = []
         self._patterns_loaded = False
 
@@ -103,17 +104,20 @@ class AIClassifier:
                 if client:
                     logger.info("[AI] Using %s for pattern learning", provider_name)
                     self._learner = PatternLearner(client=client)
+                    self._learner_provider = provider_name
                 else:
                     logger.warning("[AI] Failed to create %s client, falling back to Ollama", provider_name)
 
             # Fallback to Ollama if provider not configured
             if self._learner is None:
+                logger.info("[AI] Using ollama for pattern learning (fallback)")
                 ollama_config = OllamaConfig(
                     base_url=self.settings.ollama_url,
                     model=self.settings.model,
                     timeout=float(self.settings.timeout),
                 )
                 self._learner = PatternLearner(config=ollama_config)
+                self._learner_provider = "ollama"
         return self._learner
 
     def _get_provider_settings(self, provider_name: str) -> dict | None:
@@ -536,7 +540,11 @@ class AIClassifier:
 
         try:
             if not self.learner.is_available():
-                logger.warning("[AI] Ollama is not available for pattern learning")
+                logger.warning(
+                    "[AI] Provider '%s' is not available for pattern learning. "
+                    "Check API key and network connectivity.",
+                    self._learner_provider
+                )
                 return []
 
             patterns = self.learner.learn_patterns_for_group(streams)
