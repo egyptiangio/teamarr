@@ -61,11 +61,13 @@ Return JSON:
 
 Rules:
 - Use (?P<team1>...), (?P<team2>...), etc. for named groups
+- IMPORTANT: Each group name can only appear ONCE in the pattern (no duplicate names)
 - Make the pattern flexible enough to handle variations
 - Use \\s* for flexible whitespace
 - Use non-greedy quantifiers where appropriate
 - Escape special regex characters
-- Only include groups for fields actually present in the examples"""
+- Only include groups for fields actually present in the examples
+- Use alternation (|) inside a single group instead of multiple groups with same name"""
 
 
 CLASSIFY_FORMAT_PROMPT = """Analyze these stream names and identify distinct FORMAT PATTERNS. Group streams that follow the same naming convention.
@@ -100,6 +102,7 @@ def _sanitize_regex(regex: str) -> str:
     - Code block markers (```python ... ```)
     - Extra whitespace
     - Python string quotes
+    - Duplicate named groups (Python doesn't allow redefining group names)
     """
     # Strip whitespace
     regex = regex.strip()
@@ -131,7 +134,51 @@ def _sanitize_regex(regex: str) -> str:
     if "\\\\d" in regex or "\\\\s" in regex or "\\\\w" in regex:
         regex = regex.replace("\\\\", "\\")
 
+    # Fix duplicate named groups - Python doesn't allow redefining group names
+    # Find all named groups and rename duplicates
+    regex = _fix_duplicate_named_groups(regex)
+
     return regex
+
+
+def _fix_duplicate_named_groups(regex: str) -> str:
+    """Rename duplicate named groups to make regex valid.
+
+    Python regex doesn't allow the same group name to be used twice.
+    This function finds duplicates and renames them (team1 -> team1_2, team1_3, etc.)
+    """
+    # Pattern to find named groups: (?P<name>
+    named_group_pattern = re.compile(r'\(\?P<([^>]+)>')
+
+    # Track how many times each name has been seen
+    name_counts: dict[str, int] = {}
+    result_parts: list[str] = []
+    last_end = 0
+
+    for match in named_group_pattern.finditer(regex):
+        group_name = match.group(1)
+        name_counts[group_name] = name_counts.get(group_name, 0) + 1
+
+        # Add text before this match
+        result_parts.append(regex[last_end:match.start()])
+
+        if name_counts[group_name] == 1:
+            # First occurrence - keep as is
+            result_parts.append(match.group(0))
+        else:
+            # Duplicate - rename it
+            new_name = f"{group_name}_{name_counts[group_name]}"
+            result_parts.append(f"(?P<{new_name}>")
+            logger.debug(
+                "[AI] Renamed duplicate group '%s' to '%s'", group_name, new_name
+            )
+
+        last_end = match.end()
+
+    # Add remaining text
+    result_parts.append(regex[last_end:])
+
+    return "".join(result_parts)
 
 
 class PatternLearner:
