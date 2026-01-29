@@ -20,6 +20,7 @@ import {
   X,
   RefreshCw,
   ExternalLink,
+  Brain,
 } from "lucide-react"
 import {
   ChannelProfileSelector,
@@ -60,6 +61,10 @@ import {
   useUpdateUpdateCheckSettings,
   useCheckForUpdates,
   useForceCheckForUpdates,
+  useAIStatus,
+  useAISettings,
+  useUpdateAISettings,
+  useTestParse,
 } from "@/hooks/useSettings"
 import { TeamPicker } from "@/components/TeamPicker"
 import { SortPriorityManager } from "@/components/SortPriorityManager"
@@ -80,6 +85,7 @@ import type {
   TeamFilterSettings,
   ChannelNumberingSettings,
   UpdateCheckSettings,
+  AISettings,
 } from "@/api/settings"
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -231,6 +237,23 @@ export function Settings() {
     auto_detect_branch: true,
   })
   const [newKeyword, setNewKeyword] = useState({ label: "", match_terms: "", behavior: "consolidate" })
+
+  // AI Settings
+  const aiStatusQuery = useAIStatus()
+  const { data: aiSettingsData } = useAISettings()
+  const updateAI = useUpdateAISettings()
+  const testParseMutation = useTestParse()
+  const [aiSettings, setAISettings] = useState<AISettings>({
+    enabled: false,
+    ollama_url: "http://localhost:11434",
+    model: "qwen2.5:7b",
+    use_for_parsing: true,
+    use_for_matching: false,
+    batch_size: 10,
+    learn_patterns: true,
+    fallback_to_regex: true,
+  })
+  const [testStreams, setTestStreams] = useState("")
   const [editingKeyword, setEditingKeyword] = useState<{ id: number; label: string; match_terms: string } | null>(null)
 
   // Local state for channel range inputs (allows free typing)
@@ -290,6 +313,13 @@ export function Settings() {
       setUpdateCheck(updateCheckData)
     }
   }, [updateCheckData])
+
+  // Sync AI settings state when data loads
+  useEffect(() => {
+    if (aiSettingsData) {
+      setAISettings(aiSettingsData)
+    }
+  }, [aiSettingsData])
 
   // Sync channel range inputs from lifecycle on initial load only
   const channelRangeInitializedRef = useRef(false)
@@ -395,6 +425,33 @@ export function Settings() {
       toast.success("Display settings saved")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save")
+    }
+  }
+
+  const handleSaveAISettings = async () => {
+    try {
+      await updateAI.mutateAsync(aiSettings)
+      toast.success("AI settings saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save AI settings")
+    }
+  }
+
+  const handleTestParse = async () => {
+    const streams = testStreams.split("\n").filter(s => s.trim())
+    if (streams.length === 0) {
+      toast.error("Enter at least one stream name to test")
+      return
+    }
+    try {
+      const result = await testParseMutation.mutateAsync(streams)
+      if (result.success) {
+        toast.success(`Parsed ${result.results.length} streams`)
+      } else {
+        toast.error(result.error || "Parse test failed")
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Parse test failed")
     }
   }
 
@@ -1985,6 +2042,178 @@ export function Settings() {
 
           <Button onClick={handleSaveDisplay} disabled={updateDisplay.isPending}>
             {updateDisplay.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* AI/Ollama Integration */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                AI Integration (Ollama)
+              </CardTitle>
+              <CardDescription>Use local AI for intelligent stream parsing and pattern learning</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {aiStatusQuery.data?.available ? (
+                <Badge variant="success" className="gap-1">
+                  <CheckCircle className="h-3 w-3" /> Connected
+                </Badge>
+              ) : aiStatusQuery.data?.enabled ? (
+                <Badge variant="destructive" className="gap-1" title={aiStatusQuery.data?.error || "Not responding"}>
+                  <AlertTriangle className="h-3 w-3" /> Unavailable
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Disabled</Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Connection error banner */}
+          {aiStatusQuery.data?.enabled && aiStatusQuery.data?.error && (
+            <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-destructive">Connection Failed</p>
+                <p className="text-muted-foreground">{aiStatusQuery.data.error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Enable Toggle */}
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={aiSettings.enabled}
+              onCheckedChange={(checked) => setAISettings({ ...aiSettings, enabled: checked })}
+            />
+            <Label>Enable AI Integration</Label>
+          </div>
+
+          {/* Settings (shown when enabled) */}
+          {aiSettings.enabled && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ollama-url">Ollama URL</Label>
+                  <Input
+                    id="ollama-url"
+                    value={aiSettings.ollama_url}
+                    onChange={(e) => setAISettings({ ...aiSettings, ollama_url: e.target.value })}
+                    placeholder="http://localhost:11434"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ollama-model">Model</Label>
+                  <Input
+                    id="ollama-model"
+                    value={aiSettings.model}
+                    onChange={(e) => setAISettings({ ...aiSettings, model: e.target.value })}
+                    placeholder="qwen2.5:7b"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Recommended: qwen2.5:7b for accuracy, qwen2.5:3b for speed
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-medium">Features</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={aiSettings.use_for_parsing}
+                      onCheckedChange={(checked) => setAISettings({ ...aiSettings, use_for_parsing: checked })}
+                    />
+                    <Label className="text-sm">Use AI for stream parsing</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={aiSettings.learn_patterns}
+                      onCheckedChange={(checked) => setAISettings({ ...aiSettings, learn_patterns: checked })}
+                    />
+                    <Label className="text-sm">Learn regex patterns from AI</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={aiSettings.fallback_to_regex}
+                      onCheckedChange={(checked) => setAISettings({ ...aiSettings, fallback_to_regex: checked })}
+                    />
+                    <Label className="text-sm">Fall back to builtin regex</Label>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="batch-size" className="text-sm">Batch size</Label>
+                    <Input
+                      id="batch-size"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={aiSettings.batch_size}
+                      onChange={(e) => setAISettings({ ...aiSettings, batch_size: parseInt(e.target.value) || 10 })}
+                      className="w-20"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Test Parse Section */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label>Test AI Parsing</Label>
+                <textarea
+                  className="w-full h-24 p-2 text-sm border rounded-md font-mono resize-none"
+                  value={testStreams}
+                  onChange={(e) => setTestStreams(e.target.value)}
+                  placeholder="Paste stream names here (one per line) to test AI parsing..."
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestParse}
+                    disabled={testParseMutation.isPending || !aiStatusQuery.data?.available}
+                  >
+                    {testParseMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <TestTube className="h-4 w-4 mr-1" />
+                    )}
+                    Test Parse
+                  </Button>
+                </div>
+
+                {/* Test Results */}
+                {testParseMutation.data?.results && testParseMutation.data.results.length > 0 && (
+                  <div className="mt-2 p-2 bg-muted/50 rounded-md text-xs font-mono max-h-48 overflow-auto">
+                    {testParseMutation.data.results.map((result, i) => (
+                      <div key={i} className="mb-2 pb-2 border-b last:border-0">
+                        <div className="text-muted-foreground truncate">{result.stream}</div>
+                        <div className="grid grid-cols-2 gap-1 mt-1">
+                          {result.team1 && <span>Team 1: <strong>{result.team1}</strong></span>}
+                          {result.team2 && <span>Team 2: <strong>{result.team2}</strong></span>}
+                          {result.league && <span>League: <strong>{result.league}</strong></span>}
+                          {result.sport && <span>Sport: <strong>{result.sport}</strong></span>}
+                          <span className={result.confidence >= 0.7 ? "text-green-600" : result.confidence >= 0.5 ? "text-yellow-600" : "text-red-600"}>
+                            Confidence: {(result.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          <Button onClick={handleSaveAISettings} disabled={updateAI.isPending}>
+            {updateAI.isPending ? (
               <Loader2 className="h-4 w-4 mr-1 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-1" />

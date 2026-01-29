@@ -416,3 +416,112 @@ export async function checkForUpdates(force: boolean = false): Promise<UpdateInf
   return api.get(`/updates/check?force=${force}`)
 }
 
+// AI Settings Types
+export interface AISettings {
+  enabled: boolean
+  ollama_url: string
+  model: string
+  use_for_parsing: boolean
+  use_for_matching: boolean
+  batch_size: number
+  learn_patterns: boolean
+  fallback_to_regex: boolean
+}
+
+export interface AISettingsUpdate {
+  enabled?: boolean
+  ollama_url?: string
+  model?: string
+  use_for_parsing?: boolean
+  use_for_matching?: boolean
+  batch_size?: number
+  learn_patterns?: boolean
+  fallback_to_regex?: boolean
+}
+
+export interface AIStatus {
+  enabled: boolean
+  available: boolean
+  ollama_url: string
+  model: string
+  error: string | null
+}
+
+export interface AIPattern {
+  pattern_id: string
+  regex: string
+  description: string
+  example_streams: string[]
+  field_map: Record<string, string>
+  confidence: number
+  match_count: number
+  fail_count: number
+  group_id: number | null
+}
+
+export interface AIPatternListResponse {
+  patterns: AIPattern[]
+  total: number
+}
+
+export interface LearnPatternsResponse {
+  success: boolean
+  group_id: number
+  group_name: string
+  patterns_learned: number
+  patterns: AIPattern[]
+  coverage_percent: number
+  error: string | null
+}
+
+export interface TestParseResult {
+  stream: string
+  team1: string | null
+  team2: string | null
+  league: string | null
+  sport: string | null
+  date: string | null
+  time: string | null
+  confidence: number
+}
+
+export interface TestParseResponse {
+  success: boolean
+  results: TestParseResult[]
+  error: string | null
+}
+
+// AI Settings API
+export async function getAIStatus(): Promise<AIStatus> {
+  return api.get("/ai/status")
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  return api.get("/ai/settings")
+}
+
+export async function updateAISettings(data: AISettingsUpdate): Promise<AISettings> {
+  return api.put("/ai/settings", data)
+}
+
+export async function getAIPatterns(groupId?: number): Promise<AIPatternListResponse> {
+  const params = groupId ? `?group_id=${groupId}` : ""
+  return api.get(`/ai/patterns${params}`)
+}
+
+export async function deleteAIPattern(patternId: string): Promise<void> {
+  return api.delete(`/ai/patterns/${patternId}`)
+}
+
+export async function deleteGroupPatterns(groupId: number): Promise<{ patterns_deleted: number }> {
+  return api.delete(`/ai/patterns/group/${groupId}`)
+}
+
+export async function learnPatterns(groupId: number): Promise<LearnPatternsResponse> {
+  return api.post("/ai/learn", { group_id: groupId })
+}
+
+export async function testParse(streams: string[]): Promise<TestParseResponse> {
+  return api.post("/ai/test-parse", { streams })
+}
+

@@ -34,6 +34,12 @@ import {
   getUpdateCheckSettings,
   updateUpdateCheckSettings,
   checkForUpdates,
+  getAIStatus,
+  getAISettings,
+  updateAISettings,
+  getAIPatterns,
+  learnPatterns,
+  testParse,
 } from "@/api/settings"
 import type {
   DispatcharrSettings,
@@ -48,6 +54,7 @@ import type {
   ChannelNumberingSettingsUpdate,
   StreamOrderingSettingsUpdate,
   UpdateCheckSettingsUpdate,
+  AISettingsUpdate,
 } from "@/api/settings"
 
 export function useSettings() {
@@ -372,6 +379,57 @@ export function useForceCheckForUpdates() {
     onSuccess: (data) => {
       queryClient.setQueryData(["updates", "check"], data)
     },
+  })
+}
+
+// AI Settings hooks
+export function useAIStatus() {
+  return useQuery({
+    queryKey: ["ai", "status"],
+    queryFn: getAIStatus,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
+}
+
+export function useAISettings() {
+  return useQuery({
+    queryKey: ["ai", "settings"],
+    queryFn: getAISettings,
+  })
+}
+
+export function useUpdateAISettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: AISettingsUpdate) => updateAISettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai"] })
+    },
+  })
+}
+
+export function useAIPatterns(groupId?: number) {
+  return useQuery({
+    queryKey: ["ai", "patterns", groupId],
+    queryFn: () => getAIPatterns(groupId),
+  })
+}
+
+export function useLearnPatterns() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (groupId: number) => learnPatterns(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai", "patterns"] })
+    },
+  })
+}
+
+export function useTestParse() {
+  return useMutation({
+    mutationFn: (streams: string[]) => testParse(streams),
   })
 }
 
