@@ -110,7 +110,7 @@ export function StreamList({ streams, patterns, onTextSelect }: StreamListProps)
   })
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Stats bar */}
       <div className="flex items-center gap-3 px-3 py-1.5 text-xs text-muted-foreground border-b border-border bg-secondary/30">
         <span>{stats.total} streams</span>

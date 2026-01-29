@@ -119,7 +119,7 @@ export function InteractiveSelector({
   if (!selection && !pendingTeam1) return null
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-secondary/50 border-t border-border">
+    <div className="flex items-center gap-2 px-3 py-2 bg-secondary/50 border-t border-border shrink-0">
       {pendingTeam1 && !selection && (
         <div className="flex items-center gap-2 text-xs">
           <span className="text-blue-400 font-medium">
