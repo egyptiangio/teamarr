@@ -9,6 +9,7 @@ Provides REST API for:
 
 import logging
 import threading
+import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel, Field
@@ -758,9 +759,12 @@ def learn_patterns(request: LearnPatternsRequest):
             detail="Dispatcharr connection failed",
         )
 
-    # Process each group
+    # Process each group with delay to avoid rate limits
     group_results: list[LearnPatternsGroupResult] = []
-    for gid in group_ids:
+    for i, gid in enumerate(group_ids):
+        # Add delay between groups to avoid rate limits (skip first)
+        if i > 0:
+            time.sleep(2.0)
         result = _learn_patterns_for_single_group(gid, settings, dispatcharr_conn)
         group_results.append(result)
 
@@ -820,6 +824,10 @@ def _run_pattern_learning_task(group_ids: list[int], settings, dispatcharr_conn)
                 logger.info("[AI] Pattern learning aborted by user")
                 pls.abort_learning()
                 return
+
+            # Add delay between groups to avoid rate limits (skip first)
+            if i > 0:
+                time.sleep(2.0)
 
             # Get group name for progress display
             with get_db() as conn:

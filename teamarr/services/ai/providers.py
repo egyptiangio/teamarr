@@ -10,12 +10,18 @@ Supports:
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Rate limit retry settings
+MAX_RETRIES = 3
+BASE_DELAY = 2.0  # seconds
+MAX_DELAY = 30.0  # seconds
 
 
 class AIProviderClient(ABC):
@@ -98,40 +104,69 @@ class GroqClient(AIProviderClient):
             logger.warning("[Groq] No API key configured")
             return None
 
-        try:
-            payload = {
-                "model": self.config.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-            }
+        payload = {
+            "model": self.config.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+        }
 
-            if json_format:
-                payload["response_format"] = {"type": "json_object"}
+        if json_format:
+            payload["response_format"] = {"type": "json_object"}
 
-            response = self.client.post("/chat/completions", json=payload)
-            response.raise_for_status()
+        # Retry loop for rate limits
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self.client.post("/chat/completions", json=payload)
 
-            data = response.json()
-            raw_response = data["choices"][0]["message"]["content"]
+                # Handle rate limiting with retry
+                if response.status_code == 429:
+                    if attempt < MAX_RETRIES:
+                        # Get retry-after header or use exponential backoff
+                        retry_after = response.headers.get("retry-after")
+                        if retry_after:
+                            delay = min(float(retry_after), MAX_DELAY)
+                        else:
+                            delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                        logger.info("[Groq] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning("[Groq] Rate limited after %d retries", MAX_RETRIES)
+                        return None
 
-            if json_format:
-                try:
-                    return json.loads(raw_response)
-                except json.JSONDecodeError as e:
-                    logger.warning("[Groq] Failed to parse JSON response: %s", e)
-                    return None
+                response.raise_for_status()
 
-            return raw_response
+                data = response.json()
+                raw_response = data["choices"][0]["message"]["content"]
 
-        except httpx.TimeoutException:
-            logger.warning("[Groq] Request timed out")
-            return None
-        except httpx.HTTPError as e:
-            logger.warning("[Groq] HTTP error: %s", e)
-            return None
-        except Exception as e:
-            logger.exception("[Groq] Unexpected error: %s", e)
-            return None
+                if json_format:
+                    try:
+                        return json.loads(raw_response)
+                    except json.JSONDecodeError as e:
+                        logger.warning("[Groq] Failed to parse JSON response: %s", e)
+                        return None
+
+                return raw_response
+
+            except httpx.TimeoutException:
+                logger.warning("[Groq] Request timed out")
+                return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < MAX_RETRIES:
+                    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                    logger.info("[Groq] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                    time.sleep(delay)
+                    continue
+                logger.warning("[Groq] HTTP error: %s", e)
+                return None
+            except httpx.HTTPError as e:
+                logger.warning("[Groq] HTTP error: %s", e)
+                return None
+            except Exception as e:
+                logger.exception("[Groq] Unexpected error: %s", e)
+                return None
+
+        return None
 
     def is_available(self) -> bool:
         """Check if Groq is reachable and API key is valid."""
@@ -200,47 +235,74 @@ class GeminiClient(AIProviderClient):
             logger.warning("[Gemini] No API key configured")
             return None
 
-        try:
-            # Gemini uses a different endpoint structure
-            url = f"/models/{self.config.model}:generateContent?key={self.config.api_key}"
+        url = f"/models/{self.config.model}:generateContent?key={self.config.api_key}"
 
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": temperature,
-                },
-            }
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+            },
+        }
 
-            if json_format:
-                payload["generationConfig"]["responseMimeType"] = "application/json"
+        if json_format:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
 
-            response = self.client.post(url, json=payload)
-            response.raise_for_status()
+        # Retry loop for rate limits
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self.client.post(url, json=payload)
 
-            data = response.json()
-            raw_response = data["candidates"][0]["content"]["parts"][0]["text"]
+                # Handle rate limiting with retry
+                if response.status_code == 429:
+                    if attempt < MAX_RETRIES:
+                        retry_after = response.headers.get("retry-after")
+                        if retry_after:
+                            delay = min(float(retry_after), MAX_DELAY)
+                        else:
+                            delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                        logger.info("[Gemini] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning("[Gemini] Rate limited after %d retries", MAX_RETRIES)
+                        return None
 
-            if json_format:
-                try:
-                    return json.loads(raw_response)
-                except json.JSONDecodeError as e:
-                    logger.warning("[Gemini] Failed to parse JSON response: %s", e)
-                    return None
+                response.raise_for_status()
 
-            return raw_response
+                data = response.json()
+                raw_response = data["candidates"][0]["content"]["parts"][0]["text"]
 
-        except httpx.TimeoutException:
-            logger.warning("[Gemini] Request timed out")
-            return None
-        except httpx.HTTPError as e:
-            logger.warning("[Gemini] HTTP error: %s", e)
-            return None
-        except (KeyError, IndexError) as e:
-            logger.warning("[Gemini] Unexpected response format: %s", e)
-            return None
-        except Exception as e:
-            logger.exception("[Gemini] Unexpected error: %s", e)
-            return None
+                if json_format:
+                    try:
+                        return json.loads(raw_response)
+                    except json.JSONDecodeError as e:
+                        logger.warning("[Gemini] Failed to parse JSON response: %s", e)
+                        return None
+
+                return raw_response
+
+            except httpx.TimeoutException:
+                logger.warning("[Gemini] Request timed out")
+                return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < MAX_RETRIES:
+                    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                    logger.info("[Gemini] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                    time.sleep(delay)
+                    continue
+                logger.warning("[Gemini] HTTP error: %s", e)
+                return None
+            except httpx.HTTPError as e:
+                logger.warning("[Gemini] HTTP error: %s", e)
+                return None
+            except (KeyError, IndexError) as e:
+                logger.warning("[Gemini] Unexpected response format: %s", e)
+                return None
+            except Exception as e:
+                logger.exception("[Gemini] Unexpected error: %s", e)
+                return None
+
+        return None
 
     def is_available(self) -> bool:
         """Check if Gemini is reachable and API key is valid."""
@@ -322,52 +384,80 @@ class OpenRouterClient(AIProviderClient):
             logger.warning("[OpenRouter] No API key configured")
             return None
 
-        try:
-            payload = {
-                "model": self.config.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-            }
+        payload = {
+            "model": self.config.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+        }
 
-            if json_format:
-                # Add JSON instruction to prompt for models that don't support response_format
-                payload["messages"][0]["content"] = (
-                    prompt + "\n\nRespond with valid JSON only, no markdown."
-                )
+        if json_format:
+            # Add JSON instruction to prompt for models that don't support response_format
+            payload["messages"][0]["content"] = (
+                prompt + "\n\nRespond with valid JSON only, no markdown."
+            )
 
-            response = self.client.post("/chat/completions", json=payload)
-            response.raise_for_status()
+        # Retry loop for rate limits
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self.client.post("/chat/completions", json=payload)
 
-            data = response.json()
-            raw_response = data["choices"][0]["message"]["content"]
+                # Handle rate limiting with retry
+                if response.status_code == 429:
+                    if attempt < MAX_RETRIES:
+                        retry_after = response.headers.get("retry-after")
+                        if retry_after:
+                            delay = min(float(retry_after), MAX_DELAY)
+                        else:
+                            delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                        logger.info("[OpenRouter] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning("[OpenRouter] Rate limited after %d retries", MAX_RETRIES)
+                        return None
 
-            # Clean up response if wrapped in markdown code blocks
-            if raw_response.startswith("```"):
-                lines = raw_response.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                raw_response = "\n".join(lines)
+                response.raise_for_status()
 
-            if json_format:
-                try:
-                    return json.loads(raw_response)
-                except json.JSONDecodeError as e:
-                    logger.warning("[OpenRouter] Failed to parse JSON response: %s", e)
-                    return None
+                data = response.json()
+                raw_response = data["choices"][0]["message"]["content"]
 
-            return raw_response
+                # Clean up response if wrapped in markdown code blocks
+                if raw_response.startswith("```"):
+                    lines = raw_response.split("\n")
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    raw_response = "\n".join(lines)
 
-        except httpx.TimeoutException:
-            logger.warning("[OpenRouter] Request timed out")
-            return None
-        except httpx.HTTPError as e:
-            logger.warning("[OpenRouter] HTTP error: %s", e)
-            return None
-        except Exception as e:
-            logger.exception("[OpenRouter] Unexpected error: %s", e)
-            return None
+                if json_format:
+                    try:
+                        return json.loads(raw_response)
+                    except json.JSONDecodeError as e:
+                        logger.warning("[OpenRouter] Failed to parse JSON response: %s", e)
+                        return None
+
+                return raw_response
+
+            except httpx.TimeoutException:
+                logger.warning("[OpenRouter] Request timed out")
+                return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < MAX_RETRIES:
+                    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                    logger.info("[OpenRouter] Rate limited, waiting %.1fs (attempt %d/%d)", delay, attempt + 1, MAX_RETRIES)
+                    time.sleep(delay)
+                    continue
+                logger.warning("[OpenRouter] HTTP error: %s", e)
+                return None
+            except httpx.HTTPError as e:
+                logger.warning("[OpenRouter] HTTP error: %s", e)
+                return None
+            except Exception as e:
+                logger.exception("[OpenRouter] Unexpected error: %s", e)
+                return None
+
+        return None
 
     def is_available(self) -> bool:
         """Check if OpenRouter is reachable and API key is valid."""
