@@ -1366,6 +1366,50 @@ class EventGroupProcessor:
                 if xmltv_content and self._dispatcharr_client:
                     self._trigger_epg_refresh(group)
 
+            # Step 8: Handle unmatched streams if enabled (Phase 8)
+            if group.create_unmatched_channels:
+                # Filter for unmatched streams that were NOT excluded by regex
+                # match_result.results contains all streams passed to matching
+                unmatched_streams = []
+                for r in match_result.results:
+                    if not r.matched:
+                        # Find the original stream dict
+                        stream = next((s for s in streams if s["name"] == r.stream_name), None)
+                        if stream:
+                            unmatched_streams.append(stream)
+
+                if unmatched_streams:
+                    logger.info(
+                        "Processing %d unmatched streams for channel creation",
+                        len(unmatched_streams),
+                    )
+
+                    # Create lifecycle service for unmatched processing
+                    unmatched_lifecycle = create_lifecycle_service(
+                        self._db_factory,
+                        self._service,
+                        self._dispatcharr_client,
+                    )
+
+                    unmatched_result = unmatched_lifecycle.process_unmatched_streams(
+                        unmatched_streams,
+                        asdict(group),
+                    )
+
+                    # Merge results into main processing stats
+                    result.channels_created += len(unmatched_result.created)
+                    result.channels_existing += len(unmatched_result.existing)
+                    result.channel_errors += len(unmatched_result.errors)
+
+                    stats_run.channels_created += len(unmatched_result.created)
+                    stats_run.channels_updated += len(unmatched_result.existing)
+                    stats_run.channels_errors += len(unmatched_result.errors)
+
+                    for error in unmatched_result.errors:
+                        result.errors.append(
+                            f"Unmatched channel error: {error.get('stream', '')}: {error.get('error', '')}"
+                        )
+
             # Mark run as completed successfully
             stats_run.complete(status="completed")
 

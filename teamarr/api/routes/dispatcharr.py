@@ -274,6 +274,7 @@ def list_epg_sources() -> list[dict]:
             "name": s.name,
             "url": s.url,
             "status": s.status,
+            "source_type": s.source_type,
         }
         for s in sources
     ]
