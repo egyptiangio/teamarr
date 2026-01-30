@@ -81,7 +81,7 @@ class GroqClient(AIProviderClient):
                 headers={
                     "Authorization": f"Bearer {self.config.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": "Teamarr/1.0",
+                    "User-Agent": "python-httpx/0.27",
                 },
             )
         return self._client
@@ -183,7 +183,7 @@ class GeminiClient(AIProviderClient):
                 base_url=self.BASE_URL,
                 timeout=self.config.timeout,
                 headers={
-                    "User-Agent": "Teamarr/1.0",
+                    "User-Agent": "python-httpx/0.27",
                 },
             )
         return self._client
@@ -296,7 +296,7 @@ class OpenRouterClient(AIProviderClient):
             headers = {
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "Teamarr/1.0",
+                "User-Agent": "python-httpx/0.27",
             }
             if self.config.site_url:
                 headers["HTTP-Referer"] = self.config.site_url
@@ -416,7 +416,7 @@ class OpenAIClient(AIProviderClient):
             headers = {
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "Teamarr/1.0",
+                "User-Agent": "python-httpx/0.27",
             }
             if self.config.organization:
                 headers["OpenAI-Organization"] = self.config.organization
@@ -521,7 +521,7 @@ class AnthropicClient(AIProviderClient):
                     "x-api-key": self.config.api_key,
                     "Content-Type": "application/json",
                     "anthropic-version": "2023-06-01",
-                    "User-Agent": "Teamarr/1.0",
+                    "User-Agent": "python-httpx/0.27",
                 },
             )
         return self._client
