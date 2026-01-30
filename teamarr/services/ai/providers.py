@@ -199,7 +199,7 @@ class GeminiConfig:
     """Configuration for Google Gemini client."""
 
     api_key: str = ""
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.5-flash-lite"
     timeout: float = 60.0
 
 
@@ -725,7 +725,7 @@ def get_provider_client(
     elif provider == "gemini":
         return GeminiClient(GeminiConfig(
             api_key=settings.get("api_key", ""),
-            model=settings.get("model", "gemini-2.0-flash"),
+            model=settings.get("model", "gemini-2.5-flash-lite"),
             timeout=settings.get("timeout", 60),
         ))
     elif provider == "openrouter":

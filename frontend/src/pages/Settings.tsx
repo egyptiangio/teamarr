@@ -252,7 +252,7 @@ export function Settings() {
       grok: { enabled: false, api_key: "", model: "grok-2-latest", timeout: 60 },
       // Free-tier providers
       groq: { enabled: false, api_key: "", model: "llama-3.1-8b-instant", timeout: 60 },
-      gemini: { enabled: false, api_key: "", model: "gemini-2.0-flash", timeout: 60 },
+      gemini: { enabled: false, api_key: "", model: "gemini-2.5-flash-lite", timeout: 60 },
       openrouter: { enabled: false, api_key: "", model: "meta-llama/llama-3.1-8b-instruct:free", timeout: 60, site_url: "", app_name: "Teamarr" },
     },
     task_assignments: {
@@ -2338,7 +2338,7 @@ export function Settings() {
                             ...aiSettings,
                             providers: { ...aiSettings.providers, gemini: { ...aiSettings.providers.gemini, model: e.target.value } }
                           })}
-                          placeholder="gemini-2.0-flash"
+                          placeholder="gemini-2.5-flash-lite"
                           className="h-8 text-sm"
                         />
                       </div>

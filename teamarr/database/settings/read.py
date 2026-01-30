@@ -580,7 +580,7 @@ def _build_ai_settings(row) -> AISettings:
     gemini = GeminiProviderSettings(
         enabled=gemini_config.get("enabled", False),
         api_key=gemini_config.get("api_key", ""),
-        model=gemini_config.get("model", "gemini-2.0-flash"),
+        model=gemini_config.get("model", "gemini-2.5-flash-lite"),
         timeout=gemini_config.get("timeout", 60),
     )
 
