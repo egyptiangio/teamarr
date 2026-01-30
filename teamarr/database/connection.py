@@ -513,6 +513,28 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     _add_column_if_not_exists(conn, "epg_matched_streams", "origin_match_method", "TEXT")
     _add_column_if_not_exists(conn, "epg_matched_streams", "excluded", "BOOLEAN DEFAULT 0")
     _add_column_if_not_exists(conn, "epg_matched_streams", "exclusion_reason", "TEXT")
+    # Startup cache refresh: 0 = disabled, >0 = refresh if cache older than N days
+    _add_column_if_not_exists(
+        conn, "settings", "startup_cache_max_age_days", "INTEGER DEFAULT 1"
+    )
+
+    # AI/Ollama settings (legacy flat fields for backwards compatibility)
+    _add_column_if_not_exists(conn, "settings", "ai_enabled", "BOOLEAN DEFAULT 0")
+    _add_column_if_not_exists(conn, "settings", "ai_ollama_url", "TEXT DEFAULT 'http://localhost:11434'")
+    _add_column_if_not_exists(conn, "settings", "ai_model", "TEXT DEFAULT 'qwen2.5:7b'")
+    _add_column_if_not_exists(conn, "settings", "ai_timeout", "INTEGER DEFAULT 180")
+    _add_column_if_not_exists(conn, "settings", "ai_use_for_parsing", "BOOLEAN DEFAULT 1")
+    _add_column_if_not_exists(conn, "settings", "ai_use_for_matching", "BOOLEAN DEFAULT 0")
+    _add_column_if_not_exists(conn, "settings", "ai_batch_size", "INTEGER DEFAULT 10")
+    _add_column_if_not_exists(conn, "settings", "ai_learn_patterns", "BOOLEAN DEFAULT 1")
+    _add_column_if_not_exists(conn, "settings", "ai_fallback_to_regex", "BOOLEAN DEFAULT 1")
+    # Multi-provider AI settings (JSON-encoded)
+    _add_column_if_not_exists(conn, "settings", "ai_providers_config", "TEXT")  # JSON: {ollama: {...}, openai: {...}, ...}
+    _add_column_if_not_exists(conn, "settings", "ai_task_assignments", "TEXT")  # JSON: {pattern_learning: "ollama", ...}
+
+    # AI patterns table
+    from teamarr.database.ai_patterns import init_ai_tables
+    init_ai_tables(conn)
 
     # LEGACY v3-v43 migrations follow (all skipped because version is now 43)
 

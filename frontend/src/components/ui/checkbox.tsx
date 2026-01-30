@@ -21,6 +21,7 @@ const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
         role="checkbox"
         aria-checked={checked}
         disabled={disabled}
+        data-state={checked ? "checked" : "unchecked"}
         className={cn(
           "peer h-5 w-5 shrink-0 rounded border-2 shadow-sm cursor-pointer",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",

@@ -113,6 +113,22 @@ export interface StreamOrderingSettingsUpdate {
   rules: StreamOrderingRule[]
 }
 
+export interface APISettings {
+  timeout: number
+  retry_count: number
+  soccer_cache_refresh_frequency: string
+  team_cache_refresh_frequency: string
+  startup_cache_max_age_days: number  // 0 = disabled, >0 = refresh if older than N days
+}
+
+export interface APISettingsUpdate {
+  timeout?: number
+  retry_count?: number
+  soccer_cache_refresh_frequency?: string
+  team_cache_refresh_frequency?: string
+  startup_cache_max_age_days?: number
+}
+
 export interface UpdateCheckSettings {
   enabled: boolean
   notify_stable: boolean
@@ -310,6 +326,17 @@ export async function updateDisplaySettings(
   return api.put("/settings/display", data)
 }
 
+// API Settings
+export async function getAPISettings(): Promise<APISettings> {
+  return api.get("/settings/api")
+}
+
+export async function updateAPISettings(
+  data: APISettingsUpdate
+): Promise<APISettings> {
+  return api.put("/settings/api", data)
+}
+
 // Team Filter Settings API
 export async function getTeamFilterSettings(): Promise<TeamFilterSettings> {
   return api.get("/settings/team-filter")
@@ -389,5 +416,275 @@ export async function updateUpdateCheckSettings(
 // Check for updates
 export async function checkForUpdates(force: boolean = false): Promise<UpdateInfo> {
   return api.get(`/updates/check?force=${force}`)
+}
+
+// AI Settings Types
+// Provider configuration types
+export interface OllamaProviderConfig {
+  enabled: boolean
+  url: string
+  model: string
+  timeout: number
+}
+
+export interface OpenAIProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+  organization: string
+}
+
+export interface AnthropicProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface GrokProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+// Free-tier providers
+export interface GroqProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface GeminiProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+}
+
+export interface OpenRouterProviderConfig {
+  enabled: boolean
+  api_key: string
+  model: string
+  timeout: number
+  site_url: string
+  app_name: string
+}
+
+export interface AIProvidersConfig {
+  ollama: OllamaProviderConfig
+  openai: OpenAIProviderConfig
+  anthropic: AnthropicProviderConfig
+  grok: GrokProviderConfig
+  // Free-tier providers
+  groq: GroqProviderConfig
+  gemini: GeminiProviderConfig
+  openrouter: OpenRouterProviderConfig
+}
+
+export interface AITaskAssignments {
+  pattern_learning: string
+  stream_parsing: string
+  event_cards: string
+  team_matching: string
+  description_gen: string
+}
+
+// AI task types for display
+export const AI_TASKS = [
+  { key: "pattern_learning", label: "Pattern Learning", description: "Learning regex patterns from streams" },
+  { key: "stream_parsing", label: "Stream Parsing", description: "Parsing individual stream names" },
+  { key: "event_cards", label: "Event Cards", description: "Generating event group summaries (future)" },
+  { key: "team_matching", label: "Team Matching", description: "AI-assisted team matching (future)" },
+  { key: "description_gen", label: "Description Generation", description: "Programme descriptions (future)" },
+] as const
+
+export const AI_PROVIDERS = [
+  { key: "ollama", label: "Ollama (Local)", free: true },
+  { key: "groq", label: "Groq (Llama)", free: true },
+  { key: "gemini", label: "Google Gemini", free: true },
+  { key: "openrouter", label: "OpenRouter", free: true },
+  { key: "openai", label: "OpenAI (ChatGPT)", free: false },
+  { key: "anthropic", label: "Anthropic (Claude)", free: false },
+  { key: "grok", label: "xAI (Grok)", free: false },
+] as const
+
+export interface AISettings {
+  enabled: boolean
+  providers: AIProvidersConfig
+  task_assignments: AITaskAssignments
+  batch_size: number
+  learn_patterns: boolean
+  fallback_to_regex: boolean
+  // Legacy fields for backwards compatibility
+  ollama_url: string
+  model: string
+  timeout: number
+  use_for_parsing: boolean
+  use_for_matching: boolean
+}
+
+export interface AISettingsUpdate {
+  enabled?: boolean
+  providers?: AIProvidersConfig
+  task_assignments?: AITaskAssignments
+  batch_size?: number
+  learn_patterns?: boolean
+  fallback_to_regex?: boolean
+  // Legacy fields
+  ollama_url?: string
+  model?: string
+  timeout?: number
+  use_for_parsing?: boolean
+  use_for_matching?: boolean
+}
+
+export interface AIStatus {
+  enabled: boolean
+  available: boolean
+  ollama_url: string
+  model: string
+  error: string | null
+}
+
+export interface AIPattern {
+  pattern_id: string
+  regex: string
+  description: string
+  example_streams: string[]
+  field_map: Record<string, string>
+  confidence: number
+  match_count: number
+  fail_count: number
+  group_id: number | null
+}
+
+export interface AIPatternListResponse {
+  patterns: AIPattern[]
+  total: number
+}
+
+export interface LearnPatternsGroupResult {
+  group_id: number
+  group_name: string
+  success: boolean
+  patterns_learned: number
+  patterns: AIPattern[]
+  coverage_percent: number
+  error: string | null
+}
+
+export interface LearnPatternsResponse {
+  success: boolean
+  group_id: number
+  group_name: string
+  patterns_learned: number
+  patterns: AIPattern[]
+  coverage_percent: number
+  error: string | null
+  group_results?: LearnPatternsGroupResult[]
+}
+
+export interface TestParseResult {
+  stream: string
+  team1: string | null
+  team2: string | null
+  league: string | null
+  sport: string | null
+  date: string | null
+  time: string | null
+  confidence: number
+}
+
+export interface TestParseResponse {
+  success: boolean
+  results: TestParseResult[]
+  error: string | null
+}
+
+// AI Settings API
+export async function getAIStatus(): Promise<AIStatus> {
+  return api.get("/ai/status")
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  return api.get("/ai/settings")
+}
+
+export async function updateAISettings(data: AISettingsUpdate): Promise<AISettings> {
+  return api.put("/ai/settings", data)
+}
+
+export async function getAIPatterns(groupId?: number): Promise<AIPatternListResponse> {
+  const params = groupId ? `?group_id=${groupId}` : ""
+  return api.get(`/ai/patterns${params}`)
+}
+
+export async function deleteAIPattern(patternId: string): Promise<void> {
+  return api.delete(`/ai/patterns/${patternId}`)
+}
+
+export async function deleteGroupPatterns(groupId: number): Promise<{ patterns_deleted: number }> {
+  return api.delete(`/ai/patterns/group/${groupId}`)
+}
+
+export async function learnPatterns(groupId?: number, groupIds?: number[]): Promise<LearnPatternsResponse> {
+  const body: { group_id?: number; group_ids?: number[] } = {}
+  if (groupIds && groupIds.length > 0) {
+    body.group_ids = groupIds
+  } else if (groupId) {
+    body.group_id = groupId
+  }
+  return api.post("/ai/learn", body)
+}
+
+// Background pattern learning task
+export interface PatternLearningStatus {
+  in_progress: boolean
+  status: string
+  message: string
+  percent: number
+  current_group: number
+  total_groups: number
+  current_group_name: string
+  started_at: string | null
+  completed_at: string | null
+  error: string | null
+  eta_seconds: number | null
+  groups_completed: number
+  patterns_learned: number
+  avg_coverage: number
+  group_results: Array<{
+    group_id: number
+    group_name: string
+    success: boolean
+    patterns_learned: number
+    coverage_percent: number
+    error: string | null
+  }>
+}
+
+export async function startPatternLearning(groupId?: number, groupIds?: number[]): Promise<{ success: boolean; message: string }> {
+  const body: { group_id?: number; group_ids?: number[] } = {}
+  if (groupIds && groupIds.length > 0) {
+    body.group_ids = groupIds
+  } else if (groupId) {
+    body.group_id = groupId
+  }
+  return api.post("/ai/learn/start", body)
+}
+
+export async function getPatternLearningStatus(): Promise<PatternLearningStatus> {
+  return api.get("/ai/learn/status")
+}
+
+export async function abortPatternLearning(): Promise<{ success: boolean; message: string }> {
+  return api.post("/ai/learn/abort")
+}
+
+export async function testParse(streams: string[]): Promise<TestParseResponse> {
+  return api.post("/ai/test-parse", { streams })
 }
 

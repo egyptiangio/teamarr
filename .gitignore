@@ -53,6 +53,7 @@ data/
 
 # Plan files (local only, work in progress)
 plans/
+.planning/
 
 # Local dev scripts
 dev.sh

@@ -95,6 +95,8 @@ function getMatchMethodBadge(method: string | null) {
       return <Badge variant="secondary">Keyword</Badge>
     case "direct":
       return <Badge variant="success">Direct</Badge>
+    case "ai":
+      return <Badge variant="default" className="bg-purple-600 hover:bg-purple-700">AI</Badge>
     default:
       return <Badge variant="outline">{method ?? "Unknown"}</Badge>
   }
@@ -239,7 +241,7 @@ export function EPG() {
   }
 
   // Generation progress (non-blocking toast)
-  const { startGeneration, isGenerating } = useGenerationProgress()
+  const { startGeneration, abortGeneration, isGenerating } = useGenerationProgress()
 
   const handleGenerate = () => {
     startGeneration(() => {
@@ -475,6 +477,16 @@ export function EPG() {
           )}
           {isGenerating ? "Generating..." : "Generate"}
         </Button>
+        {isGenerating && (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={abortGeneration}
+          >
+            <XCircle className="h-4 w-4 mr-1" />
+            Abort
+          </Button>
+        )}
         {stats?.last_run && (
           <span className="text-xs text-muted-foreground">
             Last: {formatRelativeTime(stats.last_run)}

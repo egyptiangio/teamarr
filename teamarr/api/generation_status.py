@@ -16,7 +16,7 @@ class GenerationStatus:
     """Current EPG generation status."""
 
     in_progress: bool = False
-    status: str = "idle"  # idle, starting, teams, groups, saving, complete, error
+    status: str = "idle"  # idle, starting, teams, groups, saving, complete, error, aborted
     message: str = ""
     percent: int = 0
     phase: str = ""  # teams, groups, saving
@@ -27,6 +27,7 @@ class GenerationStatus:
     completed_at: datetime | None = None
     error: str | None = None
     result: dict[str, Any] = field(default_factory=dict)
+    abort_requested: bool = False
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
@@ -59,6 +60,7 @@ class GenerationStatus:
         self.completed_at = None
         self.error = None
         self.result = {}
+        self.abort_requested = False
 
 
 # Global status instance with thread-safe access
@@ -147,6 +149,36 @@ def fail_generation(error: str) -> None:
         _status.message = f"Error: {error}"
         _status.error = error
         _status.completed_at = datetime.now()
+
+
+def request_abort() -> bool:
+    """Request generation abort.
+
+    Returns True if abort was requested, False if not in progress.
+    """
+    with _status_lock:
+        if not _status.in_progress:
+            return False
+        _status.abort_requested = True
+        _status.message = "Abort requested, finishing current item..."
+        return True
+
+
+def is_abort_requested() -> bool:
+    """Check if abort has been requested."""
+    with _status_lock:
+        return _status.abort_requested
+
+
+def abort_generation() -> None:
+    """Mark generation as aborted."""
+    with _status_lock:
+        _status.in_progress = False
+        _status.status = "aborted"
+        _status.message = "Generation aborted by user"
+        _status.error = "Aborted by user"
+        _status.completed_at = datetime.now()
+        _status.abort_requested = False
 
 
 def create_progress_callback(

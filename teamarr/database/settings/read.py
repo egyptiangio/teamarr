@@ -7,14 +7,23 @@ import json
 from sqlite3 import Connection
 
 from .types import (
+    AISettings,
+    AITaskAssignments,
     AllSettings,
+    AnthropicProviderSettings,
     APISettings,
     ChannelNumberingSettings,
     DispatcharrSettings,
     DisplaySettings,
     DurationSettings,
     EPGSettings,
+    GeminiProviderSettings,
+    GrokProviderSettings,
+    GroqProviderSettings,
     LifecycleSettings,
+    OllamaProviderSettings,
+    OpenAIProviderSettings,
+    OpenRouterProviderSettings,
     ReconciliationSettings,
     SchedulerSettings,
     StreamFilterSettings,
@@ -140,6 +149,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             retry_count=row["api_retry_count"] or 3,
             soccer_cache_refresh_frequency=(row["soccer_cache_refresh_frequency"] or "weekly"),
             team_cache_refresh_frequency=row["team_cache_refresh_frequency"] or "weekly",
+            startup_cache_max_age_days=row["startup_cache_max_age_days"] if row["startup_cache_max_age_days"] is not None else 1,
         ),
         stream_filter=StreamFilterSettings(
             require_event_pattern=bool(row["stream_filter_require_event_pattern"])
@@ -169,6 +179,7 @@ def get_all_settings(conn: Connection) -> AllSettings:
             rules=_parse_stream_ordering_rules(row["stream_ordering_rules"])
         ),
         update_check=_build_update_check_settings(row),
+        ai=_build_ai_settings(row),
         epg_generation_counter=row["epg_generation_counter"] or 0,
         schema_version=row["schema_version"] or 2,
     )
@@ -507,3 +518,206 @@ def get_update_check_settings(conn: Connection) -> UpdateCheckSettings:
         return UpdateCheckSettings()
 
     return _build_update_check_settings(row)
+
+
+def _build_ai_settings(row) -> AISettings:
+    """Build AISettings from DB row with multi-provider support."""
+    # Parse JSON configs (new multi-provider format)
+    providers_config = {}
+    task_assignments = {}
+    try:
+        if row["ai_providers_config"]:
+            providers_config = json.loads(row["ai_providers_config"])
+        if row["ai_task_assignments"]:
+            task_assignments = json.loads(row["ai_task_assignments"])
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Build provider settings from JSON or legacy fields
+    ollama_config = providers_config.get("ollama", {})
+    ollama = OllamaProviderSettings(
+        enabled=ollama_config.get("enabled", bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False),
+        url=ollama_config.get("url", row["ai_ollama_url"] or "http://localhost:11434"),
+        model=ollama_config.get("model", row["ai_model"] or "qwen2.5:7b"),
+        timeout=ollama_config.get("timeout", row["ai_timeout"] or 180),
+    )
+
+    openai_config = providers_config.get("openai", {})
+    openai = OpenAIProviderSettings(
+        enabled=openai_config.get("enabled", False),
+        api_key=openai_config.get("api_key", ""),
+        model=openai_config.get("model", "gpt-4o-mini"),
+        timeout=openai_config.get("timeout", 60),
+        organization=openai_config.get("organization", ""),
+    )
+
+    anthropic_config = providers_config.get("anthropic", {})
+    anthropic = AnthropicProviderSettings(
+        enabled=anthropic_config.get("enabled", False),
+        api_key=anthropic_config.get("api_key", ""),
+        model=anthropic_config.get("model", "claude-3-5-sonnet-20241022"),
+        timeout=anthropic_config.get("timeout", 60),
+    )
+
+    grok_config = providers_config.get("grok", {})
+    grok = GrokProviderSettings(
+        enabled=grok_config.get("enabled", False),
+        api_key=grok_config.get("api_key", ""),
+        model=grok_config.get("model", "grok-2-latest"),
+        timeout=grok_config.get("timeout", 60),
+    )
+
+    # Free-tier providers
+    groq_config = providers_config.get("groq", {})
+    groq = GroqProviderSettings(
+        enabled=groq_config.get("enabled", False),
+        api_key=groq_config.get("api_key", ""),
+        model=groq_config.get("model", "llama-3.1-8b-instant"),
+        timeout=groq_config.get("timeout", 60),
+    )
+
+    gemini_config = providers_config.get("gemini", {})
+    gemini = GeminiProviderSettings(
+        enabled=gemini_config.get("enabled", False),
+        api_key=gemini_config.get("api_key", ""),
+        model=gemini_config.get("model", "gemini-1.5-flash"),
+        timeout=gemini_config.get("timeout", 60),
+    )
+
+    openrouter_config = providers_config.get("openrouter", {})
+    openrouter = OpenRouterProviderSettings(
+        enabled=openrouter_config.get("enabled", False),
+        api_key=openrouter_config.get("api_key", ""),
+        model=openrouter_config.get("model", "meta-llama/llama-3.1-8b-instruct:free"),
+        timeout=openrouter_config.get("timeout", 60),
+        site_url=openrouter_config.get("site_url", ""),
+        app_name=openrouter_config.get("app_name", "Teamarr"),
+    )
+
+    # Build task assignments
+    assignments = AITaskAssignments(
+        pattern_learning=task_assignments.get("pattern_learning", "ollama"),
+        stream_parsing=task_assignments.get("stream_parsing", "ollama"),
+        event_cards=task_assignments.get("event_cards", "ollama"),
+        team_matching=task_assignments.get("team_matching", "ollama"),
+        description_gen=task_assignments.get("description_gen", "ollama"),
+    )
+
+    return AISettings(
+        enabled=bool(row["ai_enabled"]) if row["ai_enabled"] is not None else False,
+        ollama=ollama,
+        openai=openai,
+        anthropic=anthropic,
+        grok=grok,
+        groq=groq,
+        gemini=gemini,
+        openrouter=openrouter,
+        task_assignments=assignments,
+        batch_size=row["ai_batch_size"] or 10,
+        learn_patterns=bool(row["ai_learn_patterns"])
+        if row["ai_learn_patterns"] is not None
+        else True,
+        fallback_to_regex=bool(row["ai_fallback_to_regex"])
+        if row["ai_fallback_to_regex"] is not None
+        else True,
+    )
+
+
+def get_ai_settings(conn: Connection) -> AISettings:
+    """Get AI integration settings with multi-provider support.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        AISettings object with AI configuration for all providers
+    """
+    cursor = conn.execute(
+        """SELECT ai_enabled, ai_ollama_url, ai_model, ai_timeout,
+                  ai_use_for_parsing, ai_use_for_matching, ai_batch_size,
+                  ai_learn_patterns, ai_fallback_to_regex,
+                  ai_providers_config, ai_task_assignments
+           FROM settings WHERE id = 1"""
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return AISettings()
+
+    return _build_ai_settings(row)
+
+
+def update_ai_settings(
+    conn: Connection,
+    enabled: bool | None = None,
+    ollama_url: str | None = None,
+    model: str | None = None,
+    timeout: int | None = None,
+    use_for_parsing: bool | None = None,
+    use_for_matching: bool | None = None,
+    batch_size: int | None = None,
+    learn_patterns: bool | None = None,
+    fallback_to_regex: bool | None = None,
+    providers_config: dict | None = None,
+    task_assignments: dict | None = None,
+) -> None:
+    """Update AI integration settings.
+
+    Only provided (non-None) values will be updated.
+    Supports both legacy flat fields and new JSON-based provider configs.
+
+    Args:
+        conn: Database connection
+        enabled: Master toggle for AI features
+        ollama_url: Ollama API base URL (legacy, prefer providers_config)
+        model: Model to use (legacy, prefer providers_config)
+        timeout: Request timeout in seconds (legacy, prefer providers_config)
+        use_for_parsing: Use AI for stream parsing (legacy)
+        use_for_matching: Use AI for team matching (legacy)
+        batch_size: Streams per AI batch call
+        learn_patterns: Learn regex patterns from AI results
+        fallback_to_regex: Fall back to builtin regex if AI fails
+        providers_config: Dict of provider configs {ollama: {...}, openai: {...}, ...}
+        task_assignments: Dict of task -> provider mappings
+    """
+    updates = []
+    values = []
+
+    if enabled is not None:
+        updates.append("ai_enabled = ?")
+        values.append(int(enabled))
+    if ollama_url is not None:
+        updates.append("ai_ollama_url = ?")
+        values.append(ollama_url)
+    if model is not None:
+        updates.append("ai_model = ?")
+        values.append(model)
+    if timeout is not None:
+        updates.append("ai_timeout = ?")
+        values.append(timeout)
+    if use_for_parsing is not None:
+        updates.append("ai_use_for_parsing = ?")
+        values.append(int(use_for_parsing))
+    if use_for_matching is not None:
+        updates.append("ai_use_for_matching = ?")
+        values.append(int(use_for_matching))
+    if batch_size is not None:
+        updates.append("ai_batch_size = ?")
+        values.append(batch_size)
+    if learn_patterns is not None:
+        updates.append("ai_learn_patterns = ?")
+        values.append(int(learn_patterns))
+    if fallback_to_regex is not None:
+        updates.append("ai_fallback_to_regex = ?")
+        values.append(int(fallback_to_regex))
+    if providers_config is not None:
+        updates.append("ai_providers_config = ?")
+        values.append(json.dumps(providers_config))
+    if task_assignments is not None:
+        updates.append("ai_task_assignments = ?")
+        values.append(json.dumps(task_assignments))
+
+    if updates:
+        sql = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+        conn.execute(sql, values)
+        conn.commit()

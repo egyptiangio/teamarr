@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { toast } from "sonner"
+import { XCircle } from "lucide-react"
 
 interface GenerationStatus {
   in_progress: boolean
@@ -25,6 +26,7 @@ interface GenerationStatus {
 
 interface GenerationContextValue {
   startGeneration: (onComplete?: (result: GenerationStatus["result"]) => void) => void
+  abortGeneration: () => void
   isGenerating: boolean
 }
 
@@ -33,7 +35,7 @@ const GenerationContext = createContext<GenerationContextValue | null>(null)
 const TOAST_ID = "epg-generation"
 
 // Progress description component for toast
-function ProgressDescription({ status }: { status: GenerationStatus | null }) {
+function ProgressDescription({ status, onAbort }: { status: GenerationStatus | null; onAbort?: () => void }) {
   const percent = status?.percent ?? 0
   const itemName = status?.item_name
   const current = status?.current ?? 0
@@ -44,12 +46,23 @@ function ProgressDescription({ status }: { status: GenerationStatus | null }) {
 
   return (
     <div className="space-y-2 mt-1 w-[356px]">
-      {/* Progress bar - fixed width to prevent layout shift */}
-      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-        <div
-          className="h-full bg-primary transition-all duration-300"
-          style={{ width: `${percent}%` }}
-        />
+      {/* Progress bar with abort button */}
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary transition-all duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        {onAbort && (
+          <button
+            onClick={onAbort}
+            className="p-0.5 hover:bg-destructive/20 rounded text-destructive"
+            title="Abort generation"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        )}
       </div>
       {/* Current item - fixed width container, text can wrap */}
       {itemName && (
@@ -94,29 +107,41 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const onCompleteRef = useRef<((result: GenerationStatus["result"]) => void) | null>(null)
   const pollIntervalRef = useRef<number | null>(null)
   const backgroundPollRef = useRef<number | null>(null)
+  const abortRef = useRef<(() => void) | null>(null)
 
   const updateToast = useCallback((status: GenerationStatus | null, isStarting: boolean = false) => {
     const phase = isStarting ? "Starting EPG generation..." : getPhaseLabel(status)
     const percent = status?.percent ?? 0
     const title = isStarting ? phase : `${phase} — ${percent}%`
 
-    // Use standard toast.loading with description containing progress bar
+    // Use standard toast.loading with description containing progress bar and abort button
     toast.loading(title, {
       id: TOAST_ID,
       duration: Infinity,
-      description: status ? <ProgressDescription status={status} /> : undefined,
+      description: status ? (
+        <ProgressDescription
+          status={status}
+          onAbort={() => abortRef.current?.()}
+        />
+      ) : undefined,
     })
   }, [])
 
   const handleComplete = useCallback((data: GenerationStatus) => {
     setIsGenerating(false)
 
-    // Convert to success or error toast
+    // Convert to success, error, or aborted toast
     if (data.status === "complete") {
       const result = data.result
       toast.success("EPG Generated", {
         id: TOAST_ID,
         description: `${result.programmes_count} programmes in ${result.duration_seconds}s`,
+        duration: 5000,
+      })
+    } else if (data.status === "aborted") {
+      toast.warning("Generation Aborted", {
+        id: TOAST_ID,
+        description: "EPG generation was stopped by user",
         duration: 5000,
       })
     } else {
@@ -194,6 +219,30 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     reconnectToGeneration()
   }, [isGenerating, updateToast, reconnectToGeneration])
 
+  const abortGeneration = useCallback(() => {
+    if (!isGenerating) return
+
+    fetch("/api/v1/epg/generate/abort", { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          toast.loading("Aborting generation...", {
+            id: TOAST_ID,
+            duration: Infinity,
+          })
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to abort:", err)
+        toast.error("Failed to abort generation")
+      })
+  }, [isGenerating])
+
+  // Keep ref updated for toast abort button
+  useEffect(() => {
+    abortRef.current = abortGeneration
+  }, [abortGeneration])
+
   // Check for in-progress generation on mount and periodically
   // This detects scheduled runs that start while the UI is open
   useEffect(() => {
@@ -225,7 +274,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   }, [isGenerating, reconnectToGeneration])
 
   return (
-    <GenerationContext.Provider value={{ startGeneration, isGenerating }}>
+    <GenerationContext.Provider value={{ startGeneration, abortGeneration, isGenerating }}>
       {children}
     </GenerationContext.Provider>
   )

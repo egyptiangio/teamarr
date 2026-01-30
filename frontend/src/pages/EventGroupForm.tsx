@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check, FlaskConical } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
+import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check, FlaskConical, Brain, Trash2 } from "lucide-react"
+import { useQuery, useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -25,6 +25,8 @@ import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { TestPatternsModal, type PatternState } from "@/components/TestPatternsModal"
+import { useAISettings, useAIPatterns, useLearnPatterns } from "@/hooks/useSettings"
+import { deleteAIPattern } from "@/api/settings"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -140,9 +142,24 @@ export function EventGroupForm() {
   // Collapsible section states
   const [regexExpanded, setRegexExpanded] = useState(false)
   const [teamFilterExpanded, setTeamFilterExpanded] = useState(false)
+  const [aiPatternsExpanded, setAiPatternsExpanded] = useState(false)
 
   // Test Patterns modal
   const [testPatternsOpen, setTestPatternsOpen] = useState(false)
+
+  // AI Settings and Patterns
+  const { data: aiSettings } = useAISettings()
+  const { data: aiPatternsData, refetch: refetchAiPatterns } = useAIPatterns(isEdit ? Number(groupId) : undefined)
+  const learnPatternsMutation = useLearnPatterns()
+  const deletePatternMutation = useMutation({
+    mutationFn: (patternId: string) => deleteAIPattern(patternId),
+    onSuccess: () => {
+      toast.success("Pattern deleted")
+      refetchAiPatterns()
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+  const groupAiPatterns = aiPatternsData?.patterns ?? []
 
   // Channel profile default state - true = use global default, false = custom selection
   const [useDefaultProfiles, setUseDefaultProfiles] = useState(true)
@@ -1248,6 +1265,117 @@ export function EventGroupForm() {
               </CardContent>
             )}
           </Card>
+
+          {/* AI-Learned Patterns - only show when AI is enabled and editing existing group */}
+          {aiSettings?.enabled && isEdit && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between py-3 rounded-t-lg">
+                <button
+                  type="button"
+                  onClick={() => setAiPatternsExpanded(!aiPatternsExpanded)}
+                  className="flex items-center gap-2 cursor-pointer hover:opacity-80"
+                >
+                  {aiPatternsExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <Brain className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-base">AI Patterns</CardTitle>
+                  {groupAiPatterns.length > 0 && (
+                    <Badge variant="secondary" className="text-xs ml-1">
+                      {groupAiPatterns.length}
+                    </Badge>
+                  )}
+                </button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      learnPatternsMutation.mutate(Number(groupId), {
+                        onSuccess: (data) => {
+                          if (data.success) {
+                            toast.success(`Learned ${data.patterns_learned} patterns (${data.coverage_percent.toFixed(0)}% coverage)`)
+                            refetchAiPatterns()
+                          } else {
+                            toast.error(data.error || "Failed to learn patterns")
+                          }
+                        },
+                      })
+                    }}
+                    disabled={learnPatternsMutation.isPending}
+                    className="gap-1.5"
+                  >
+                    {learnPatternsMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Brain className="h-3.5 w-3.5" />
+                    )}
+                    Learn Patterns
+                  </Button>
+                </div>
+              </CardHeader>
+
+              {aiPatternsExpanded && (
+                <CardContent className="space-y-3 pt-0">
+                  {groupAiPatterns.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No AI patterns learned for this group yet. Click "Learn Patterns" to analyze streams.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {groupAiPatterns.map((pattern) => (
+                        <div key={pattern.pattern_id} className="border rounded-lg p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded break-all block">
+                                {pattern.regex}
+                              </code>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {pattern.description || "No description"}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Badge
+                                variant={pattern.confidence >= 0.7 ? "success" : pattern.confidence >= 0.5 ? "warning" : "destructive"}
+                                className="text-xs"
+                              >
+                                {(pattern.confidence * 100).toFixed(0)}%
+                              </Badge>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deletePatternMutation.mutate(pattern.pattern_id)}
+                                disabled={deletePatternMutation.isPending}
+                                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                              >
+                                {deletePatternMutation.isPending && deletePatternMutation.variables === pattern.pattern_id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                            <span>Matches: <strong className="text-foreground">{pattern.match_count}</strong></span>
+                            <span>Fails: <strong className="text-foreground">{pattern.fail_count}</strong></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    AI-learned patterns are applied before custom regex during stream matching.
+                    For full pattern management, visit the <a href="/ai" className="underline">AI page</a>.
+                  </p>
+                </CardContent>
+              )}
+            </Card>
+          )}
 
           {/* Team Filtering - only show for parent groups */}
           {!isChildGroup && (

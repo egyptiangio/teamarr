@@ -49,6 +49,7 @@ from teamarr.consumers.stream_match_cache import (
 )
 from teamarr.core import Event
 from teamarr.database.leagues import get_league
+from teamarr.database.settings import get_ai_settings
 from teamarr.services import SportsDataService
 from teamarr.utilities.event_status import is_event_final
 
@@ -252,6 +253,11 @@ class StreamMatcher:
         # League event types cache
         self._league_event_types: dict[str, str] = {}
 
+        # AI classifier (lazy initialized if enabled)
+        self._ai_classifier = None
+        self._ai_enabled = False
+        self._init_ai_classifier()
+
         # Shared events cache (cross-matcher in a single generation run)
         # Keys are "league:date" strings, values are (events, was_cache_only) tuples
         self._shared_events = shared_events
@@ -291,6 +297,9 @@ class StreamMatcher:
 
         # Load league event types
         self._load_league_event_types()
+
+        # Load AI patterns once for the batch (if AI enabled)
+        self._load_ai_patterns()
 
         # Prefetch events for multi-league matching (significant performance boost)
         # This fetches events ONCE for all streams instead of per-stream
@@ -451,7 +460,8 @@ class StreamMatcher:
         # Determine event type from configured leagues
         league_event_type = self._get_dominant_event_type()
 
-        classified = classify_stream(stream_name, league_event_type, self._custom_regex)
+        # Use AI classifier if enabled, otherwise builtin
+        classified = self._classify_with_ai(stream_name, league_event_type)
 
         # Step 2: Handle placeholders (streams that couldn't be classified)
         # Note: Placeholder pattern detection and unsupported sports filtering
@@ -660,3 +670,74 @@ class StreamMatcher:
             "size": self._cache.get_size(),
             **self._cache.get_stats(),
         }
+
+    def _init_ai_classifier(self) -> None:
+        """Initialize AI classifier if enabled in settings."""
+        try:
+            with self._db_factory() as conn:
+                ai_settings = get_ai_settings(conn)
+
+            if not ai_settings.enabled:
+                return
+
+            # Lazy import to avoid circular dependencies
+            from teamarr.services.ai import AIClassifier, AIClassifierConfig
+
+            config = AIClassifierConfig(
+                settings=ai_settings,
+                db_conn=None,  # Will get fresh connection when needed
+                group_id=self._group_id,
+            )
+            self._ai_classifier = AIClassifier(config)
+            self._ai_enabled = self._ai_classifier.is_available()
+
+            if self._ai_enabled:
+                logger.info("[AI] AI classifier initialized for group %d", self._group_id)
+            else:
+                logger.debug("[AI] AI classifier not available (Ollama not responding)")
+
+        except Exception as e:
+            logger.warning("[AI] Failed to initialize AI classifier: %s", e)
+            self._ai_enabled = False
+
+    def _load_ai_patterns(self) -> None:
+        """Load AI patterns from database once at start of batch."""
+        if not self._ai_enabled or not self._ai_classifier:
+            return
+
+        try:
+            with self._db_factory() as conn:
+                self._ai_classifier.config.db_conn = conn
+                self._ai_classifier._patterns_loaded = False  # Force reload
+                self._ai_classifier._load_patterns()
+                # Keep patterns in memory, clear db_conn
+                self._ai_classifier.config.db_conn = None
+        except Exception as e:
+            logger.debug("[AI] Failed to load patterns: %s", e)
+
+    def _classify_with_ai(
+        self,
+        stream_name: str,
+        league_event_type: str | None,
+    ) -> ClassifiedStream:
+        """Classify stream using AI if available, otherwise use builtin.
+
+        Args:
+            stream_name: Raw stream name
+            league_event_type: Optional event type hint
+
+        Returns:
+            ClassifiedStream object
+        """
+        if self._ai_enabled and self._ai_classifier:
+            try:
+                return self._ai_classifier.classify_stream(
+                    stream_name,
+                    league_event_type,
+                    self._custom_regex,
+                )
+            except Exception as e:
+                logger.debug("[AI] Classification failed, falling back: %s", e)
+
+        # Fall back to builtin classifier
+        return classify_stream(stream_name, league_event_type, self._custom_regex)

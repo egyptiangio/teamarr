@@ -475,7 +475,34 @@ class TeamMatcher:
 
             # Check for date mismatch from stream (if extracted)
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                stream_date = ctx.classified.normalized.extracted_date
+                stream_time = ctx.classified.normalized.extracted_time
+
+                # For after-midnight streams (European sources), use time proximity
+                # instead of strict date matching to handle timezone differences
+                # and avoid matching wrong games in series (e.g., MLB 3-game series)
+                if stream_time and stream_time.hour < 7:
+                    # Calculate approximate UTC time assuming European source (CET = UTC+1)
+                    # Stream shows "Jan 29 01:35 CET" = "Jan 29 00:35 UTC"
+                    from zoneinfo import ZoneInfo
+                    cet = ZoneInfo("Europe/Paris")
+                    stream_dt_cet = datetime.combine(stream_date, stream_time, tzinfo=cet)
+                    stream_utc = stream_dt_cet.astimezone(ZoneInfo("UTC"))
+                    event_utc = event.start_time.astimezone(ZoneInfo("UTC"))
+
+                    # Only allow events within 4 hours of the calculated UTC time
+                    time_diff_hours = abs((event_utc - stream_utc).total_seconds()) / 3600
+                    if time_diff_hours > 4:
+                        logger.debug(
+                            "[DATE_FILTER] Skipping %s: stream_utc=%s, event_utc=%s, diff=%.1fh",
+                            event.short_name, stream_utc, event_utc, time_diff_hours
+                        )
+                        continue
+                elif stream_date != event_date:
+                    logger.debug(
+                        "[DATE_FILTER] Skipping %s: stream_date=%s != event_date=%s",
+                        event.short_name, stream_date, event_date
+                    )
                     continue
 
             # Check for sport mismatch from stream (if detected)
@@ -536,15 +563,17 @@ class TeamMatcher:
                     best_time_distance = time_distance
 
         if best_match:
+            # Override method to AI if stream was AI-classified
+            final_method = MatchMethod.AI if ctx.classified.ai_classified else best_method
             logger.debug(
                 "[MATCHED] stream_id=%d method=%s event=%s confidence=%.0f%%",
                 ctx.stream_id,
-                best_method.value,
+                final_method.value,
                 best_match.id,
                 best_confidence,
             )
             return MatchOutcome.matched(
-                best_method,
+                final_method,
                 best_match,
                 detected_league=league,
                 confidence=best_confidence / 100.0,  # Convert to 0-1
@@ -620,7 +649,23 @@ class TeamMatcher:
 
             # Check for date mismatch from stream (if extracted)
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                stream_date = ctx.classified.normalized.extracted_date
+                stream_time = ctx.classified.normalized.extracted_time
+
+                # For after-midnight streams (European sources), use time proximity
+                # instead of strict date matching to handle timezone differences
+                if stream_time and stream_time.hour < 7:
+                    from zoneinfo import ZoneInfo
+                    cet = ZoneInfo("Europe/Paris")
+                    stream_dt_cet = datetime.combine(stream_date, stream_time, tzinfo=cet)
+                    stream_utc = stream_dt_cet.astimezone(ZoneInfo("UTC"))
+                    event_utc = event.start_time.astimezone(ZoneInfo("UTC"))
+
+                    # Only allow events within 4 hours of the calculated UTC time
+                    time_diff_hours = abs((event_utc - stream_utc).total_seconds()) / 3600
+                    if time_diff_hours > 4:
+                        continue
+                elif stream_date != event_date:
                     continue
 
             # Check for sport mismatch from stream (if detected)
@@ -682,16 +727,18 @@ class TeamMatcher:
                     best_time_distance = time_distance
 
         if best_match and best_league:
+            # Override method to AI if stream was AI-classified
+            final_method = MatchMethod.AI if ctx.classified.ai_classified else best_method
             logger.debug(
                 "[MATCHED] stream_id=%d method=%s event=%s league=%s confidence=%.0f%%",
                 ctx.stream_id,
-                best_method.value,
+                final_method.value,
                 best_match.id,
                 best_league,
                 best_confidence,
             )
             return MatchOutcome.matched(
-                best_method,
+                final_method,
                 best_match,
                 detected_league=best_league,
                 confidence=best_confidence / 100.0,

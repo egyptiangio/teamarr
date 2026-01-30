@@ -561,6 +561,58 @@ def update_stream_ordering_rules(
     return False
 
 
+def update_api_settings(
+    conn: Connection,
+    timeout: int | None = None,
+    retry_count: int | None = None,
+    soccer_cache_refresh_frequency: str | None = None,
+    team_cache_refresh_frequency: str | None = None,
+    startup_cache_max_age_days: int | None = None,
+) -> bool:
+    """Update API behavior settings.
+
+    Args:
+        conn: Database connection
+        timeout: API request timeout in seconds
+        retry_count: Number of retries for failed requests
+        soccer_cache_refresh_frequency: How often to refresh soccer cache
+        team_cache_refresh_frequency: How often to refresh team cache
+        startup_cache_max_age_days: Days before cache is considered stale on startup
+            0 = disabled (never auto-refresh), >0 = refresh if older than N days
+
+    Returns:
+        True if updated
+    """
+    updates = []
+    values = []
+
+    if timeout is not None:
+        updates.append("api_timeout = ?")
+        values.append(timeout)
+    if retry_count is not None:
+        updates.append("api_retry_count = ?")
+        values.append(retry_count)
+    if soccer_cache_refresh_frequency is not None:
+        updates.append("soccer_cache_refresh_frequency = ?")
+        values.append(soccer_cache_refresh_frequency)
+    if team_cache_refresh_frequency is not None:
+        updates.append("team_cache_refresh_frequency = ?")
+        values.append(team_cache_refresh_frequency)
+    if startup_cache_max_age_days is not None:
+        updates.append("startup_cache_max_age_days = ?")
+        values.append(startup_cache_max_age_days)
+
+    if not updates:
+        return False
+
+    query = f"UPDATE settings SET {', '.join(updates)} WHERE id = 1"
+    cursor = conn.execute(query, values)
+    if cursor.rowcount > 0:
+        logger.info("[UPDATED] API settings: %s", [u.split(" = ")[0] for u in updates])
+        return True
+    return False
+
+
 def update_update_check_settings(
     conn: Connection,
     enabled: bool | None = None,

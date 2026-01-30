@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from teamarr.database import get_db
 
+from .api import router as api_router
 from .channel_numbering import router as channel_numbering_router
 from .dispatcharr import router as dispatcharr_router
 from .display import router as display_router
@@ -19,6 +20,7 @@ from .epg import router as epg_router
 from .lifecycle import router as lifecycle_router
 from .models import (
     AllSettingsModel,
+    APISettingsModel,
     ChannelNumberingSettingsModel,
     DispatcharrSettingsModel,
     DisplaySettingsModel,
@@ -40,6 +42,7 @@ from .update_check import router as update_check_router
 router = APIRouter()
 
 # Include sub-routers
+router.include_router(api_router)
 router.include_router(dispatcharr_router)
 router.include_router(lifecycle_router)
 router.include_router(epg_router)
@@ -152,6 +155,7 @@ def get_settings():
 __all__ = [
     "router",
     "AllSettingsModel",
+    "APISettingsModel",
     "ChannelNumberingSettingsModel",
     "DispatcharrSettingsModel",
     "DisplaySettingsModel",

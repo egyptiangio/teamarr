@@ -1,18 +1,17 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
 import { Moon, Sun } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Toaster } from "sonner"
 import { useQuery } from "@tanstack/react-query"
-import { useUpdateCheckSettings, useCheckForUpdates } from "../hooks/useSettings"
+import { useUpdateCheckSettings, useCheckForUpdates, useAISettings } from "../hooks/useSettings"
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { to: "/", label: "Dashboard" },
   { to: "/templates", label: "Templates" },
   { to: "/teams", label: "Teams" },
   { to: "/event-groups", label: "Event Groups" },
   { to: "/epg", label: "EPG" },
   { to: "/channels", label: "Channels" },
-  { to: "/settings", label: "Settings" },
 ]
 
 async function fetchHealth(): Promise<{ status: string; version: string }> {
@@ -38,6 +37,17 @@ export function MainLayout() {
   const updateSettingsQuery = useUpdateCheckSettings()
   const updateInfoQuery = useCheckForUpdates(updateSettingsQuery.data?.enabled ?? false)
   const updateAvailable = updateInfoQuery.data?.update_available ?? false
+
+  // AI settings - show AI tab only if enabled
+  const { data: aiSettings } = useAISettings()
+  const navItems = useMemo(() => {
+    const items = [...BASE_NAV_ITEMS]
+    if (aiSettings?.enabled) {
+      items.push({ to: "/ai", label: "AI" })
+    }
+    items.push({ to: "/settings", label: "Settings" })
+    return items
+  }, [aiSettings?.enabled])
 
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark")
@@ -77,7 +87,7 @@ export function MainLayout() {
 
             {/* Nav Links */}
             <div className="flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}

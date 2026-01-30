@@ -19,6 +19,12 @@ _generation_lock = threading.Lock()
 _generation_running = False
 
 
+class AbortedError(Exception):
+    """Raised when generation is aborted by user."""
+
+    pass
+
+
 @dataclass
 class GenerationResult:
     """Result of a full EPG generation run."""
@@ -61,11 +67,15 @@ class GenerationResult:
 # (phase: str, percent: int, message: str, current: int, total: int, item_name: str) -> None
 ProgressCallback = Callable[[str, int, str, int, int, str], None]
 
+# () -> bool - returns True if abort requested
+AbortCheck = Callable[[], bool]
+
 
 def run_full_generation(
     db_factory: Callable[[], Any],
     dispatcharr_client: Any | None = None,
     progress_callback: ProgressCallback | None = None,
+    abort_check: AbortCheck | None = None,
 ) -> GenerationResult:
     """Run the complete EPG generation workflow.
 
@@ -192,6 +202,15 @@ def run_full_generation(
             result.error = f"Failed to acquire lock: {e}"
             return result
 
+    def check_abort() -> bool:
+        """Check if abort was requested and handle it."""
+        if abort_check and abort_check():
+            logger.info("[GENERATION] Abort requested, stopping...")
+            result.success = False
+            result.error = "Aborted by user"
+            return True
+        return False
+
     try:
         # Increment generation counter ONCE at start of full EPG run
         # This ensures all groups in this run share the same generation
@@ -216,6 +235,10 @@ def run_full_generation(
         if dispatcharr_client:
             result.m3u_refresh = _refresh_m3u_accounts(db_factory, dispatcharr_client)
 
+        # Check for abort before teams
+        if check_abort():
+            raise AbortedError("Generation aborted before team processing")
+
         # Step 2: Process all teams (5-50%) - 45% budget
         update_progress("teams", 5, "Processing teams...")
 
@@ -239,6 +262,10 @@ def run_full_generation(
         team_result = process_all_teams(db_factory=db_factory, progress_callback=team_progress)
         result.teams_processed = team_result.teams_processed
         result.teams_programmes = team_result.total_programmes
+
+        # Check for abort before event groups
+        if check_abort():
+            raise AbortedError("Generation aborted before event group processing")
 
         # Transition message - teams done, starting groups
         logger.info("[GENERATION] Sending transition message: teams -> groups")
@@ -281,10 +308,15 @@ def run_full_generation(
             progress_callback=group_progress,
             generation=current_generation,  # Share generation across all groups
             service=shared_service,  # Reuse service to maintain warm cache
+            abort_check=lambda: abort_check() if abort_check else False,
         )
         result.groups_processed = group_result.groups_processed
         result.groups_programmes = group_result.total_programmes
         result.programmes_total = result.teams_programmes + result.groups_programmes
+
+        # Check for abort before saving/dispatcharr sync
+        if check_abort():
+            raise AbortedError("Generation aborted before saving XMLTV")
 
         # Step 3b: Global channel reassignment (if enabled)
         # Applies when sorting_scope is "global" - interleaves channels by sport/league/time
@@ -605,19 +637,30 @@ def run_full_generation(
             logger.debug("[CACHE] Flushed %d entries to SQLite", flushed)
 
     except Exception as e:
-        logger.exception("[GENERATION] Failed: %s", e)
-        result.success = False
-        result.error = str(e)
+        # Check if this is an abort (either our AbortedError or one from event_group_processor)
+        is_abort = "AbortedError" in type(e).__name__ or "aborted" in str(e).lower()
+
+        if is_abort:
+            logger.info("[GENERATION] Aborted by user: %s", e)
+            result.success = False
+            result.error = "Aborted by user"
+            status = "aborted"
+        else:
+            logger.exception("[GENERATION] Failed: %s", e)
+            result.success = False
+            result.error = str(e)
+            status = "failed"
+
         result.completed_at = time.time()
         result.duration_seconds = round(result.completed_at - result.started_at, 1)
 
-        # Save failed run
+        # Save run with appropriate status
         try:
-            stats_run.complete(status="failed", error=str(e))
+            stats_run.complete(status=status, error=str(e))
             with db_factory() as conn:
                 save_run(conn, stats_run)
         except Exception as save_err:
-            logger.warning("[GENERATION] Failed to save failed run stats: %s", save_err)
+            logger.warning("[GENERATION] Failed to save run stats: %s", save_err)
 
     finally:
         # Always release the lock

@@ -272,6 +272,32 @@ class StreamOrderingSettingsUpdate(BaseModel):
 
 
 # =============================================================================
+# API SETTINGS
+# =============================================================================
+
+
+class APISettingsModel(BaseModel):
+    """API behavior settings."""
+
+    timeout: int = 10
+    retry_count: int = 3
+    soccer_cache_refresh_frequency: str = "weekly"
+    team_cache_refresh_frequency: str = "weekly"
+    # Startup cache refresh: 0 = disabled, >0 = refresh if cache older than N days
+    startup_cache_max_age_days: int = 1
+
+
+class APISettingsUpdate(BaseModel):
+    """Update model for API settings (all fields optional)."""
+
+    timeout: int | None = None
+    retry_count: int | None = None
+    soccer_cache_refresh_frequency: str | None = None
+    team_cache_refresh_frequency: str | None = None
+    startup_cache_max_age_days: int | None = None
+
+
+# =============================================================================
 # UPDATE CHECK SETTINGS
 # =============================================================================
 

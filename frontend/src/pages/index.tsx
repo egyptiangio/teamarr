@@ -1,3 +1,4 @@
+export { AI } from "./AI"
 export { Dashboard } from "./Dashboard"
 export { EventGroups } from "./EventGroups"
 export { EventGroupForm } from "./EventGroupForm"

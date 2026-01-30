@@ -1,7 +1,6 @@
 """FastAPI application factory - Clean V2 API with React UI."""
 
 import logging
-import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from teamarr.api.routes import (
+    ai,
     aliases,
     backup,
     cache,
@@ -96,33 +96,40 @@ def _run_ufc_segment_migration(db_factory, migration_name: str = "ufc_segment_fi
             """)
 
             # Check if migration already ran
-            cursor = conn.execute("SELECT 1 FROM migrations WHERE name = ?", (migration_name,))
+            cursor = conn.execute(
+                "SELECT 1 FROM migrations WHERE name = ?", (migration_name,)
+            )
             if cursor.fetchone():
                 return  # Already migrated
 
             # Clear UFC event cache entries
-            cursor = conn.execute("DELETE FROM service_cache WHERE cache_key LIKE 'events:ufc:%'")
+            cursor = conn.execute(
+                "DELETE FROM service_cache WHERE cache_key LIKE 'events:ufc:%'"
+            )
             events_cleared = cursor.rowcount
 
             # Delete UFC managed channels (will be recreated with segment IDs)
-            cursor = conn.execute("DELETE FROM managed_channels WHERE league = 'ufc'")
+            cursor = conn.execute(
+                "DELETE FROM managed_channels WHERE league = 'ufc'"
+            )
             channels_cleared = cursor.rowcount
 
             # Clear UFC fingerprint cache
-            cursor = conn.execute("DELETE FROM stream_match_cache WHERE league = 'ufc'")
+            cursor = conn.execute(
+                "DELETE FROM stream_match_cache WHERE league = 'ufc'"
+            )
             fingerprints_cleared = cursor.rowcount
 
             # Mark migration as done
-            conn.execute("INSERT INTO migrations (name) VALUES (?)", (migration_name,))
+            conn.execute(
+                "INSERT INTO migrations (name) VALUES (?)", (migration_name,)
+            )
             conn.commit()
 
             if events_cleared or channels_cleared or fingerprints_cleared:
                 logger.info(
                     "[MIGRATION] %s: cleared %d events, %d channels, %d fingerprints",
-                    migration_name,
-                    events_cleared,
-                    channels_cleared,
-                    fingerprints_cleared,
+                    migration_name, events_cleared, channels_cleared, fingerprints_cleared,
                 )
     except Exception as e:
         logger.warning("[MIGRATION] %s failed: %s", migration_name, e)
@@ -157,20 +164,40 @@ def _run_startup_tasks():
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v2")
         _run_ufc_segment_migration(get_db, "ufc_segment_fix_v3")
 
-        # Refresh team/league cache (this takes time)
-        skip_cache = os.getenv("SKIP_CACHE_REFRESH", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        if skip_cache:
-            logger.info("[STARTUP] Cache refresh skipped (SKIP_CACHE_REFRESH set)")
+        # Refresh team/league cache based on startup_cache_max_age_days setting
+        # 0 = disabled (never auto-refresh), >0 = refresh if older than N days
+        startup_state.set_phase(StartupPhase.REFRESHING_CACHE)
+        from teamarr.database.settings import get_all_settings
+
+        with get_db() as conn:
+            all_settings = get_all_settings(conn)
+        max_age_days = all_settings.api.startup_cache_max_age_days
+
+        cache_service = create_cache_service(get_db)
+        stats = cache_service.get_stats()
+
+        if max_age_days == 0:
+            # Disabled - only refresh if cache is completely empty
+            if stats.is_empty:
+                logger.info("[STARTUP] Cache is empty, refreshing...")
+                cache_service.refresh()
+                logger.info("[STARTUP] Team/league cache refreshed")
+            else:
+                logger.info("[STARTUP] Startup cache refresh disabled, skipping (cache has %d teams)", stats.teams_count)
         else:
-            startup_state.set_phase(StartupPhase.REFRESHING_CACHE)
-            cache_service = create_cache_service(get_db)
-            logger.info("[STARTUP] Refreshing team/league cache on startup...")
-            cache_service.refresh()
-            logger.info("[STARTUP] Team/league cache refreshed")
+            # Check if cache is older than max_age_days
+            from datetime import datetime, timedelta, timezone
+            is_stale = False
+            if stats.last_refresh:
+                age = datetime.now(timezone.utc) - stats.last_refresh
+                is_stale = age > timedelta(days=max_age_days)
+
+            if stats.is_empty or is_stale:
+                logger.info("[STARTUP] Cache is stale (max age: %d days) or empty, refreshing...", max_age_days)
+                cache_service.refresh()
+                logger.info("[STARTUP] Team/league cache refreshed")
+            else:
+                logger.info("[STARTUP] Cache is fresh (last refresh: %s, max age: %d days), skipping refresh", stats.last_refresh, max_age_days)
 
         # Reload league mapping service to pick up new league names from cache
         league_mapping_service.reload()
@@ -201,9 +228,7 @@ def _run_startup_tasks():
         try:
             factory = get_factory(get_db)
             if factory.is_configured:
-                logger.info(
-                    "[STARTUP] Dispatcharr configured, connection will be established on first use"
-                )
+                logger.info("[STARTUP] Dispatcharr configured, connection will be established on first use")
             else:
                 logger.info("[STARTUP] Dispatcharr not configured")
         except Exception as e:
@@ -227,9 +252,7 @@ def _run_startup_tasks():
                     factory = get_factory()
                     connection = factory.get_connection()
                 except Exception as e:
-                    logger.debug(
-                        "[STARTUP] Dispatcharr connection unavailable for scheduler: %s", e
-                    )
+                    logger.debug("[STARTUP] Dispatcharr connection unavailable for scheduler: %s", e)
 
                 scheduler_service = create_scheduler_service(get_db, connection)
                 cron_expr = epg_settings.cron_expression or "0 * * * *"
@@ -359,6 +382,7 @@ def create_app() -> FastAPI:
     app.include_router(dispatcharr.router, prefix="/api/v1", tags=["Dispatcharr"])
     app.include_router(migration.router, prefix="/api/v1", tags=["Migration"])
     app.include_router(backup.router, prefix="/api/v1", tags=["Backup"])
+    app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI"])
 
     # Serve React UI static files
     frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
