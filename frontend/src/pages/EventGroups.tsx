@@ -59,6 +59,7 @@ import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
+import { StreamTimezoneSelector } from "@/components/StreamTimezoneSelector"
 import { getUniqueSports, filterLeaguesBySport, getLeagueDisplayName, SPORT_EMOJIS } from "@/lib/utils"
 
 // Fetch Dispatcharr channel groups for name lookup
@@ -206,6 +207,9 @@ export function EventGroups() {
   const [bulkEditStreamProfileEnabled, setBulkEditStreamProfileEnabled] = useState(false)
   const [bulkEditStreamProfileId, setBulkEditStreamProfileId] = useState<number | null>(null)
   const [bulkEditUseDefaultStreamProfile, setBulkEditUseDefaultStreamProfile] = useState(true)
+  const [bulkEditStreamTimezoneEnabled, setBulkEditStreamTimezoneEnabled] = useState(false)
+  const [bulkEditStreamTimezone, setBulkEditStreamTimezone] = useState<string | null>(null)
+  const [bulkEditClearStreamTimezone, setBulkEditClearStreamTimezone] = useState(false)
   const [bulkEditSortOrderEnabled, setBulkEditSortOrderEnabled] = useState(false)
   const [bulkEditSortOrder, setBulkEditSortOrder] = useState<string>("time")
   const [bulkEditOverlapHandlingEnabled, setBulkEditOverlapHandlingEnabled] = useState(false)
@@ -690,6 +694,9 @@ export function EventGroups() {
     setBulkEditProfilesEnabled(false)
     setBulkEditProfileIds([])
     setBulkEditUseDefaultProfiles(true)
+    setBulkEditStreamTimezoneEnabled(false)
+    setBulkEditStreamTimezone(null)
+    setBulkEditClearStreamTimezone(false)
     setBulkEditSortOrderEnabled(false)
     setBulkEditSortOrder("time")
     setBulkEditOverlapHandlingEnabled(false)
@@ -708,12 +715,14 @@ export function EventGroups() {
       channel_group_mode?: 'static' | 'sport' | 'league'
       channel_profile_ids?: (number | string)[]
       stream_profile_id?: number | null
+      stream_timezone?: string | null
       channel_sort_order?: string
       overlap_handling?: string
       clear_template?: boolean
       clear_channel_group_id?: boolean
       clear_channel_profile_ids?: boolean
       clear_stream_profile_id?: boolean
+      clear_stream_timezone?: boolean
     } = { group_ids: ids }
 
     if (bulkEditLeaguesEnabled && bulkEditLeagues.length > 0) {
@@ -752,6 +761,15 @@ export function EventGroups() {
       } else {
         // Specific stream profile selected
         request.stream_profile_id = bulkEditStreamProfileId
+      }
+    }
+    if (bulkEditStreamTimezoneEnabled) {
+      if (bulkEditClearStreamTimezone) {
+        // Reset to auto-detect from stream
+        request.clear_stream_timezone = true
+      } else if (bulkEditStreamTimezone) {
+        // Specific timezone selected
+        request.stream_timezone = bulkEditStreamTimezone
       }
     }
     if (bulkEditSortOrderEnabled) {
@@ -2055,6 +2073,43 @@ export function EventGroups() {
               )}
             </div>
 
+            {/* Stream Timezone */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={bulkEditStreamTimezoneEnabled}
+                  onCheckedChange={(checked) => setBulkEditStreamTimezoneEnabled(!!checked)}
+                />
+                <span className="text-sm font-medium">Stream Timezone</span>
+              </label>
+              {bulkEditStreamTimezoneEnabled && (
+                <div className="space-y-2 pl-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={bulkEditClearStreamTimezone}
+                      onCheckedChange={(checked) => {
+                        setBulkEditClearStreamTimezone(!!checked)
+                        if (checked) {
+                          setBulkEditStreamTimezone(null)
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-normal">
+                      Auto-detect from stream
+                    </span>
+                  </label>
+                  <StreamTimezoneSelector
+                    value={bulkEditStreamTimezone}
+                    onChange={setBulkEditStreamTimezone}
+                    disabled={bulkEditClearStreamTimezone}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Timezone used in stream names for date matching
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Channel Sort Order (multi-league only) */}
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -2106,7 +2161,7 @@ export function EventGroups() {
             </Button>
             <Button
               onClick={handleBulkEdit}
-              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled && !bulkEditSortOrderEnabled && !bulkEditOverlapHandlingEnabled)}
+              disabled={bulkUpdateMutation.isPending || (!bulkEditLeaguesEnabled && !bulkEditTemplateEnabled && !bulkEditChannelGroupEnabled && !bulkEditProfilesEnabled && !bulkEditStreamTimezoneEnabled && !bulkEditSortOrderEnabled && !bulkEditOverlapHandlingEnabled)}
             >
               {bulkUpdateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Apply to {selectedIds.size} groups

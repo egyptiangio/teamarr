@@ -1648,6 +1648,7 @@ class EventGroupProcessor:
             custom_regex_league=group.custom_regex_league,
             custom_regex_league_enabled=group.custom_regex_league_enabled,
             shared_events=self._shared_events,  # Reuse events across groups in same run
+            stream_timezone=group.stream_timezone,  # TZ for interpreting stream dates
         )
 
         result = matcher.match_all(

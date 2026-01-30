@@ -25,6 +25,7 @@ import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
+import { StreamTimezoneSelector } from "@/components/StreamTimezoneSelector"
 import { TestPatternsModal, type PatternState } from "@/components/TestPatternsModal"
 
 // Group mode
@@ -191,6 +192,7 @@ export function EventGroupForm() {
         channel_group_mode: group.channel_group_mode || "static",
         channel_profile_ids: group.channel_profile_ids,  // Keep null = "use default"
         stream_profile_id: group.stream_profile_id,  // Keep null = "use global default"
+        stream_timezone: group.stream_timezone,  // Keep null = "auto-detect from stream"
         duplicate_event_handling: group.duplicate_event_handling,
         channel_assignment_mode: group.channel_assignment_mode,
         sort_order: group.sort_order,
@@ -345,6 +347,9 @@ export function EventGroupForm() {
           }
           if (shouldClear(group.display_name, formData.display_name)) {
             updateData.clear_display_name = true
+          }
+          if (shouldClear(group.stream_timezone, formData.stream_timezone)) {
+            updateData.clear_stream_timezone = true
           }
         }
 
@@ -1038,6 +1043,18 @@ export function EventGroupForm() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     How streams are processed (ffmpeg, VLC, proxy, etc). Leave empty to use global default.
+                  </p>
+                </div>
+
+                {/* Stream Timezone */}
+                <div className="mt-4 pt-4 border-t">
+                  <Label className="text-sm font-medium mb-2 block">Stream Timezone</Label>
+                  <StreamTimezoneSelector
+                    value={formData.stream_timezone ?? null}
+                    onChange={(tz) => setFormData({ ...formData, stream_timezone: tz })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Timezone used in stream names (e.g., "Lakers @ Celtics 9:00 PM ET"). Used for date matching when your provider uses a different timezone than your local time.
                   </p>
                 </div>
             </CardContent>

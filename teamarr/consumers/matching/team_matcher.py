@@ -49,12 +49,11 @@ class MatchContext:
     target_date: date
     generation: int
     user_tz: ZoneInfo
+    classified: ClassifiedStream  # From classifier
 
-    # From classifier
-    classified: ClassifiedStream
-
-    # Extracted team names (from classifier)
-    team1: str | None = None
+    # Optional fields (must come after required fields)
+    stream_tz: ZoneInfo | None = None  # TZ for stream dates
+    team1: str | None = None  # Extracted team names (from classifier)
     team2: str | None = None
 
     # Sport durations for ongoing event detection (hours)
@@ -140,6 +139,7 @@ class TeamMatcher:
         generation: int,
         user_tz: ZoneInfo,
         sport_durations: dict[str, float] | None = None,
+        stream_tz: ZoneInfo | None = None,
     ) -> MatchOutcome:
         """Single-league matching - search only the specified league.
 
@@ -154,6 +154,7 @@ class TeamMatcher:
             generation: Cache generation counter
             user_tz: User timezone for date validation
             sport_durations: Sport duration settings for ongoing event detection
+            stream_tz: Timezone for interpreting stream dates (from stream or group)
 
         Returns:
             MatchOutcome with result
@@ -172,6 +173,7 @@ class TeamMatcher:
             target_date=target_date,
             generation=generation,
             user_tz=user_tz,
+            stream_tz=stream_tz,
             classified=classified,
             team1=classified.team1,
             team2=classified.team2,
@@ -225,6 +227,7 @@ class TeamMatcher:
         user_tz: ZoneInfo,
         sport_durations: dict[str, float] | None = None,
         prefetched_events: dict[str, list["Event"]] | None = None,
+        stream_tz: ZoneInfo | None = None,
     ) -> MatchOutcome:
         """Multi-league matching with league hint detection.
 
@@ -248,6 +251,7 @@ class TeamMatcher:
             user_tz: User timezone for date validation
             sport_durations: Sport duration settings for ongoing event detection
             prefetched_events: Optional pre-fetched events by league (for performance)
+            stream_tz: Timezone for interpreting stream dates (from stream or group)
 
         Returns:
             MatchOutcome with result
@@ -266,6 +270,7 @@ class TeamMatcher:
             target_date=target_date,
             generation=generation,
             user_tz=user_tz,
+            stream_tz=stream_tz,
             classified=classified,
             team1=classified.team1,
             team2=classified.team2,
@@ -472,8 +477,12 @@ class TeamMatcher:
             event_date = event.start_time.astimezone(ctx.user_tz).date()
 
             # Check for date mismatch from stream (if extracted)
+            # Use stream_tz if available - the date in the stream name is in the provider's timezone
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                # Get event date in the stream's timezone (or user_tz as fallback)
+                compare_tz = ctx.stream_tz or ctx.user_tz
+                event_date_in_stream_tz = event.start_time.astimezone(compare_tz).date()
+                if ctx.classified.normalized.extracted_date != event_date_in_stream_tz:
                     continue
 
             # Check for sport mismatch from stream (if detected)
@@ -499,14 +508,16 @@ class TeamMatcher:
                 abs_distance = abs(days_from_target)
 
                 # Calculate time proximity for doubleheader disambiguation
+                # Use stream_tz if available - the time in stream name is in provider's timezone
                 time_distance = 999999
                 if ctx.classified.normalized.extracted_time:
-                    ref_date = event.start_time.astimezone(ctx.user_tz).date()
+                    time_tz = ctx.stream_tz or ctx.user_tz
+                    ref_date = event.start_time.astimezone(time_tz).date()
                     stream_dt = datetime.combine(
-                        ref_date, ctx.classified.normalized.extracted_time, tzinfo=ctx.user_tz
+                        ref_date, ctx.classified.normalized.extracted_time, tzinfo=time_tz
                     )
                     time_distance = abs(
-                        int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
+                        int((event.start_time.astimezone(time_tz) - stream_dt).total_seconds())
                     )
 
                 # Ranking: score > time proximity > future over past > date proximity
@@ -617,8 +628,12 @@ class TeamMatcher:
             event_date = event.start_time.astimezone(ctx.user_tz).date()
 
             # Check for date mismatch from stream (if extracted)
+            # Use stream_tz if available - the date in the stream name is in the provider's timezone
             if ctx.classified.normalized.extracted_date:
-                if ctx.classified.normalized.extracted_date != event_date:
+                # Get event date in the stream's timezone (or user_tz as fallback)
+                compare_tz = ctx.stream_tz or ctx.user_tz
+                event_date_in_stream_tz = event.start_time.astimezone(compare_tz).date()
+                if ctx.classified.normalized.extracted_date != event_date_in_stream_tz:
                     continue
 
             # Check for sport mismatch from stream (if detected)
@@ -644,14 +659,16 @@ class TeamMatcher:
                 abs_distance = abs(days_from_target)
 
                 # Calculate time proximity for doubleheader disambiguation
+                # Use stream_tz if available - the time in stream name is in provider's timezone
                 time_distance = 999999
                 if ctx.classified.normalized.extracted_time:
-                    ref_date = event.start_time.astimezone(ctx.user_tz).date()
+                    time_tz = ctx.stream_tz or ctx.user_tz
+                    ref_date = event.start_time.astimezone(time_tz).date()
                     stream_dt = datetime.combine(
-                        ref_date, ctx.classified.normalized.extracted_time, tzinfo=ctx.user_tz
+                        ref_date, ctx.classified.normalized.extracted_time, tzinfo=time_tz
                     )
                     time_distance = abs(
-                        int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
+                        int((event.start_time.astimezone(time_tz) - stream_dt).total_seconds())
                     )
 
                 # Ranking: score > time proximity > future over past > date proximity
@@ -1051,6 +1068,7 @@ class TeamMatcher:
                     target_date=ctx.target_date,
                     generation=ctx.generation,
                     user_tz=ctx.user_tz,
+                    stream_tz=ctx.stream_tz,
                     classified=ctx.classified,
                     team1=canonical1,
                     team2=canonical2,

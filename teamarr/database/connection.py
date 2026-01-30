@@ -1078,6 +1078,17 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("[MIGRATE] Schema upgraded to version 46 (stream profile support)")
         current_version = 46
 
+    # ==========================================================================
+    # v47: Stream Timezone Support
+    # ==========================================================================
+    # Adds stream_timezone to event_epg_groups for interpreting dates/times in stream names
+    # when providers use a different timezone than the user's local timezone
+    if current_version < 47:
+        _add_column_if_not_exists(conn, "event_epg_groups", "stream_timezone", "TEXT")
+        conn.execute("UPDATE settings SET schema_version = 47 WHERE id = 1")
+        logger.info("[MIGRATE] Schema upgraded to version 47 (stream timezone support)")
+        current_version = 47
+
 
 # =============================================================================
 # LEGACY MIGRATION HELPER FUNCTIONS

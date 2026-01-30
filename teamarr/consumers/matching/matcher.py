@@ -168,6 +168,7 @@ class StreamMatcher:
         custom_regex_league_enabled: bool = False,
         days_ahead: int | None = None,
         shared_events: dict[str, tuple[list[Event], bool]] | None = None,
+        stream_timezone: str | None = None,
     ):
         """Initialize the matcher.
 
@@ -194,6 +195,7 @@ class StreamMatcher:
                            across multiple matchers in a single generation run.
                            Values are (events, was_cache_only) tuples where was_cache_only
                            indicates if the result came from a cache-only lookup.
+            stream_timezone: IANA timezone for interpreting stream dates (group setting)
         """
         self._service = service
         self._db_factory = db_factory
@@ -203,6 +205,14 @@ class StreamMatcher:
         self._include_final_events = include_final_events
         self._sport_durations = sport_durations or {}
         self._user_tz = user_tz or get_user_timezone()
+
+        # Stream timezone (group setting) - convert IANA string to ZoneInfo
+        self._stream_tz: ZoneInfo | None = None
+        if stream_timezone:
+            try:
+                self._stream_tz = ZoneInfo(stream_timezone)
+            except (KeyError, ValueError):
+                logger.warning("[MATCHER] Invalid stream_timezone: %s", stream_timezone)
 
         # Load days_ahead from settings if not provided
         if days_ahead is None:
@@ -497,6 +507,15 @@ class StreamMatcher:
         target_date: date,
     ) -> MatchOutcome:
         """Match a team-vs-team stream."""
+        # Determine effective stream timezone for date/time comparison
+        # Priority: extracted TZ from stream > group setting > None (use user_tz as fallback)
+        stream_tz = self._stream_tz
+        if classified.normalized.extracted_tz:
+            try:
+                stream_tz = ZoneInfo(classified.normalized.extracted_tz)
+            except (KeyError, ValueError):
+                pass  # Keep group setting or None
+
         # Determine if single-league or multi-league matching
         if len(self._search_leagues) == 1:
             league = self._search_leagues[0]
@@ -509,6 +528,7 @@ class StreamMatcher:
                 generation=self._generation,
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
+                stream_tz=stream_tz,
             )
         else:
             return self._team_matcher.match_multi_league(
@@ -521,6 +541,7 @@ class StreamMatcher:
                 user_tz=self._user_tz,
                 sport_durations=self._sport_durations,
                 prefetched_events=self._prefetched_events,
+                stream_tz=stream_tz,
             )
 
     def _match_event_card(

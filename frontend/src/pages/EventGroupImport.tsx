@@ -21,6 +21,7 @@ import { Loader2, Tv, Eye, Plus, AlertCircle, Info, Check } from "lucide-react"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
+import { StreamTimezoneSelector } from "@/components/StreamTimezoneSelector"
 
 // Types
 interface M3UAccount {
@@ -120,6 +121,7 @@ export function EventGroupImport() {
   const [bulkChannelGroupMode, setBulkChannelGroupMode] = useState<'static' | 'sport' | 'league'>('static')
   const [bulkChannelProfileIds, setBulkChannelProfileIds] = useState<(number | string)[]>([])
   const [bulkStreamProfileId, setBulkStreamProfileId] = useState<number | null>(null)
+  const [bulkStreamTimezone, setBulkStreamTimezone] = useState<string | null>(null)
   const [bulkChannelSortOrder, setBulkChannelSortOrder] = useState<string>("time")
   const [bulkOverlapHandling, setBulkOverlapHandling] = useState<string>("add_stream")
   const [bulkEnabled, setBulkEnabled] = useState(true)
@@ -275,6 +277,7 @@ export function EventGroupImport() {
           channel_group_mode: bulkChannelGroupMode,
           channel_profile_ids: bulkChannelProfileIds.length > 0 ? bulkChannelProfileIds : null,
           stream_profile_id: bulkStreamProfileId,
+          stream_timezone: bulkStreamTimezone,
           channel_sort_order: bulkChannelSortOrder,
           overlap_handling: bulkOverlapHandling,
           enabled: bulkEnabled,
@@ -308,6 +311,7 @@ export function EventGroupImport() {
     setBulkChannelGroupId(null)
     setBulkChannelGroupMode('static')
     setBulkChannelProfileIds([])
+    setBulkStreamTimezone(null)
     setBulkChannelSortOrder("time")
     setBulkOverlapHandling("add_stream")
     setBulkEnabled(true)
@@ -789,6 +793,13 @@ export function EventGroupImport() {
                   <StreamProfileSelector
                     value={bulkStreamProfileId}
                     onChange={setBulkStreamProfileId}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Stream Timezone</Label>
+                  <StreamTimezoneSelector
+                    value={bulkStreamTimezone}
+                    onChange={setBulkStreamTimezone}
                   />
                 </div>
                 <div className="space-y-2">

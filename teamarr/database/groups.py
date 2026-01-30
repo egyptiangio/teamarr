@@ -29,6 +29,7 @@ class EventEPGGroup:
         default_factory=list
     )  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -126,6 +127,7 @@ def _row_to_group(row) -> EventEPGGroup:
         else "static",
         channel_profile_ids=channel_profile_ids,
         stream_profile_id=row["stream_profile_id"] if "stream_profile_id" in row.keys() else None,
+        stream_timezone=row["stream_timezone"] if "stream_timezone" in row.keys() else None,
         duplicate_event_handling=row["duplicate_event_handling"] or "consolidate",
         channel_assignment_mode=row["channel_assignment_mode"] or "auto",
         sort_order=row["sort_order"] or 0,
@@ -304,6 +306,7 @@ def create_group(
     channel_group_mode: str = "static",
     channel_profile_ids: list[int | str] | None = None,
     stream_profile_id: int | None = None,
+    stream_timezone: str | None = None,
     duplicate_event_handling: str = "consolidate",
     channel_assignment_mode: str = "auto",
     sort_order: int = 0,
@@ -374,7 +377,7 @@ def create_group(
         """INSERT INTO event_epg_groups (
             name, display_name, leagues, group_mode, template_id, channel_start_number,
             channel_group_id, channel_group_mode, channel_profile_ids, stream_profile_id,
-            duplicate_event_handling, channel_assignment_mode, sort_order,
+            stream_timezone, duplicate_event_handling, channel_assignment_mode, sort_order,
             total_stream_count, parent_group_id, m3u_group_id, m3u_group_name,
             m3u_account_id, m3u_account_name,
             stream_include_regex, stream_include_regex_enabled,
@@ -386,7 +389,7 @@ def create_group(
             skip_builtin_filter,
             include_teams, exclude_teams, team_filter_mode,
             channel_sort_order, overlap_handling, enabled
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # noqa: E501
         (
             name,
             display_name,
@@ -398,6 +401,7 @@ def create_group(
             channel_group_mode,
             json.dumps(channel_profile_ids) if channel_profile_ids else None,
             stream_profile_id,
+            stream_timezone,
             duplicate_event_handling,
             channel_assignment_mode,
             sort_order,
@@ -451,6 +455,7 @@ def update_group(
     channel_group_mode: str | None = None,
     channel_profile_ids: list[int | str] | None = None,
     stream_profile_id: int | None = None,
+    stream_timezone: str | None = None,
     duplicate_event_handling: str | None = None,
     channel_assignment_mode: str | None = None,
     sort_order: int | None = None,
@@ -489,6 +494,7 @@ def update_group(
     clear_channel_group_id: bool = False,
     clear_channel_profile_ids: bool = False,
     clear_stream_profile_id: bool = False,
+    clear_stream_timezone: bool = False,
     clear_parent_group_id: bool = False,
     clear_m3u_group_id: bool = False,
     clear_m3u_group_name: bool = False,
@@ -571,6 +577,12 @@ def update_group(
         values.append(stream_profile_id)
     elif clear_stream_profile_id:
         updates.append("stream_profile_id = NULL")
+
+    if stream_timezone is not None:
+        updates.append("stream_timezone = ?")
+        values.append(stream_timezone)
+    elif clear_stream_timezone:
+        updates.append("stream_timezone = NULL")
 
     if duplicate_event_handling is not None:
         updates.append("duplicate_event_handling = ?")

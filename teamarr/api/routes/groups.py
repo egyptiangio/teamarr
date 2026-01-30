@@ -80,6 +80,7 @@ class GroupCreate(BaseModel):
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -131,6 +132,7 @@ class GroupUpdate(BaseModel):
     channel_group_mode: str | None = None  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str | None = None
     channel_assignment_mode: str | None = None
     sort_order: int | None = None
@@ -170,6 +172,7 @@ class GroupUpdate(BaseModel):
     clear_channel_group_id: bool = False
     clear_channel_profile_ids: bool = False
     clear_stream_profile_id: bool = False
+    clear_stream_timezone: bool = False
     clear_m3u_group_id: bool = False
     clear_m3u_group_name: bool = False
     clear_m3u_account_id: bool = False
@@ -204,6 +207,7 @@ class GroupResponse(BaseModel):
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] = []  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_assignment_mode: str = "auto"
     sort_order: int = 0
@@ -313,6 +317,7 @@ class BulkGroupSettings(BaseModel):
     channel_group_mode: str = "static"  # "static", "sport", "league"
     channel_profile_ids: list[str | int] | None = None  # IDs or "{sport}", "{league}"
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str = "consolidate"
     channel_sort_order: str = "time"
     overlap_handling: str = "add_stream"
@@ -367,6 +372,7 @@ class BulkGroupUpdateRequest(BaseModel):
     channel_group_mode: str | None = None
     channel_profile_ids: list[str | int] | None = None
     stream_profile_id: int | None = None  # Stream profile (overrides global default)
+    stream_timezone: str | None = None  # Timezone for stream datetime parsing
     duplicate_event_handling: str | None = None
     channel_sort_order: str | None = None
     overlap_handling: str | None = None
@@ -377,6 +383,7 @@ class BulkGroupUpdateRequest(BaseModel):
     clear_channel_group_id: bool = False
     clear_channel_profile_ids: bool = False
     clear_stream_profile_id: bool = False
+    clear_stream_timezone: bool = False
 
     @field_validator("channel_profile_ids", mode="before")
     @classmethod
@@ -623,6 +630,7 @@ def create_group(request: GroupCreate):
             channel_group_mode=request.channel_group_mode,
             channel_profile_ids=request.channel_profile_ids,
             stream_profile_id=request.stream_profile_id,
+            stream_timezone=request.stream_timezone,
             duplicate_event_handling=request.duplicate_event_handling,
             channel_assignment_mode=request.channel_assignment_mode,
             sort_order=request.sort_order,
@@ -673,6 +681,7 @@ def create_group(request: GroupCreate):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,
@@ -770,6 +779,7 @@ def create_groups_bulk(request: BulkGroupCreateRequest):
                     channel_group_mode=request.settings.channel_group_mode,
                     channel_profile_ids=request.settings.channel_profile_ids,
                     stream_profile_id=request.settings.stream_profile_id,
+                    stream_timezone=request.settings.stream_timezone,
                     duplicate_event_handling=request.settings.duplicate_event_handling,
                     channel_sort_order=request.settings.channel_sort_order,
                     overlap_handling=request.settings.overlap_handling,
@@ -862,6 +872,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     channel_group_mode=request.channel_group_mode,
                     channel_profile_ids=request.channel_profile_ids,
                     stream_profile_id=request.stream_profile_id,
+                    stream_timezone=request.stream_timezone,
                     duplicate_event_handling=request.duplicate_event_handling,
                     channel_sort_order=request.channel_sort_order,
                     overlap_handling=request.overlap_handling,
@@ -870,6 +881,7 @@ def update_groups_bulk(request: BulkGroupUpdateRequest):
                     clear_channel_group_id=request.clear_channel_group_id,
                     clear_channel_profile_ids=request.clear_channel_profile_ids,
                     clear_stream_profile_id=request.clear_stream_profile_id,
+                    clear_stream_timezone=request.clear_stream_timezone,
                 )
 
                 results.append(
@@ -946,6 +958,7 @@ def get_group_by_id(group_id: int):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,
@@ -1052,6 +1065,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             channel_group_mode=request.channel_group_mode,
             channel_profile_ids=request.channel_profile_ids,
             stream_profile_id=request.stream_profile_id,
+            stream_timezone=request.stream_timezone,
             duplicate_event_handling=request.duplicate_event_handling,
             channel_assignment_mode=request.channel_assignment_mode,
             sort_order=request.sort_order,
@@ -1090,6 +1104,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
             clear_channel_group_id=request.clear_channel_group_id,
             clear_channel_profile_ids=request.clear_channel_profile_ids,
             clear_stream_profile_id=request.clear_stream_profile_id,
+            clear_stream_timezone=request.clear_stream_timezone,
             clear_m3u_group_id=request.clear_m3u_group_id,
             clear_m3u_group_name=request.clear_m3u_group_name,
             clear_m3u_account_id=request.clear_m3u_account_id,
@@ -1126,6 +1141,7 @@ def update_group_by_id(group_id: int, request: GroupUpdate):
         channel_group_mode=group.channel_group_mode,
         channel_profile_ids=group.channel_profile_ids,
         stream_profile_id=group.stream_profile_id,
+        stream_timezone=group.stream_timezone,
         duplicate_event_handling=group.duplicate_event_handling,
         channel_assignment_mode=group.channel_assignment_mode,
         sort_order=group.sort_order,

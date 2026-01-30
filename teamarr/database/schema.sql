@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS settings (
     update_auto_detect_branch BOOLEAN DEFAULT 1,         -- Auto-detect branch from version string
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 46
+    schema_version INTEGER DEFAULT 47
 );
 
 -- Insert default settings
@@ -339,6 +339,7 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
     channel_group_mode TEXT DEFAULT 'static', -- 'static' or pattern like '{sport}', '{league}', '{sport} | {league}'
     channel_profile_ids TEXT,                -- JSON array: profile IDs and/or patterns like "{sport}", "{league}"
     stream_profile_id INTEGER,               -- Stream profile for transcoding/proxy (overrides global default)
+    stream_timezone TEXT,                    -- Timezone for interpreting dates/times in stream names (e.g., 'America/New_York')
 
     -- Duplicate Event Handling (uses global lifecycle settings)
     duplicate_event_handling TEXT DEFAULT 'consolidate'

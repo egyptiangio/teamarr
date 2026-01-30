@@ -30,6 +30,7 @@ class NormalizedStream:
     # Extracted metadata (may be None)
     extracted_date: date | None = None
     extracted_time: time | None = None
+    extracted_tz: str | None = None  # IANA timezone (e.g., 'America/New_York')
     league_hint: str | None = None
     provider_prefix: str | None = None
 
@@ -174,17 +175,128 @@ DATE_PATTERNS = [
     (rf"\b({_MONTHS})[a-z]*\s+(\d{{1,2}})(?:st|nd|rd|th)?(?!:)\b", "DATE_MASK"),
 ]
 
-# Time patterns to extract and mask
+# Time patterns to extract and mask (with optional TZ suffix)
+# TZ pattern captures timezone abbreviations - comprehensive list for sports broadcasting
+# Grouped by region for maintainability
+_TZ_ABBREVS = (
+    r"E[SD]?T|P[SD]?T|C[SD]?T|M[SD]?T"  # US/Canada main zones
+    r"|AK[SD]?T|H[AS]T|A[SD]T|N[SD]?T"  # Alaska, Hawaii, Atlantic, Newfoundland
+    r"|GMT|UTC|Z"  # Universal
+    r"|BST|WET|WEST|IST|CET|CEST|MET|MEST|EET|EEST|MSK"  # Europe
+    r"|AE[SD]T|AC[SD]T|AW[SD]?T|AET|ACT|AWT"  # Australia
+    r"|JST|KST|HKT|SGT|MYT|GST"  # Asia
+    r"|BRT|BRST|ART"  # South America
+    r"|NZ[SD]?T|NZT"  # New Zealand
+    r"|SAST"  # Africa
+)
 TIME_PATTERNS = [
-    # 7:00 PM, 7:00PM, 19:00, 15:00:05
-    (r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?\b", "TIME_MASK"),
-    # 7PM, 7 PM
-    (r"\b(\d{1,2})\s*(AM|PM|am|pm)\b", "TIME_MASK"),
+    # 7:00 PM ET, 7:00PM EST, 19:00 GMT - time with optional TZ
+    (rf"\b(\d{{1,2}}):(\d{{2}})(?::(\d{{2}}))?\s*(AM|PM|am|pm)?\s*({_TZ_ABBREVS})?\b", "TIME_MASK"),
+    # 7PM ET, 7 PM EST
+    (rf"\b(\d{{1,2}})\s*(AM|PM|am|pm)\s*({_TZ_ABBREVS})?\b", "TIME_MASK"),
 ]
 
+# Standalone TZ pattern (after time has been masked, e.g., "@ ET" at end)
+TZ_STANDALONE_PATTERN = rf"\s*@?\s*({_TZ_ABBREVS})\s*$"
 
-def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]:
-    """Extract date/time from stream name and mask for separator detection.
+# Map timezone abbreviations to IANA timezone names
+TZ_ABBREVIATION_MAP = {
+    # === North America ===
+    # US/Canada Eastern
+    "ET": "America/New_York",
+    "EST": "America/New_York",
+    "EDT": "America/New_York",
+    # US/Canada Central
+    "CT": "America/Chicago",
+    "CST": "America/Chicago",
+    "CDT": "America/Chicago",
+    # US/Canada Mountain
+    "MT": "America/Denver",
+    "MST": "America/Denver",
+    "MDT": "America/Denver",
+    # US/Canada Pacific
+    "PT": "America/Los_Angeles",
+    "PST": "America/Los_Angeles",
+    "PDT": "America/Los_Angeles",
+    # Alaska
+    "AKT": "America/Anchorage",
+    "AKST": "America/Anchorage",
+    "AKDT": "America/Anchorage",
+    # Hawaii
+    "HST": "Pacific/Honolulu",
+    "HAT": "Pacific/Honolulu",
+    # Atlantic (Canada)
+    "AT": "America/Halifax",
+    "AST": "America/Halifax",
+    "ADT": "America/Halifax",
+    # Newfoundland
+    "NT": "America/St_Johns",
+    "NST": "America/St_Johns",
+    "NDT": "America/St_Johns",
+    # === UTC/GMT ===
+    "UTC": "UTC",
+    "GMT": "Europe/London",
+    "Z": "UTC",
+    # === Europe ===
+    # UK/Ireland
+    "BST": "Europe/London",
+    "WET": "Europe/London",
+    "WEST": "Europe/London",
+    "IST": "Europe/Dublin",  # Irish Standard Time (also India, context needed)
+    # Central European
+    "CET": "Europe/Paris",
+    "CEST": "Europe/Paris",
+    "MET": "Europe/Paris",
+    "MEST": "Europe/Paris",
+    # Eastern European
+    "EET": "Europe/Athens",
+    "EEST": "Europe/Athens",
+    # Moscow
+    "MSK": "Europe/Moscow",
+    # === Australia ===
+    # Eastern Australia
+    "AET": "Australia/Sydney",
+    "AEST": "Australia/Sydney",
+    "AEDT": "Australia/Sydney",
+    # Central Australia
+    "ACT": "Australia/Adelaide",
+    "ACST": "Australia/Adelaide",
+    "ACDT": "Australia/Adelaide",
+    # Western Australia
+    "AWT": "Australia/Perth",
+    "AWST": "Australia/Perth",
+    # === Asia ===
+    # Japan
+    "JST": "Asia/Tokyo",
+    # Korea
+    "KST": "Asia/Seoul",
+    # China
+    "CST_CN": "Asia/Shanghai",  # Differentiate from US Central
+    "HKT": "Asia/Hong_Kong",
+    # Singapore/Malaysia
+    "SGT": "Asia/Singapore",
+    "MYT": "Asia/Kuala_Lumpur",
+    # India
+    "IST_IN": "Asia/Kolkata",  # Differentiate from Irish
+    # Middle East
+    "GST": "Asia/Dubai",  # Gulf Standard Time
+    # === South America ===
+    # Brazil
+    "BRT": "America/Sao_Paulo",
+    "BRST": "America/Sao_Paulo",
+    # Argentina
+    "ART": "America/Buenos_Aires",
+    # === New Zealand ===
+    "NZT": "Pacific/Auckland",
+    "NZST": "Pacific/Auckland",
+    "NZDT": "Pacific/Auckland",
+    # === South Africa ===
+    "SAST": "Africa/Johannesburg",
+}
+
+
+def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None, str | None]:
+    """Extract date/time/timezone from stream name and mask for separator detection.
 
     Masking prevents date components like "12/31" from being mistaken
     for score patterns or other separators.
@@ -193,10 +305,10 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
         text: Stream name
 
     Returns:
-        Tuple of (masked text, extracted date, extracted time)
+        Tuple of (masked text, extracted date, extracted time, extracted tz as IANA name)
     """
     if not text:
-        return text, None, None
+        return text, None, None, None
 
     result = text
 
@@ -205,6 +317,7 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
 
     extracted_date = None
     extracted_time = None
+    extracted_tz = None
 
     # Extract and mask dates
     for pattern, mask in DATE_PATTERNS:
@@ -216,18 +329,27 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
             result = re.sub(pattern, " DATE_MASK ", result, count=1, flags=re.IGNORECASE)
             break
 
-    # Extract and mask times
+    # Extract and mask times (with optional TZ)
     for pattern, mask in TIME_PATTERNS:
         match = re.search(pattern, result, re.IGNORECASE)
         if match:
-            extracted_time = _parse_time_match(match)
+            extracted_time, extracted_tz = _parse_time_match(match)
             result = re.sub(pattern, f" {mask} ", result, count=1, flags=re.IGNORECASE)
             break
+
+    # If no TZ from time, check for standalone TZ (e.g., "@ ET" at end)
+    if not extracted_tz:
+        tz_match = re.search(TZ_STANDALONE_PATTERN, result, re.IGNORECASE)
+        if tz_match:
+            tz_abbrev = tz_match.group(1).upper()
+            extracted_tz = TZ_ABBREVIATION_MAP.get(tz_abbrev)
+            # Remove the standalone TZ from result
+            result = re.sub(TZ_STANDALONE_PATTERN, "", result, flags=re.IGNORECASE)
 
     # Clean up multiple spaces
     result = " ".join(result.split())
 
-    return result, extracted_date, extracted_time
+    return result, extracted_date, extracted_time, extracted_tz
 
 
 def _parse_date_match(match: re.Match, is_iso: bool = False, no_year: bool = False) -> date | None:
@@ -327,8 +449,12 @@ def _infer_year_for_date(month: int, day: int) -> date | None:
         return None
 
 
-def _parse_time_match(match: re.Match) -> time | None:
-    """Parse a time from regex match."""
+def _parse_time_match(match: re.Match) -> tuple[time | None, str | None]:
+    """Parse a time and optional timezone from regex match.
+
+    Returns:
+        Tuple of (time, tz_iana_name)
+    """
     try:
         groups = match.groups()
 
@@ -339,12 +465,17 @@ def _parse_time_match(match: re.Match) -> time | None:
         if len(groups) > 1 and groups[1] and groups[1].isdigit():
             minute = int(groups[1])
 
-        # Check for AM/PM
+        # Check for AM/PM and TZ
         am_pm = None
+        tz_abbrev = None
         for g in groups:
-            if g and g.upper() in ("AM", "PM"):
-                am_pm = g.upper()
-                break
+            if not g:
+                continue
+            g_upper = g.upper()
+            if g_upper in ("AM", "PM"):
+                am_pm = g_upper
+            elif g_upper in TZ_ABBREVIATION_MAP:
+                tz_abbrev = g_upper
 
         # Convert to 24-hour
         if am_pm == "PM" and hour < 12:
@@ -352,12 +483,15 @@ def _parse_time_match(match: re.Match) -> time | None:
         elif am_pm == "AM" and hour == 12:
             hour = 0
 
-        return time(hour, minute)
+        # Convert TZ abbreviation to IANA name
+        tz_iana = TZ_ABBREVIATION_MAP.get(tz_abbrev) if tz_abbrev else None
+
+        return time(hour, minute), tz_iana
 
     except (ValueError, IndexError, TypeError):
         pass
 
-    return None
+    return None, None
 
 
 # =============================================================================
@@ -401,19 +535,20 @@ def normalize_stream(stream_name: str) -> NormalizedStream:
     # Step 3: Apply city translations (includes unidecode)
     text = apply_city_translations(text)
 
-    # Step 4: Extract and mask datetime
-    text, extracted_date, extracted_time = extract_and_mask_datetime(text)
+    # Step 4: Extract and mask datetime (including timezone)
+    text, extracted_date, extracted_time, extracted_tz = extract_and_mask_datetime(text)
 
     # Step 5: Clean whitespace and normalize
     text = " ".join(text.split())
     text = text.strip()
 
     logger.debug(
-        "[NORMALIZE] '%s' -> '%s' (date=%s, time=%s, prefix=%s)",
+        "[NORMALIZE] '%s' -> '%s' (date=%s, time=%s, tz=%s, prefix=%s)",
         original[:60],
         text[:60],
         extracted_date,
         extracted_time,
+        extracted_tz,
         provider_prefix,
     )
 
@@ -422,6 +557,7 @@ def normalize_stream(stream_name: str) -> NormalizedStream:
         normalized=text,
         extracted_date=extracted_date,
         extracted_time=extracted_time,
+        extracted_tz=extracted_tz,
         provider_prefix=provider_prefix,
     )
 
