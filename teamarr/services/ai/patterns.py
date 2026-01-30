@@ -176,6 +176,45 @@ def _sanitize_regex(regex: str) -> str:
     return regex
 
 
+# Patterns that indicate a stream is a placeholder, not an actual event
+PLACEHOLDER_PATTERNS = [
+    r"NO EVENT",
+    r"NO STREAM",
+    r"OFF AIR",
+    r"OFF-AIR",
+    r"COMING SOON",
+    r"TBA",
+    r"TBD",
+    r"PLACEHOLDER",
+    r"TEST STREAM",
+    r"CHANNEL OFF",
+    r"NOT AVAILABLE",
+    r"UNAVAILABLE",
+]
+
+
+def _filter_placeholder_streams(streams: list[str]) -> list[str]:
+    """Filter out placeholder/non-event streams.
+
+    Removes streams that contain patterns indicating they're not actual events,
+    such as "NO EVENT STREAMING", "OFF AIR", etc.
+    """
+    import re
+
+    # Compile patterns for efficiency
+    placeholder_regex = re.compile(
+        "|".join(PLACEHOLDER_PATTERNS),
+        re.IGNORECASE
+    )
+
+    filtered = []
+    for stream in streams:
+        if not placeholder_regex.search(stream):
+            filtered.append(stream)
+
+    return filtered
+
+
 def _fix_duplicate_named_groups(regex: str) -> str:
     """Rename duplicate named groups to make regex valid.
 
@@ -358,9 +397,10 @@ class PatternLearner:
     ) -> list[LearnedPattern]:
         """Learn all patterns needed for a group of streams.
 
-        1. Classify streams into format groups
-        2. Learn a pattern for each format
-        3. Return patterns that cover the streams
+        1. Filter out placeholder/non-event streams
+        2. Classify streams into format groups
+        3. Learn a pattern for each format
+        4. Return patterns that cover the streams
 
         Args:
             streams: All streams in the group
@@ -369,10 +409,23 @@ class PatternLearner:
         Returns:
             List of learned patterns
         """
-        logger.info("[AI] Analyzing %d streams for patterns...", len(streams))
+        # Filter out placeholder streams that aren't actual events
+        filtered_streams = _filter_placeholder_streams(streams)
+        if len(filtered_streams) < len(streams):
+            logger.info(
+                "[AI] Filtered %d placeholder streams, %d remaining",
+                len(streams) - len(filtered_streams),
+                len(filtered_streams),
+            )
 
-        # Step 1: Classify formats
-        formats = self.classify_formats(streams)
+        if len(filtered_streams) < min_examples:
+            logger.warning("[AI] Not enough streams after filtering (%d)", len(filtered_streams))
+            return []
+
+        logger.info("[AI] Analyzing %d streams for patterns...", len(filtered_streams))
+
+        # Step 1: Classify formats (use filtered streams)
+        formats = self.classify_formats(filtered_streams)
         logger.info("[AI] Identified %d distinct formats", len(formats))
 
         patterns = []
@@ -388,7 +441,7 @@ class PatternLearner:
                 continue
 
             # Get example streams for this format
-            examples = [streams[i] for i in indices if i < len(streams)]
+            examples = [filtered_streams[i] for i in indices if i < len(filtered_streams)]
 
             pattern = self.learn_pattern(examples)
             if pattern:
@@ -399,15 +452,15 @@ class PatternLearner:
                     pattern.description[:50], pattern.confidence * 100
                 )
 
-        # Step 3: Test coverage
+        # Step 3: Test coverage (against filtered streams only)
         covered = 0
-        for stream in streams:
+        for stream in filtered_streams:
             if any(p.matches(stream) for p in patterns):
                 covered += 1
 
         logger.info(
             "[AI] Patterns cover %d/%d streams (%.0f%%)",
-            covered, len(streams), (covered / len(streams)) * 100 if streams else 0
+            covered, len(filtered_streams), (covered / len(filtered_streams)) * 100 if filtered_streams else 0
         )
 
         return patterns
