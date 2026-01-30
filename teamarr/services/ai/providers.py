@@ -161,6 +161,8 @@ class GroqClient(AIProviderClient):
                     time.sleep(delay)
                     continue
                 logger.warning("[Groq] HTTP error: %s", e)
+                if e.response.status_code == 400:
+                    logger.warning("[Groq] 400 response: %s", e.response.text[:500])
                 return None
             except httpx.HTTPError as e:
                 logger.warning("[Groq] HTTP error: %s", e)
