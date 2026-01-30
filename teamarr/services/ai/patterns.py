@@ -3,8 +3,14 @@
 import logging
 import re
 import hashlib
+import time
 from dataclasses import dataclass, field
 from typing import Any
+
+# Delay between API calls to avoid rate limits (seconds)
+# Groq free tier: 30 requests/min = 1 every 2s, but we use 5s to be safe
+# since other operations (stream parsing) may also be using the API
+RATE_LIMIT_DELAY = 5.0
 
 from teamarr.services.ai.client import OllamaClient, OllamaConfig
 from teamarr.services.ai.providers import AIProviderClient
@@ -429,19 +435,25 @@ class PatternLearner:
         logger.info("[AI] Identified %d distinct formats", len(formats))
 
         patterns = []
+        formats_to_learn = [
+            fmt for fmt in formats
+            if len(fmt.get("example_indices", [])) >= min_examples
+        ]
 
-        # Step 2: Learn pattern for each format
-        for fmt in formats:
+        # Rate limit delay after classify call before learning patterns
+        if formats_to_learn:
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Step 2: Learn pattern for each format (with rate limit delay)
+        for i, fmt in enumerate(formats_to_learn):
             indices = fmt.get("example_indices", [])
-            if len(indices) < min_examples:
-                logger.debug(
-                    "[AI] Skipping format '%s' - only %d examples",
-                    fmt.get("description", "unknown"), len(indices)
-                )
-                continue
+
+            # Rate limit delay between API calls (skip first)
+            if i > 0:
+                time.sleep(RATE_LIMIT_DELAY)
 
             # Get example streams for this format
-            examples = [filtered_streams[i] for i in indices if i < len(filtered_streams)]
+            examples = [filtered_streams[idx] for idx in indices if idx < len(filtered_streams)]
 
             pattern = self.learn_pattern(examples)
             if pattern:

@@ -19,9 +19,10 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Rate limit retry settings
-MAX_RETRIES = 3
-BASE_DELAY = 2.0  # seconds
-MAX_DELAY = 30.0  # seconds
+# Groq free tier: 30 req/min, so we need longer delays
+MAX_RETRIES = 5
+BASE_DELAY = 5.0  # seconds (Groq needs ~2s minimum between requests)
+MAX_DELAY = 60.0  # seconds
 
 
 class AIProviderClient(ABC):
