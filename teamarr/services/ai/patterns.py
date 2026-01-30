@@ -109,6 +109,7 @@ def _sanitize_regex(regex: str) -> str:
     - Code block markers (```python ... ```)
     - Extra whitespace
     - Python string quotes
+    - Prose prefixes like "The Python regex pattern with..."
     - Duplicate named groups (Python doesn't allow redefining group names)
     """
     # Strip whitespace
@@ -124,6 +125,33 @@ def _sanitize_regex(regex: str) -> str:
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         regex = "\n".join(lines).strip()
+
+    # Remove prose prefix - AI sometimes includes "The Python regex pattern with..."
+    # Look for where the actual regex starts (typically (?P< or ^ or a literal)
+    prose_patterns = [
+        "The Python regex pattern with ",
+        "The Python regex pattern is ",
+        "The regex pattern with ",
+        "The regex pattern is ",
+        "The pattern is ",
+        "The pattern: ",
+        "Here is the regex: ",
+        "Regex: ",
+    ]
+    for prefix in prose_patterns:
+        if regex.lower().startswith(prefix.lower()):
+            regex = regex[len(prefix):].strip()
+            break
+
+    # Also try to find where regex actually starts if prose wasn't caught
+    # Regex typically starts with: (?P< or ^ or [ or ( or a literal char/escape
+    if not regex.startswith(("(?P<", "^", "[", "(", "\\", ".")):
+        # Look for first occurrence of (?P< which is our named group pattern
+        named_group_start = regex.find("(?P<")
+        if named_group_start > 0:
+            # Extract just the regex part
+            regex = regex[named_group_start:]
+            logger.debug("[AI] Stripped prose prefix from regex")
 
     # Remove Python raw string notation (r"..." or r'...')
     if regex.startswith('r"') and regex.endswith('"'):
