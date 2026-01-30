@@ -83,7 +83,7 @@ class GeminiProviderConfig(BaseModel):
     """Google Gemini provider configuration - FREE TIER."""
     enabled: bool = False
     api_key: str = ""
-    model: str = "gemini-1.5-flash"
+    model: str = "gemini-2.0-flash"
     timeout: int = Field(60, ge=30, le=300)
 
 

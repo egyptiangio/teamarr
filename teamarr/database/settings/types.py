@@ -281,7 +281,7 @@ class GeminiProviderSettings:
 
     enabled: bool = False
     api_key: str = ""
-    model: str = "gemini-1.5-flash"  # Free tier model
+    model: str = "gemini-2.0-flash"  # Free tier model
     timeout: int = 60
 
 
