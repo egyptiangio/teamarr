@@ -707,7 +707,7 @@ export function EventGroupForm() {
                 onChange={(tz) => setFormData({ ...formData, stream_timezone: tz })}
               />
               <p className="text-xs text-muted-foreground mt-2">
-                Optional. Set this if your IPTV provider shows times in a different timezone than your local time (e.g., UK user with US Eastern times like "9:00 PM ET").
+                Optional. Timezone markers (e.g., "ET", "PT") are auto-detected. Set this only if your provider omits them and uses a different timezone than yours.
               </p>
             </CardContent>
           </Card>}
