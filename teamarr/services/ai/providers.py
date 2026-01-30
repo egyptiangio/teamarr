@@ -124,8 +124,8 @@ class GroqClient(AIProviderClient):
                     if attempt < MAX_RETRIES:
                         # Get retry-after header or use exponential backoff
                         retry_after = response.headers.get("retry-after")
-                        logger.debug("[Groq] 429 response headers: %s", dict(response.headers))
-                        logger.debug("[Groq] 429 response body: %s", response.text[:500])
+                        logger.info("[Groq] 429 response headers: %s", dict(response.headers))
+                        logger.info("[Groq] 429 response body: %s", response.text[:500])
                         if retry_after:
                             delay = min(float(retry_after), MAX_DELAY)
                         else:
