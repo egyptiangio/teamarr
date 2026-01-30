@@ -132,32 +132,50 @@ def _sanitize_regex(regex: str) -> str:
             lines = lines[:-1]
         regex = "\n".join(lines).strip()
 
-    # Remove prose prefix - AI sometimes includes "The Python regex pattern with..."
-    # Look for where the actual regex starts (typically (?P< or ^ or a literal)
-    prose_patterns = [
-        "The Python regex pattern with ",
-        "The Python regex pattern is ",
-        "The regex pattern with ",
-        "The regex pattern is ",
-        "The pattern is ",
-        "The pattern: ",
-        "Here is the regex: ",
-        "Regex: ",
-    ]
-    for prefix in prose_patterns:
-        if regex.lower().startswith(prefix.lower()):
-            regex = regex[len(prefix):].strip()
-            break
+    # Look for Python assignment pattern: regex = r"..." or regex = "..."
+    # This handles cases like: (?P<name>...) groups\nregex = r"actual_pattern"
+    import re as re_module
+    assignment_match = re_module.search(r'regex\s*=\s*r?["\']', regex, re_module.IGNORECASE)
+    if assignment_match:
+        # Extract from after the opening quote
+        start = assignment_match.end()
+        # Find the matching closing quote
+        quote_char = regex[assignment_match.end() - 1]
+        end = regex.find(quote_char, start)
+        if end > start:
+            regex = regex[start:end]
+            logger.debug("[AI] Extracted regex from assignment pattern")
+    else:
+        # Remove prose prefix - AI sometimes includes "The Python regex pattern with..."
+        prose_patterns = [
+            "The Python regex pattern with ",
+            "The Python regex pattern is ",
+            "The regex pattern with ",
+            "The regex pattern is ",
+            "The pattern is ",
+            "The pattern: ",
+            "Here is the regex: ",
+            "Regex: ",
+        ]
+        for prefix in prose_patterns:
+            if regex.lower().startswith(prefix.lower()):
+                regex = regex[len(prefix):].strip()
+                break
 
-    # Also try to find where regex actually starts if prose wasn't caught
-    # Regex typically starts with: (?P< or ^ or [ or ( or a literal char/escape
-    if not regex.startswith(("(?P<", "^", "[", "(", "\\", ".")):
-        # Look for first occurrence of (?P< which is our named group pattern
-        named_group_start = regex.find("(?P<")
-        if named_group_start > 0:
-            # Extract just the regex part
-            regex = regex[named_group_start:]
-            logger.debug("[AI] Stripped prose prefix from regex")
+        # Also try to find where regex actually starts if prose wasn't caught
+        # But skip if it looks like "(?P<name>...) groups" explanation
+        if "(?P<" in regex:
+            # Check if there's prose after the first (?P<...>) - indicates it's an explanation
+            first_close = regex.find(">")
+            if first_close > 0 and first_close + 1 < len(regex):
+                after_first_group = regex[first_close + 1:first_close + 20]
+                # If followed by "...", "groups", or other prose, find the real pattern
+                if any(x in after_first_group.lower() for x in ["...", "groups", "named"]):
+                    # Find the next (?P< which should be the real start
+                    second_start = regex.find("(?P<", first_close)
+                    if second_start > 0:
+                        regex = regex[second_start:]
+                        logger.debug("[AI] Stripped explanation prefix from regex")
 
     # Remove Python raw string notation (r"..." or r'...')
     if regex.startswith('r"') and regex.endswith('"'):
