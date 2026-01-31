@@ -42,7 +42,22 @@ async function fetchChannelGroups(): Promise<ChannelGroup[]> {
   if (!response.ok) {
     throw new Error(response.status === 503 ? "Dispatcharr not connected" : "Failed to fetch channel groups")
   }
-  return response.json()
+  return response.json();
+}
+
+async function fetchEPGSources(): Promise<EPGSource[]> {
+  const response = await fetch(
+    "/api/v1/dispatcharr/epg-sources?include_dummy=true",
+  );
+  if (!response.ok) {
+    throw new Error(
+      response.status === 503
+        ? "Dispatcharr not connected"
+        : "Failed to fetch EPG sources",
+    );
+  }
+  const data = await response.json();
+  return data.sources || [];
 }
 
 async function createChannelGroup(name: string): Promise<ChannelGroup | null> {
@@ -87,6 +102,9 @@ export function EventGroupForm() {
     // Multi-sport enhancements (Phase 3)
     channel_sort_order: "time",
     overlap_handling: "add_stream",
+    // Unmatched stream handling
+    create_unmatched_channels: false,
+    unmatched_channel_epg_source_id: null,
     enabled: true,
     // Team filtering
     include_teams: null,
@@ -126,9 +144,15 @@ export function EventGroupForm() {
   const { data: channelGroups, refetch: refetchChannelGroups, isError: channelGroupsError, error: channelGroupsErrorMsg } = useQuery({
     queryKey: ["dispatcharr-channel-groups"],
     queryFn: fetchChannelGroups,
-    retry: false,  // Don't retry on connection errors
-  })
+    retry: false, // Don't retry on connection errors
+  });
 
+  // Fetch EPG sources from Dispatcharr
+  const { data: epgSources } = useQuery({
+    queryKey: ["dispatcharr-epg-sources"],
+    queryFn: fetchEPGSources,
+    retry: false,
+  });
 
   // Inline create state
   const [showCreateGroup, setShowCreateGroup] = useState(false)
@@ -220,6 +244,9 @@ export function EventGroupForm() {
         // Multi-sport enhancements (Phase 3)
         channel_sort_order: group.channel_sort_order || "time",
         overlap_handling: group.overlap_handling || "add_stream",
+        // Unmatched stream handling
+        create_unmatched_channels: group.create_unmatched_channels,
+        unmatched_channel_epg_source_id: group.unmatched_channel_epg_source_id,
         enabled: group.enabled,
       })
 
@@ -309,8 +336,8 @@ export function EventGroupForm() {
     }
 
     if (leagues.length === 0) {
-      toast.error("At least one league is required")
-      return
+      toast.error("At least one league is required");
+      return;
     }
 
     try {
