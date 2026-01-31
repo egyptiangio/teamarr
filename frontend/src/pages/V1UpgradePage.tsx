@@ -147,6 +147,7 @@ export function V1UpgradePage() {
       // Start polling for readiness
       pollForReady()
     } catch (error) {
+      console.error(error)
       setRestartError("Failed to trigger restart. Please restart your container manually.")
       setIsRestarting(false)
     }

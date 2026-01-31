@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { validateRegex } from "@/lib/regex-utils"
-import type { PatternState } from "./index"
+import type { PatternState } from "./patterns"
 import {
   ShieldOff,
   Filter,

@@ -9,7 +9,7 @@ import { useRef, useMemo } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { StreamItem } from "./StreamItem"
 import { getMatchRanges, testMatch } from "@/lib/regex-utils"
-import type { PatternState } from "./index"
+import type { PatternState } from "./patterns"
 import type { RawStream } from "@/api/groups"
 
 // ---------------------------------------------------------------------------

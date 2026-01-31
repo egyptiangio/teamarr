@@ -227,6 +227,7 @@ class PreviewStream:
     stream_id: int
     stream_name: str
     matched: bool
+    is_stale: bool = False
     event_id: str | None = None
     event_name: str | None = None
     home_team: str | None = None
@@ -240,6 +241,7 @@ class PreviewStream:
         return {
             "stream_id": self.stream_id,
             "stream_name": self.stream_name,
+            "is_stale": self.is_stale,
             "matched": self.matched,
             "event_id": self.event_id,
             "event_name": self.event_name,
@@ -308,7 +310,7 @@ class EventGroupProcessor:
         from teamarr.dispatcharr import get_factory
 
         factory = get_factory(get_db)
-        client = factory.get_client()
+        client = factory.get_connection()
 
         processor = EventGroupProcessor(
             db_factory=get_db,
@@ -450,7 +452,7 @@ class EventGroupProcessor:
                 return result
 
             # Convert DispatcharrStream objects to dict format
-            streams = [{"id": s.id, "name": s.name} for s in raw_streams]
+            streams = [{"id": s.id, "name": s.name, "is_stale": s.is_stale} for s in raw_streams]
             result.total_streams = len(streams)
 
             # Step 2: Apply stream filtering
@@ -478,6 +480,7 @@ class EventGroupProcessor:
             result.cache_misses = match_result.cache_misses
 
             # Build preview stream list
+            stream_lookup = {s.get("id"): s for s in streams}
             for r in match_result.results:
                 stream_id = r.stream_id if hasattr(r, "stream_id") else 0
                 stream_name = r.stream_name
@@ -485,6 +488,7 @@ class EventGroupProcessor:
                 preview_stream = PreviewStream(
                     stream_id=stream_id,
                     stream_name=stream_name,
+                    is_stale=bool(stream_lookup.get(stream_id, {}).get("is_stale", False)),
                     matched=r.matched,
                     event_id=r.event.id if r.event else None,
                     event_name=r.event.name if r.event else None,
@@ -1414,7 +1418,12 @@ class EventGroupProcessor:
 
             # Fetch streams filtered by M3U group if configured
             if group.m3u_group_id:
-                streams = m3u_manager.list_streams(group_id=group.m3u_group_id)
+                streams = m3u_manager.list_streams(
+                    group_id=group.m3u_group_id,
+                    account_id=group.m3u_account_id,
+                )
+            elif group.m3u_account_id:
+                streams = m3u_manager.list_streams(account_id=group.m3u_account_id)
             else:
                 # Fetch all streams if no group filter
                 streams = m3u_manager.list_streams()

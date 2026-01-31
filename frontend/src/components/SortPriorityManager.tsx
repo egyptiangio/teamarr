@@ -24,11 +24,7 @@ export function SortPriorityManager({ showWhenSortBy = "sport_league_time", curr
   const { data: priorities, isLoading, refetch } = useSortPriorities()
   const reorderMutation = useReorderSortPriorities()
   const autoPopulateMutation = useAutoPopulateSortPriorities()
-
-  // Don't render if sort_by doesn't match
-  if (currentSortBy !== showWhenSortBy) {
-    return null
-  }
+  const shouldRender = currentSortBy === showWhenSortBy
 
   // Transform priorities to HierarchicalItem format
   // First, build a map of sport codes to display names from sport-level entries
@@ -117,6 +113,11 @@ export function SortPriorityManager({ showWhenSortBy = "sport_league_time", curr
         {channelCount} ch
       </span>
     )
+  }
+
+  // Don't render if sort_by doesn't match
+  if (!shouldRender) {
+    return null
   }
 
   if (isLoading) {

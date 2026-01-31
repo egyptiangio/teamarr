@@ -32,10 +32,7 @@ export function escapeRegex(str: string): string {
  */
 function generalizeForField(
   field: TextSelection["field"],
-  text: string,
-  _streamName: string,
-  _beforeText: string,
-  _afterText: string
+  text: string
 ): string {
   switch (field) {
     case "team1":
@@ -97,7 +94,7 @@ export function generatePattern(
   const after = streamName.slice(idx + text.length)
 
   // Build an anchor from the immediate surrounding context
-  const captureGroup = generalizeForField(field, text, streamName, before, after)
+  const captureGroup = generalizeForField(field, text)
   const namedGroup = `(?P<${field}>${captureGroup.slice(1, -1)})`
 
   // Find a stable anchor before the selection

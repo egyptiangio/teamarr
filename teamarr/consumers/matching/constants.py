@@ -24,3 +24,6 @@ ACCEPT_WITH_DATE_THRESHOLD = 75.0
 # e.g., "William Jessup" vs "Jessup Warriors" scores ~62%, combined with
 # "Sacred Heart" vs "Sacred Heart Pioneers" (~100%) gives min(62, 100) = 62
 BOTH_TEAMS_THRESHOLD = 60.0
+
+# Penalty applied when stream date does not match event date
+DATE_MISMATCH_PENALTY = 15.0

@@ -277,6 +277,7 @@ export interface ProcessGroupResponse {
 export interface PreviewStream {
   stream_id: number
   stream_name: string
+  is_stale: boolean
   matched: boolean
   event_id: string | null
   event_name: string | null
@@ -295,6 +296,7 @@ export interface PreviewGroupResponse {
   filtered_count: number
   matched_count: number
   unmatched_count: number
+  filtered_stale: number
   filtered_not_event: number
   filtered_include_regex: number
   filtered_exclude_regex: number

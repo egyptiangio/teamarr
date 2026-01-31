@@ -288,6 +288,7 @@ GAME_SEPARATORS: list[str] = [
     " v ",
     " @ ",
     " at ",
+    " - ",
     " x ",  # Portuguese/Spanish style
     " contre ",  # French
     " gegen ",  # German
@@ -409,6 +410,13 @@ LEAGUE_HINT_PATTERNS: list[tuple[str, str | list[str]]] = [
     (r"\buefa\s+champions\s+league[:\s-]", "uefa.champions"),
     (r"\bucl[:\s-]", "uefa.champions"),
     (r"\bchampions\s+league[:\s-]", "uefa.champions"),
+    (r"\buefa\s+europa\s+league[:\s-]", "uefa.europa"),
+    (r"\beuropa\s+league[:\s-]", "uefa.europa"),
+    (r"\buel[:\s-]", "uefa.europa"),
+    (r"\buefa\s+europa\s+conference\s+league[:\s-]", "uefa.europa.conf"),
+    (r"\buefa\s+conference\s+league[:\s-]", "uefa.europa.conf"),
+    (r"\bconference\s+league[:\s-]", "uefa.europa.conf"),
+    (r"\buecl[:\s-]", "uefa.europa.conf"),
     (r"\bspl[:\s-]", "ksa.1"),  # Saudi Pro League
     # ==========================================================================
     # Hockey - Multi-league umbrella brands first

@@ -40,6 +40,14 @@ Select which sports and leagues this group should match. Only events from select
 
 You can select entire sports (all leagues) or specific leagues within a sport.
 
+### Soccer Shortcuts
+
+For soccer, the league picker includes quick-select options:
+
+- 'Top Domestic + Champions Leagues' (EPL, La Liga, Bundesliga, Serie A, Ligue 1, UCL, UEL, UECL)
+- 'Other Soccer Leagues' mass-select (expand to pick individual leagues)
+- Overall soccer 'Select All' / 'Clear All' is still available
+
 ## Channel Profiles
 
 Override the [global default channel profiles](../settings/integrations#default-channel-profiles) for this group.

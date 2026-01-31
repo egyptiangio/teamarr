@@ -170,7 +170,19 @@ export function Templates() {
       const fullTemplate = await getTemplate(template.id)
 
       // Export without ID/timestamps (for portability)
-      const { id, created_at, updated_at, team_count, group_count, ...exportData } = fullTemplate
+      const {
+        id,
+        created_at,
+        updated_at,
+        team_count,
+        group_count,
+        ...exportData
+      } = fullTemplate
+      void id
+      void created_at
+      void updated_at
+      void team_count
+      void group_count
       const blob = new Blob([JSON.stringify([exportData], null, 2)], { type: "application/json" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")

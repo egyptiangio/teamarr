@@ -37,7 +37,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { useGenerationProgress } from "@/contexts/GenerationContext"
+import { useGenerationProgress } from "@/contexts/generation-context"
 import { useDateFormat } from "@/hooks/useDateFormat"
 import {
   useStats,

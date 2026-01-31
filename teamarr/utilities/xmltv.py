@@ -11,6 +11,29 @@ from teamarr.core import Programme
 from teamarr.utilities.tz import format_datetime_xmltv, to_user_tz
 
 
+def _is_valid_xml_char(char: str) -> bool:
+    """Return True if char is valid in XML 1.0."""
+    codepoint = ord(char)
+    return (
+        codepoint == 0x9
+        or codepoint == 0xA
+        or codepoint == 0xD
+        or 0x20 <= codepoint <= 0xD7FF
+        or 0xE000 <= codepoint <= 0xFFFD
+        or 0x10000 <= codepoint <= 0x10FFFF
+    )
+
+
+def _sanitize_xml_text(text: str | None) -> str | None:
+    """Remove characters that are invalid in XML 1.0.
+
+    ElementTree escapes special characters, but it does not strip invalid codepoints.
+    """
+    if text is None:
+        return None
+    return "".join(char for char in text if _is_valid_xml_char(char))
+
+
 def programmes_to_xmltv(
     programmes: list[Programme],
     channels: list[dict],
@@ -51,14 +74,14 @@ def programmes_to_xmltv(
 def _add_channel(root: Element, channel: dict) -> None:
     """Add a channel element to the TV root."""
     chan_elem = SubElement(root, "channel")
-    chan_elem.set("id", channel["id"])
+    chan_elem.set("id", _sanitize_xml_text(channel["id"]) or "")
 
     name_elem = SubElement(chan_elem, "display-name")
-    name_elem.text = channel["name"]
+    name_elem.text = _sanitize_xml_text(channel["name"])
 
     if channel.get("icon"):
         icon_elem = SubElement(chan_elem, "icon")
-        icon_elem.set("src", channel["icon"])
+        icon_elem.set("src", _sanitize_xml_text(channel["icon"]) or "")
 
 
 def _add_programme(root: Element, programme: Programme) -> None:
@@ -68,7 +91,7 @@ def _add_programme(root: Element, programme: Programme) -> None:
     prog_elem = SubElement(root, "programme")
     prog_elem.set("start", format_datetime_xmltv(programme.start))
     prog_elem.set("stop", format_datetime_xmltv(programme.stop))
-    prog_elem.set("channel", programme.channel_id)
+    prog_elem.set("channel", _sanitize_xml_text(programme.channel_id) or "")
 
     # Add filler type comment for analysis (V1 compatibility)
     if programme.filler_type:
@@ -76,17 +99,17 @@ def _add_programme(root: Element, programme: Programme) -> None:
 
     title_elem = SubElement(prog_elem, "title")
     title_elem.set("lang", "en")
-    title_elem.text = programme.title
+    title_elem.text = _sanitize_xml_text(programme.title)
 
     if programme.subtitle:
         sub_elem = SubElement(prog_elem, "sub-title")
         sub_elem.set("lang", "en")
-        sub_elem.text = programme.subtitle
+        sub_elem.text = _sanitize_xml_text(programme.subtitle)
 
     if programme.description:
         desc_elem = SubElement(prog_elem, "desc")
         desc_elem.set("lang", "en")
-        desc_elem.text = programme.description
+        desc_elem.text = _sanitize_xml_text(programme.description)
 
     # Add date tag if enabled (YYYYMMDD format in user's timezone)
     flags = programme.xmltv_flags or {}
@@ -99,11 +122,11 @@ def _add_programme(root: Element, programme: Programme) -> None:
     for cat in programme.categories:
         cat_elem = SubElement(prog_elem, "category")
         cat_elem.set("lang", "en")
-        cat_elem.text = cat
+        cat_elem.text = _sanitize_xml_text(cat)
 
     if programme.icon:
         icon_elem = SubElement(prog_elem, "icon")
-        icon_elem.set("src", programme.icon)
+        icon_elem.set("src", _sanitize_xml_text(programme.icon) or "")
 
     # Add video element if enabled (only for non-filler programmes)
     # Note: Teamarr does not detect actual stream resolution - this is user-configured

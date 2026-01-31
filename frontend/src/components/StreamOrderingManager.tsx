@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { toast } from "sonner"
 import {
   Plus,
@@ -129,8 +129,18 @@ export function StreamOrderingManager() {
   const updateSettings = useUpdateStreamOrderingSettings()
   const { data: groupsData } = useGroups(true) // Include disabled groups
 
-  const [rules, setRules] = useState<RuleFormData[]>([])
-  const [hasChanges, setHasChanges] = useState(false)
+  const defaultRules = useMemo<RuleFormData[]>(() => {
+    if (!settings?.rules) return []
+    return settings.rules.map((rule) => ({
+      type: rule.type,
+      value: rule.value,
+      priority: rule.priority,
+    }))
+  }, [settings])
+
+  const [draftRules, setDraftRules] = useState<RuleFormData[] | null>(null)
+  const rules = draftRules ?? defaultRules
+  const hasChanges = draftRules !== null
 
   // Extract unique M3U account names and group names from groups
   const { m3uAccounts, groupNames } = useMemo(() => {
@@ -156,18 +166,6 @@ export function StreamOrderingManager() {
     }
   }, [groupsData])
 
-  // Initialize rules from settings
-  useEffect(() => {
-    if (settings?.rules) {
-      setRules(settings.rules.map(r => ({
-        type: r.type,
-        value: r.value,
-        priority: r.priority,
-      })))
-      setHasChanges(false)
-    }
-  }, [settings])
-
   const handleAddRule = () => {
     // Find next available priority
     const usedPriorities = new Set(rules.map(r => r.priority))
@@ -176,20 +174,17 @@ export function StreamOrderingManager() {
       nextPriority++
     }
 
-    setRules([...rules, { type: "m3u", value: "", priority: nextPriority }])
-    setHasChanges(true)
+    setDraftRules([...rules, { type: "m3u", value: "", priority: nextPriority }])
   }
 
   const handleUpdateRule = (index: number, updatedRule: RuleFormData) => {
     const newRules = [...rules]
     newRules[index] = updatedRule
-    setRules(newRules)
-    setHasChanges(true)
+    setDraftRules(newRules)
   }
 
   const handleDeleteRule = (index: number) => {
-    setRules(rules.filter((_, i) => i !== index))
-    setHasChanges(true)
+    setDraftRules(rules.filter((_, i) => i !== index))
   }
 
   const handleSave = async () => {
@@ -211,8 +206,9 @@ export function StreamOrderingManager() {
         })),
       })
       toast.success("Stream ordering rules saved")
-      setHasChanges(false)
-    } catch (err) {
+      setDraftRules(null)
+    } catch (error) {
+      console.error(error)
       toast.error("Failed to save stream ordering rules")
     }
   }

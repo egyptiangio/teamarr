@@ -558,6 +558,32 @@ def extract_teams_from_separator(
     return team1, team2
 
 
+def extract_teams_from_time_mask(text: str) -> tuple[str | None, str | None]:
+    """Extract team names when time sits between teams.
+
+    Example: "UEFA 01: Napoli TIME_MASK Chelsea DATE_MASK"
+    """
+    if not text or "TIME_MASK" not in text:
+        return None, None
+
+    parts = re.split(r"\bTIME_MASK\b", text, maxsplit=1)
+    if len(parts) != 2:
+        return None, None
+
+    left = parts[0].strip()
+    right = parts[1].strip()
+
+    team1 = _clean_team_name(left)
+    team2 = _clean_team_name(right)
+
+    if not team1 or len(team1) < 3:
+        team1 = None
+    if not team2 or len(team2) < 3:
+        team2 = None
+
+    return team1, team2
+
+
 def _clean_team_name(name: str) -> str:
     """Clean extracted team name."""
     if not name:
@@ -587,6 +613,20 @@ def _clean_team_name(name: str) -> str:
     # These can remain after date/time stripping: "Jan 17 5PM ET" → "ET"
     name = re.sub(
         r"^(E|P|C|M)(S|D)?T$",  # ET, EST, EDT, PT, PST, PDT, CT, CST, CDT, MT, MST, MDT
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove trailing provider suffixes (e.g., ":ESPN+ 10", "ESPN+ 10")
+    name = re.sub(
+        r"\s*[:\-]\s*(ESPN\+?|ESPN\s*PLUS|DAZN|PARAMOUNT\+?|PEACOCK|MAX|APPLE\s*TV\+?|FUBO(?:TV)?|DIRECTV|BEIN(?:\s+SPORTS)?|SKY\s+SPORTS|BT\s+SPORT|TSN|SPORTSNET)\s*\d*\s*$",  # noqa: E501
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+    name = re.sub(
+        r"\s+\b(ESPN\+?|ESPN\s*PLUS|DAZN|PARAMOUNT\+?|PEACOCK|MAX|APPLE\s*TV\+?|FUBO(?:TV)?|DIRECTV|BEIN(?:\s+SPORTS)?|SKY\s+SPORTS|BT\s+SPORT|TSN|SPORTSNET)\s*\d*\s*$",  # noqa: E501
         "",
         name,
         flags=re.IGNORECASE,
@@ -1121,7 +1161,22 @@ def classify_stream(
                         sport_hint=sport_hint,
                     )
 
-        # Step 5: Default to placeholder if we can't classify
+        # Step 5: Check for time between teams (e.g., "Napoli TIME_MASK Chelsea")
+        # Only use this if no game separator was found.
+        if result is None and "TIME_MASK" in text:
+            team1, team2 = extract_teams_from_time_mask(text)
+            if team1 or team2:
+                result = ClassifiedStream(
+                    category=StreamCategory.TEAM_VS_TEAM,
+                    normalized=normalized,
+                    team1=team1,
+                    team2=team2,
+                    separator_found="time",
+                    league_hint=league_hint,
+                    sport_hint=sport_hint,
+                )
+
+        # Step 6: Default to placeholder if we can't classify
         if result is None:
             result = ClassifiedStream(
                 category=StreamCategory.PLACEHOLDER,

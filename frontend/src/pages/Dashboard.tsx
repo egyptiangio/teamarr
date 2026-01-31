@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { api } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Quadrant, StatTile } from "@/components/ui/rich-tooltip"
-import { useGenerationProgress } from "@/contexts/GenerationContext"
+import { useGenerationProgress } from "@/contexts/generation-context"
 import { useDateFormat } from "@/hooks/useDateFormat"
 import {
   Rocket,

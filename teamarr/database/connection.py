@@ -39,17 +39,17 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """
     path = Path(db_path) if db_path else DEFAULT_DB_PATH
 
-    # timeout=30: Wait up to 30 seconds if database is locked by another connection
+    # timeout=60: Wait up to 60 seconds if database is locked by another connection
     # check_same_thread=False: Allow connection to be used across threads (required for FastAPI)
-    conn = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
+    conn = sqlite3.connect(path, timeout=60.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
     # Enable Write-Ahead Logging for better concurrent access
     # WAL allows readers to not block writers and vice versa
     conn.execute("PRAGMA journal_mode=WAL")
 
-    # Wait up to 30 seconds if a table is locked (milliseconds)
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Wait up to 60 seconds if a table is locked (milliseconds)
+    conn.execute("PRAGMA busy_timeout=60000")
 
     # Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON")

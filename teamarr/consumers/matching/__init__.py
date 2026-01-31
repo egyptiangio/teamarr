@@ -19,6 +19,7 @@ from teamarr.consumers.matching.classifier import (
 from teamarr.consumers.matching.constants import (
     ACCEPT_WITH_DATE_THRESHOLD,
     BOTH_TEAMS_THRESHOLD,
+    DATE_MISMATCH_PENALTY,
     HIGH_CONFIDENCE_THRESHOLD,
     MATCH_WINDOW_DAYS,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "HIGH_CONFIDENCE_THRESHOLD",
     "ACCEPT_WITH_DATE_THRESHOLD",
     "BOTH_TEAMS_THRESHOLD",
+    "DATE_MISMATCH_PENALTY",
     # Main entry point
     "StreamMatcher",
     "MatchedStreamResult",

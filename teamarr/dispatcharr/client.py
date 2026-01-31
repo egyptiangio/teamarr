@@ -116,6 +116,7 @@ class DispatcharrClient:
         endpoint: str,
         data: dict | None = None,
         retry_on_401: bool = True,
+        as_form: bool = False,
     ) -> httpx.Response | None:
         """Make an authenticated request with retry logic.
 
@@ -135,8 +136,9 @@ class DispatcharrClient:
 
         headers = {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
         }
+        if not as_form:
+            headers["Content-Type"] = "application/json"
 
         full_url = f"{self._base_url}{endpoint}"
         client = self._get_client()
@@ -147,9 +149,15 @@ class DispatcharrClient:
                 if method.upper() == "GET":
                     response = client.get(full_url, headers=headers)
                 elif method.upper() == "POST":
-                    response = client.post(full_url, headers=headers, json=data)
+                    if as_form:
+                        response = client.post(full_url, headers=headers, data=data)
+                    else:
+                        response = client.post(full_url, headers=headers, json=data)
                 elif method.upper() == "PATCH":
-                    response = client.patch(full_url, headers=headers, json=data)
+                    if as_form:
+                        response = client.patch(full_url, headers=headers, data=data)
+                    else:
+                        response = client.patch(full_url, headers=headers, json=data)
                 elif method.upper() == "DELETE":
                     response = client.delete(full_url, headers=headers)
                 else:
@@ -228,6 +236,10 @@ class DispatcharrClient:
     def post(self, endpoint: str, data: dict | None = None) -> httpx.Response | None:
         """Make authenticated POST request."""
         return self.request("POST", endpoint, data)
+
+    def post_form(self, endpoint: str, data: dict | None = None) -> httpx.Response | None:
+        """Make authenticated POST request with form-encoded data."""
+        return self.request("POST", endpoint, data, as_form=True)
 
     def patch(self, endpoint: str, data: dict) -> httpx.Response | None:
         """Make authenticated PATCH request."""

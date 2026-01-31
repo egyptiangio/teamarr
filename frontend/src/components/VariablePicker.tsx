@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react"
+import React, { useState, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -26,7 +26,7 @@ export function VariablePicker({
     staleTime: Infinity, // Variables don't change during session
   })
 
-  const filteredCategories = useMemo(() => {
+  const filteredCategories = (() => {
     if (!data?.categories) return []
     if (!search.trim()) return data.categories
 
@@ -41,7 +41,7 @@ export function VariablePicker({
         ),
       }))
       .filter((cat) => cat.variables.length > 0)
-  }, [data?.categories, search])
+  })()
 
   const handleSelect = (variable: Variable, suffix?: string) => {
     const varName = suffix && suffix !== "base" ? `${variable.name}${suffix}` : variable.name
