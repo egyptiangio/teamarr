@@ -78,10 +78,10 @@ Leave this disabled if you're not experiencing logo caching issues.
 
 ### How It Works
 
-1. Enable scheduled reset and set a cron schedule (e.g., `0 3 * * *` for 3 AM daily)
+1. Enable scheduled reset and set a cron schedule (e.g., `30 3 * * *` for 3:30 AM daily)
 2. When the reset schedule fires, Teamarr purges all its channels from Dispatcharr
 3. On the next EPG generation, channels are recreated with fresh data
-4. Set your Jellyfin guide refresh to run shortly after (e.g., 3:15 AM)
+4. Set your Jellyfin guide refresh to run shortly after (e.g., 4:00 AM)
 
 ### Settings
 
@@ -92,11 +92,11 @@ Leave this disabled if you're not experiencing logo caching issues.
 
 ### Preset Schedules
 
-Quick buttons for common schedules:
-- **Daily 3 AM** - `0 3 * * *`
-- **Daily 4 AM** - `0 4 * * *`
-- **Daily 5 AM** - `0 5 * * *`
-- **Daily 6 AM** - `0 6 * * *`
+Quick buttons for common schedules (half-hour to avoid conflicts with typical on-the-hour tasks):
+- **Daily 2:30 AM** - `30 2 * * *`
+- **Daily 3:30 AM** - `30 3 * * *`
+- **Daily 4:30 AM** - `30 4 * * *`
+- **Daily 5:30 AM** - `30 5 * * *`
 
 ### Use Case
 

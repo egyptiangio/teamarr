@@ -2263,7 +2263,7 @@ export function Settings() {
                     scheduler && setScheduler({ ...scheduler, channel_reset_cron: e.target.value })
                   }
                   className="font-mono"
-                  placeholder="0 3 * * *"
+                  placeholder="30 3 * * *"
                 />
                 <CronPreview expression={scheduler?.channel_reset_cron ?? ""} />
               </div>
@@ -2274,40 +2274,40 @@ export function Settings() {
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 3 * * *" })
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "30 2 * * *" })
                   }
                 >
-                  Daily 3 AM
+                  Daily 2:30 AM
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 4 * * *" })
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "30 3 * * *" })
                   }
                 >
-                  Daily 4 AM
+                  Daily 3:30 AM
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 5 * * *" })
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "30 4 * * *" })
                   }
                 >
-                  Daily 5 AM
+                  Daily 4:30 AM
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "0 6 * * *" })
+                    scheduler && setScheduler({ ...scheduler, channel_reset_cron: "30 5 * * *" })
                   }
                 >
-                  Daily 6 AM
+                  Daily 5:30 AM
                 </Button>
               </div>
 
