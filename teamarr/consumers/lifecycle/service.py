@@ -1325,8 +1325,11 @@ class ChannelLifecycleService:
                     return result
 
             update_data = {}
-            db_updates = {}
+            dispatcharr_db_updates = {}
+            internal_db_updates = {}
             changes_made = []
+            dispatcharr_changes = []
+            dispatcharr_sync_failed = False
             group_config.get("id")
 
             # 1. Check channel name (template resolution) - V1 parity
@@ -1334,8 +1337,8 @@ class ChannelLifecycleService:
             expected_name = self._generate_channel_name(event, template, matched_keyword)
             if expected_name != current_channel.name:
                 update_data["name"] = expected_name
-                db_updates["channel_name"] = expected_name
-                changes_made.append(f"name: {current_channel.name} → {expected_name}")
+                dispatcharr_db_updates["channel_name"] = expected_name
+                dispatcharr_changes.append(f"name: {current_channel.name} → {expected_name}")
 
             # 2. Check channel number - Teamarr DB is source of truth
             # Handle channel numbers that may be floats as strings (e.g., "8121.0")
@@ -1349,7 +1352,7 @@ class ChannelLifecycleService:
             )
             if expected_number and expected_number != current_number:
                 update_data["channel_number"] = expected_number
-                changes_made.append(f"number: {current_number} → {expected_number}")
+                dispatcharr_changes.append(f"number: {current_number} → {expected_number}")
 
             # 3. Check channel_group_id (supports dynamic sport/league resolution)
             channel_group_mode = group_config.get("channel_group_mode", "static")
@@ -1368,7 +1371,7 @@ class ChannelLifecycleService:
             old_group_id = current_channel.channel_group_id
             if new_group_id != old_group_id:
                 update_data["channel_group_id"] = new_group_id
-                changes_made.append(f"channel_group_id: {old_group_id} → {new_group_id}")
+                dispatcharr_changes.append(f"channel_group_id: {old_group_id} → {new_group_id}")
 
             # 4. Check streams (M3U ID sync) - V1 parity
             stream_id = stream.get("id") if stream else None
@@ -1381,8 +1384,8 @@ class ChannelLifecycleService:
                     # Note: For consolidate mode, this adds streams; for separate, this replaces
                     new_streams = current_stream_ids + [stream_id]
                     update_data["streams"] = new_streams
-                    db_updates["dispatcharr_stream_id"] = stream_id
-                    changes_made.append(f"streams: added {stream_id}")
+                    dispatcharr_db_updates["dispatcharr_stream_id"] = stream_id
+                    dispatcharr_changes.append(f"streams: added {stream_id}")
 
             # Note: Stream ordering is applied as a final step after all matching
             # See generation.py Step 3b - this ensures all streams from all groups
@@ -1392,7 +1395,7 @@ class ChannelLifecycleService:
             expected_tvg_id = existing.tvg_id
             if expected_tvg_id != current_channel.tvg_id:
                 update_data["tvg_id"] = expected_tvg_id
-                changes_made.append(f"tvg_id: {current_channel.tvg_id} → {expected_tvg_id}")
+                dispatcharr_changes.append(f"tvg_id: {current_channel.tvg_id} → {expected_tvg_id}")
 
             # 6b. Recalculate scheduled_delete_at based on current settings
             expected_delete_time = self._timing_manager.calculate_delete_time(event)
@@ -1403,20 +1406,47 @@ class ChannelLifecycleService:
                 if stored_delete_str:
                     stored_delete_str = str(stored_delete_str)
                 if expected_delete_str != stored_delete_str:
-                    db_updates["scheduled_delete_at"] = expected_delete_str
+                    internal_db_updates["scheduled_delete_at"] = expected_delete_str
                     changes_made.append("scheduled_delete_at updated")
 
+            def mark_dispatcharr_drift(context: str, error: str | None) -> None:
+                nonlocal dispatcharr_sync_failed
+                dispatcharr_sync_failed = True
+                logger.warning(
+                    "[LIFECYCLE] Dispatcharr update failed for %s (%s): %s",
+                    existing.channel_name,
+                    context,
+                    error,
+                )
+                result.errors.append(
+                    {
+                        "channel_id": existing.dispatcharr_channel_id,
+                        "channel_name": existing.channel_name,
+                        "error": error or "Dispatcharr update failed",
+                        "context": context,
+                    }
+                )
+                update_managed_channel(conn, existing.id, {"sync_status": "drifted"})
+
             # Apply Dispatcharr updates
+            dispatcharr_update_ok = True
             if update_data:
                 with self._dispatcharr_lock:
-                    self._channel_manager.update_channel(
+                    update_result = self._channel_manager.update_channel(
                         existing.dispatcharr_channel_id,
                         update_data,
                     )
+                if not update_result.success:
+                    dispatcharr_update_ok = False
+                    mark_dispatcharr_drift('settings', update_result.error)
+                else:
+                    changes_made.extend(dispatcharr_changes)
 
-            # Apply DB updates
-            if db_updates:
-                update_managed_channel(conn, existing.id, db_updates)
+            # Apply DB updates (only sync Dispatcharr-backed fields on success)
+            if dispatcharr_update_ok and dispatcharr_db_updates:
+                update_managed_channel(conn, existing.id, dispatcharr_db_updates)
+            if internal_db_updates:
+                update_managed_channel(conn, existing.id, internal_db_updates)
 
             # 7. Sync channel_profile_ids (supports dynamic {sport}/{league} resolution)
             # Dispatcharr profile semantics (commit 6b873be):
@@ -1459,14 +1489,21 @@ class ChannelLifecycleService:
                 if is_sentinel:
                     # PATCH channel_profile_ids directly with sentinel
                     with self._dispatcharr_lock:
-                        self._channel_manager.update_channel(
+                        profile_result = self._channel_manager.update_channel(
                             existing.dispatcharr_channel_id,
                             {"channel_profile_ids": effective_profile_ids},
                         )
-                    if effective_profile_ids == [0]:
-                        changes_made.append("profiles: all profiles")
+                    if not profile_result.success:
+                        mark_dispatcharr_drift('profiles', profile_result.error)
                     else:
-                        changes_made.append("profiles: no profiles")
+                        if effective_profile_ids == [0]:
+                            changes_made.append("profiles: all profiles")
+                        else:
+                            changes_made.append("profiles: no profiles")
+                        # Update stored profile IDs in DB
+                        update_managed_channel(
+                            conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}
+                        )
                 else:
                     # Specific profile IDs - collect for bulk application
                     profiles_to_add = set(effective_profile_ids) - set(stored_profile_ids)
@@ -1480,11 +1517,11 @@ class ChannelLifecycleService:
                     for profile_id in profiles_to_add:
                         self._collect_profile_change(profile_id, channel_id, "add")
                         changes_made.append(f"queued add to profile {profile_id}")
-
-                # Update stored profile IDs in DB
-                update_managed_channel(
-                    conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}
-                )
+                # Update stored profile IDs in DB for non-sentinel bulk changes
+                if not is_sentinel:
+                    update_managed_channel(
+                        conn, existing.id, {"channel_profile_ids": json.dumps(effective_profile_ids)}
+                    )
 
             # 8. Sync logo - handles both updates and removals
             logo_url = self._resolve_logo_url(event, template, matched_keyword)
@@ -1514,20 +1551,23 @@ class ChannelLifecycleService:
                         if logo_result.success and logo_result.logo:
                             new_logo_id = logo_result.logo.get("id")
                             # Update channel with new logo
-                            self._channel_manager.update_channel(
+                            logo_update = self._channel_manager.update_channel(
                                 existing.dispatcharr_channel_id,
                                 {"logo_id": new_logo_id},
                             )
-                            # Update DB
-                            update_managed_channel(
-                                conn,
-                                existing.id,
-                                {
-                                    "logo_url": logo_url,
-                                    "dispatcharr_logo_id": new_logo_id,
-                                },
-                            )
-                            changes_made.append("logo updated")
+                            if not logo_update.success:
+                                mark_dispatcharr_drift('logo', logo_update.error)
+                            else:
+                                # Update DB
+                                update_managed_channel(
+                                    conn,
+                                    existing.id,
+                                    {
+                                        "logo_url": logo_url,
+                                        "dispatcharr_logo_id": new_logo_id,
+                                    },
+                                )
+                                changes_made.append("logo updated")
                             # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
                             # if cleanup_unused_logos setting is enabled
 
@@ -1535,25 +1575,28 @@ class ChannelLifecycleService:
                 # Logo was removed from template - clear it
                 with self._dispatcharr_lock:
                     # Remove logo from Dispatcharr channel
-                    self._channel_manager.update_channel(
+                    logo_clear = self._channel_manager.update_channel(
                         existing.dispatcharr_channel_id,
                         {"logo_id": None},
                     )
-                    # Update DB
-                    update_managed_channel(
-                        conn,
-                        existing.id,
-                        {
-                            "logo_url": None,
-                            "dispatcharr_logo_id": None,
-                        },
-                    )
-                    changes_made.append("logo removed")
+                    if not logo_clear.success:
+                        mark_dispatcharr_drift('logo', logo_clear.error)
+                    else:
+                        # Update DB
+                        update_managed_channel(
+                            conn,
+                            existing.id,
+                            {
+                                "logo_url": None,
+                                "dispatcharr_logo_id": None,
+                            },
+                        )
+                        changes_made.append("logo removed")
                     # Note: Old logos are cleaned up by Dispatcharr's bulk cleanup API
                     # if cleanup_unused_logos setting is enabled
 
             # Log changes if any
-            if changes_made:
+            if changes_made and not dispatcharr_sync_failed:
                 result.settings_updated.append(
                     {
                         "channel_id": existing.dispatcharr_channel_id,

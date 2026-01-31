@@ -111,6 +111,7 @@ BUILTIN_EVENT_PATTERNS = [
     r"\s+@\s+",  # "Team A @ Team B"
     r"\s+at\s+",  # "Team A at Team B" (word boundary)
     r"\s+v\s+",  # "Team A v Team B"
+    r"\s+[-–—]\s+",  # "Team A - Team B" (dash separators)
     # Date patterns commonly used in event streams
     r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\b",
     r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b",  # MM/DD or MM/DD/YYYY

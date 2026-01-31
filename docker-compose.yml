@@ -1,6 +1,7 @@
 services:
   teamarr:
-    image: ghcr.io/pharaoh-labs/teamarr:latest
+    build: .
+    image: teamarr:local
     container_name: teamarr
     restart: unless-stopped
     ports:

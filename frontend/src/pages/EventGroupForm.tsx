@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft, Loader2, Save, ChevronRight, ChevronDown, X, Plus, Check, FlaskConical } from "lucide-react"
@@ -25,7 +25,8 @@ import { TeamPicker } from "@/components/TeamPicker"
 import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
-import { TestPatternsModal, type PatternState } from "@/components/TestPatternsModal"
+import { TestPatternsModal } from "@/components/TestPatternsModal"
+import type { PatternState } from "@/components/TestPatternsModal/patterns"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -65,10 +66,7 @@ export function EventGroupForm() {
   const m3uAccountId = searchParams.get("m3u_account_id")
   const m3uAccountName = searchParams.get("m3u_account_name")
 
-  const [groupMode, setGroupMode] = useState<GroupMode>(null)
-
-  // Form state
-  const [formData, setFormData] = useState<EventGroupCreate>({
+  const initialFormData = useMemo<EventGroupCreate>(() => ({
     name: m3uGroupName || "",
     display_name: null,  // Optional display name override
     leagues: [],
@@ -92,21 +90,144 @@ export function EventGroupForm() {
     include_teams: null,
     exclude_teams: null,
     team_filter_mode: "include",
-  })
+  }), [m3uAccountId, m3uAccountName, m3uGroupId, m3uGroupName])
 
-  // Single-league selection (stores the slug for single-league mode during creation)
-  const [selectedLeague, setSelectedLeague] = useState<string | null>(null)
-
-  // Track if this is a child group (inherits settings from parent)
-  const isChildGroup = formData.parent_group_id != null
-
-  // Multi-league selection
-  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set())
+  const [draftFormData, setDraftFormData] = useState<EventGroupCreate | null>(null)
 
   // Fetch existing group if editing
   const { data: group, isLoading: isLoadingGroup } = useGroup(
     isEdit ? Number(groupId) : 0
   )
+
+  const groupFormData = useMemo<EventGroupCreate | null>(() => {
+    if (!group) return null
+    return {
+      name: group.name,
+      display_name: group.display_name,
+      leagues: group.leagues,
+      parent_group_id: group.parent_group_id,
+      template_id: group.template_id,
+      channel_start_number: group.channel_start_number,
+      channel_group_id: group.channel_group_id,
+      channel_group_mode: group.channel_group_mode || "static",
+      channel_profile_ids: group.channel_profile_ids,  // Keep null = "use default"
+      stream_profile_id: group.stream_profile_id,  // Keep null = "use global default"
+      duplicate_event_handling: group.duplicate_event_handling,
+      channel_assignment_mode: group.channel_assignment_mode,
+      sort_order: group.sort_order,
+      total_stream_count: group.total_stream_count,
+      m3u_group_id: group.m3u_group_id,
+      m3u_group_name: group.m3u_group_name,
+      m3u_account_id: group.m3u_account_id,
+      m3u_account_name: group.m3u_account_name,
+      // Stream filtering
+      stream_include_regex: group.stream_include_regex,
+      stream_include_regex_enabled: group.stream_include_regex_enabled,
+      stream_exclude_regex: group.stream_exclude_regex,
+      stream_exclude_regex_enabled: group.stream_exclude_regex_enabled,
+      custom_regex_teams: group.custom_regex_teams,
+      custom_regex_teams_enabled: group.custom_regex_teams_enabled,
+      custom_regex_date: group.custom_regex_date,
+      custom_regex_date_enabled: group.custom_regex_date_enabled,
+      custom_regex_time: group.custom_regex_time,
+      custom_regex_time_enabled: group.custom_regex_time_enabled,
+      custom_regex_league: group.custom_regex_league,
+      custom_regex_league_enabled: group.custom_regex_league_enabled,
+      skip_builtin_filter: group.skip_builtin_filter,
+      // Team filtering
+      include_teams: group.include_teams,
+      exclude_teams: group.exclude_teams,
+      team_filter_mode: group.team_filter_mode || "include",
+      // Multi-sport enhancements (Phase 3)
+      channel_sort_order: group.channel_sort_order || "time",
+      overlap_handling: group.overlap_handling || "add_stream",
+      enabled: group.enabled,
+    }
+  }, [group])
+
+  const defaultFormData = groupFormData ?? initialFormData
+  const formData = draftFormData ?? defaultFormData
+  const setFormData = useCallback(
+    (updater: EventGroupCreate | ((prev: EventGroupCreate) => EventGroupCreate)) => {
+      setDraftFormData((prev) => {
+        const base = prev ?? defaultFormData
+        return typeof updater === "function"
+          ? (updater as (prev: EventGroupCreate) => EventGroupCreate)(base)
+          : updater
+      })
+    },
+    [defaultFormData]
+  )
+
+  const defaultGroupMode = useMemo<GroupMode>(() => {
+    if (!group) return null
+    const storedMode = group.group_mode as GroupMode | undefined | null
+    return storedMode || (group.leagues.length > 1 ? "multi" : "single")
+  }, [group])
+  const [draftGroupMode, setDraftGroupMode] = useState<GroupMode | null>(null)
+  const groupMode = draftGroupMode ?? defaultGroupMode
+  const setGroupMode = useCallback((mode: GroupMode) => {
+    setDraftGroupMode(mode)
+  }, [])
+
+  const defaultSelectedLeague = useMemo(() => {
+    if (!group) return null
+    if (defaultGroupMode === "single" && group.leagues.length > 0) {
+      return group.leagues[0]
+    }
+    return null
+  }, [group, defaultGroupMode])
+  const [draftSelectedLeague, setDraftSelectedLeague] = useState<string | null>(null)
+  const selectedLeague = draftSelectedLeague ?? defaultSelectedLeague
+  const setSelectedLeague = useCallback((league: string | null) => {
+    setDraftSelectedLeague(league)
+    if (!isEdit) {
+      setFormData((prev) => ({
+        ...prev,
+        leagues: league ? [league] : [],
+      }))
+    }
+  }, [isEdit, setFormData])
+
+  const defaultSelectedLeagues = useMemo(() => {
+    if (!group || defaultGroupMode !== "multi") return new Set<string>()
+    return new Set(group.leagues)
+  }, [group, defaultGroupMode])
+  const [draftSelectedLeagues, setDraftSelectedLeagues] = useState<Set<string> | null>(null)
+  const selectedLeagues = draftSelectedLeagues ?? defaultSelectedLeagues
+  const setSelectedLeagues = useCallback((leagues: Set<string>) => {
+    setDraftSelectedLeagues(leagues)
+    if (!isEdit) {
+      setFormData((prev) => ({
+        ...prev,
+        leagues: Array.from(leagues),
+      }))
+    }
+  }, [isEdit, setFormData])
+
+  const defaultUseDefaultProfiles = useMemo(() => {
+    if (!group) return true
+    return group.channel_profile_ids === null || group.channel_profile_ids === undefined
+  }, [group])
+  const [draftUseDefaultProfiles, setDraftUseDefaultProfiles] = useState<boolean | null>(null)
+  const useDefaultProfiles = draftUseDefaultProfiles ?? defaultUseDefaultProfiles
+  const setUseDefaultProfiles = useCallback((value: boolean) => {
+    setDraftUseDefaultProfiles(value)
+  }, [])
+
+  const defaultUseDefaultTeamFilter = useMemo(() => {
+    if (!group) return true
+    const hasCustomTeamFilter = group.include_teams !== null || group.exclude_teams !== null
+    return !hasCustomTeamFilter
+  }, [group])
+  const [draftUseDefaultTeamFilter, setDraftUseDefaultTeamFilter] = useState<boolean | null>(null)
+  const useDefaultTeamFilter = draftUseDefaultTeamFilter ?? defaultUseDefaultTeamFilter
+  const setUseDefaultTeamFilter = useCallback((value: boolean) => {
+    setDraftUseDefaultTeamFilter(value)
+  }, [])
+
+  // Track if this is a child group (inherits settings from parent)
+  const isChildGroup = formData.parent_group_id != null
 
   // Fetch all groups for parent selection
   const { data: groupsData } = useGroups(true)
@@ -145,12 +266,6 @@ export function EventGroupForm() {
   // Test Patterns modal
   const [testPatternsOpen, setTestPatternsOpen] = useState(false)
 
-  // Channel profile default state - true = use global default, false = custom selection
-  const [useDefaultProfiles, setUseDefaultProfiles] = useState(true)
-
-  // Team filter default state - true = use global default, false = custom per-group filter
-  const [useDefaultTeamFilter, setUseDefaultTeamFilter] = useState(true)
-
   // Mutations
   const createMutation = useCreateGroup()
   const updateMutation = useUpdateGroup()
@@ -175,88 +290,9 @@ export function EventGroupForm() {
   const handlePatternsApply = useCallback((patterns: PatternState) => {
     setFormData((prev) => ({ ...prev, ...patterns }))
     toast.success("Patterns applied to form")
-  }, [])
+  }, [setFormData])
 
-  // Populate form when editing
-  useEffect(() => {
-    if (group) {
-      setFormData({
-        name: group.name,
-        display_name: group.display_name,
-        leagues: group.leagues,
-        parent_group_id: group.parent_group_id,
-        template_id: group.template_id,
-        channel_start_number: group.channel_start_number,
-        channel_group_id: group.channel_group_id,
-        channel_group_mode: group.channel_group_mode || "static",
-        channel_profile_ids: group.channel_profile_ids,  // Keep null = "use default"
-        stream_profile_id: group.stream_profile_id,  // Keep null = "use global default"
-        duplicate_event_handling: group.duplicate_event_handling,
-        channel_assignment_mode: group.channel_assignment_mode,
-        sort_order: group.sort_order,
-        total_stream_count: group.total_stream_count,
-        m3u_group_id: group.m3u_group_id,
-        m3u_group_name: group.m3u_group_name,
-        m3u_account_id: group.m3u_account_id,
-        m3u_account_name: group.m3u_account_name,
-        // Stream filtering
-        stream_include_regex: group.stream_include_regex,
-        stream_include_regex_enabled: group.stream_include_regex_enabled,
-        stream_exclude_regex: group.stream_exclude_regex,
-        stream_exclude_regex_enabled: group.stream_exclude_regex_enabled,
-        custom_regex_teams: group.custom_regex_teams,
-        custom_regex_teams_enabled: group.custom_regex_teams_enabled,
-        custom_regex_date: group.custom_regex_date,
-        custom_regex_date_enabled: group.custom_regex_date_enabled,
-        custom_regex_time: group.custom_regex_time,
-        custom_regex_time_enabled: group.custom_regex_time_enabled,
-        custom_regex_league: group.custom_regex_league,
-        custom_regex_league_enabled: group.custom_regex_league_enabled,
-        skip_builtin_filter: group.skip_builtin_filter,
-        // Team filtering
-        include_teams: group.include_teams,
-        exclude_teams: group.exclude_teams,
-        team_filter_mode: group.team_filter_mode || "include",
-        // Multi-sport enhancements (Phase 3)
-        channel_sort_order: group.channel_sort_order || "time",
-        overlap_handling: group.overlap_handling || "add_stream",
-        enabled: group.enabled,
-      })
-
-      // Use stored group_mode (not derived from league count) to preserve user intent
-      const mode = group.group_mode as GroupMode || (group.leagues.length > 1 ? "multi" : "single")
-      setGroupMode(mode)
-
-      // Set useDefaultProfiles based on whether channel_profile_ids is null (use default) or has a value
-      setUseDefaultProfiles(group.channel_profile_ids === null || group.channel_profile_ids === undefined)
-
-      // Set useDefaultTeamFilter based on whether include_teams/exclude_teams are null (use default)
-      // null means use global default, any array (even empty) means custom per-group filter
-      const hasCustomTeamFilter = group.include_teams !== null || group.exclude_teams !== null
-      setUseDefaultTeamFilter(!hasCustomTeamFilter)
-
-      if (mode === "single") {
-        // Single league mode - use first league
-        if (group.leagues.length > 0) {
-          setSelectedLeague(group.leagues[0])
-        }
-      } else {
-        // Multi league mode
-        setSelectedLeagues(new Set(group.leagues))
-      }
-    }
-  }, [group, cachedLeagues])
-
-
-  // Sync selectedLeague/selectedLeagues to formData.leagues during create
-  // This ensures the UI shows correct mode badge and Multi-Sport Settings appear
-  useEffect(() => {
-    if (!isEdit && groupMode === "single" && selectedLeague) {
-      setFormData(prev => ({ ...prev, leagues: [selectedLeague] }))
-    } else if (!isEdit && groupMode === "multi") {
-      setFormData(prev => ({ ...prev, leagues: Array.from(selectedLeagues) }))
-    }
-  }, [selectedLeague, selectedLeagues, isEdit, groupMode])
+  // Defaults + draft state are handled without effects to avoid cascading renders
 
   // Filtered channel groups based on search
   const filteredChannelGroups = useMemo(() => {

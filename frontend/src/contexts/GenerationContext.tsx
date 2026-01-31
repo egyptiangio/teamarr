@@ -1,34 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { toast } from "sonner"
-
-interface GenerationStatus {
-  in_progress: boolean
-  status: string
-  message: string
-  percent: number
-  phase: string
-  current: number
-  total: number
-  item_name: string
-  started_at: string | null
-  completed_at: string | null
-  error: string | null
-  result: {
-    success?: boolean
-    programmes_count?: number
-    teams_processed?: number
-    groups_processed?: number
-    duration_seconds?: number
-    run_id?: number
-  }
-}
-
-interface GenerationContextValue {
-  startGeneration: (onComplete?: (result: GenerationStatus["result"]) => void) => void
-  isGenerating: boolean
-}
-
-const GenerationContext = createContext<GenerationContextValue | null>(null)
+import { GenerationContext, type GenerationStatus } from "@/contexts/generation-context"
 
 const TOAST_ID = "epg-generation"
 
@@ -231,10 +203,3 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   )
 }
 
-export function useGenerationProgress() {
-  const context = useContext(GenerationContext)
-  if (!context) {
-    throw new Error("useGenerationProgress must be used within a GenerationProvider")
-  }
-  return context
-}

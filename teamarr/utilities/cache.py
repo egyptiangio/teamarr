@@ -240,6 +240,7 @@ class PersistentTTLCache:
         self._dirty_keys: set[str] = set()
         self._deleted_keys: set[str] = set()
         self._dirty_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
 
         # Background flush thread
         self._flush_timer: threading.Timer | None = None
@@ -386,58 +387,59 @@ class PersistentTTLCache:
         """
         from teamarr.database.connection import get_db
 
-        # Atomically grab dirty/deleted keys
-        with self._dirty_lock:
-            dirty_keys = self._dirty_keys.copy()
-            deleted_keys = self._deleted_keys.copy()
-            self._dirty_keys.clear()
-            self._deleted_keys.clear()
-
-        if not dirty_keys and not deleted_keys:
-            return 0
-
-        # Get current values for dirty keys
-        entries = self._memory_cache.get_all_entries()
-        to_write = {k: entries[k] for k in dirty_keys if k in entries}
-
-        written = 0
-        deleted = 0
-
-        try:
-            with get_db() as conn:
-                # Delete removed keys
-                for key in deleted_keys:
-                    conn.execute("DELETE FROM service_cache WHERE cache_key = ?", (key,))
-                    deleted += 1
-
-                # Upsert dirty keys
-                now = datetime.now().isoformat()
-                for key, (value, expires_at) in to_write.items():
-                    try:
-                        data_json = json.dumps(value, default=str)
-                        conn.execute(
-                            """
-                            INSERT OR REPLACE INTO service_cache
-                            (cache_key, data_json, expires_at, created_at)
-                            VALUES (?, ?, ?, ?)
-                            """,
-                            (key, data_json, expires_at.isoformat(), now),
-                        )
-                        written += 1
-                    except (TypeError, ValueError) as e:
-                        logger.warning("[CACHE] Failed to serialize key %s: %s", key, e)
-
-            if written > 0 or deleted > 0:
-                logger.debug("[CACHE] Flush: %d written, %d deleted", written, deleted)
-
-        except Exception as e:
-            logger.error("[CACHE] Flush failed: %s", e)
-            # Put keys back for retry on next flush
+        with self._flush_lock:
+            # Atomically grab dirty/deleted keys
             with self._dirty_lock:
-                self._dirty_keys.update(dirty_keys)
-                self._deleted_keys.update(deleted_keys)
+                dirty_keys = self._dirty_keys.copy()
+                deleted_keys = self._deleted_keys.copy()
+                self._dirty_keys.clear()
+                self._deleted_keys.clear()
 
-        return written
+            if not dirty_keys and not deleted_keys:
+                return 0
+
+            # Get current values for dirty keys
+            entries = self._memory_cache.get_all_entries()
+            to_write = {k: entries[k] for k in dirty_keys if k in entries}
+
+            written = 0
+            deleted = 0
+
+            try:
+                with get_db() as conn:
+                    # Delete removed keys
+                    for key in deleted_keys:
+                        conn.execute("DELETE FROM service_cache WHERE cache_key = ?", (key,))
+                        deleted += 1
+
+                    # Upsert dirty keys
+                    now = datetime.now().isoformat()
+                    for key, (value, expires_at) in to_write.items():
+                        try:
+                            data_json = json.dumps(value, default=str)
+                            conn.execute(
+                                """
+                                INSERT OR REPLACE INTO service_cache
+                                (cache_key, data_json, expires_at, created_at)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                                (key, data_json, expires_at.isoformat(), now),
+                            )
+                            written += 1
+                        except (TypeError, ValueError) as e:
+                            logger.warning("[CACHE] Failed to serialize key %s: %s", key, e)
+
+                if written > 0 or deleted > 0:
+                    logger.debug("[CACHE] Flush: %d written, %d deleted", written, deleted)
+
+            except Exception as e:
+                logger.error("[CACHE] Flush failed: %s", e)
+                # Put keys back for retry on next flush
+                with self._dirty_lock:
+                    self._dirty_keys.update(dirty_keys)
+                    self._deleted_keys.update(deleted_keys)
+
+            return written
 
     @property
     def size(self) -> int:

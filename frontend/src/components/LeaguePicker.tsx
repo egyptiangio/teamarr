@@ -9,6 +9,17 @@ import { cn, getSportDisplayName, getLeagueDisplayName } from "@/lib/utils"
 import type { CachedLeague } from "@/api/teams"
 import { getLeagues, getSports } from "@/api/teams"
 
+const SOCCER_TOP_LEAGUE_SLUGS = new Set([
+  'eng.1',
+  'esp.1',
+  'ger.1',
+  'ita.1',
+  'fra.1',
+  'uefa.champions',
+  'uefa.europa',
+  'uefa.europa.conf',
+]);
+
 interface LeaguePickerProps {
   selectedLeagues: string[]
   onSelectionChange: (leagues: string[]) => void
@@ -31,6 +42,7 @@ export function LeaguePicker({
 }: LeaguePickerProps) {
   const [search, setSearch] = useState("")
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set())
+  const [expandedSoccerOther, setExpandedSoccerOther] = useState(false)
   const { data: leaguesResponse, isLoading } = useQuery({
     queryKey: ["cached-leagues"],
     queryFn: () => getLeagues(),
@@ -108,6 +120,18 @@ export function LeaguePicker({
     const next = new Set(selectedSet)
     for (const slug of sportSlugs) {
       next.delete(slug)
+    }
+    onSelectionChange(Array.from(next))
+  }
+
+  const setLeagueSelection = (slugs: string[], select: boolean) => {
+    const next = new Set(selectedSet)
+    for (const slug of slugs) {
+      if (select) {
+        next.add(slug)
+      } else {
+        next.delete(slug)
+      }
     }
     onSelectionChange(Array.from(next))
   }
@@ -230,36 +254,139 @@ export function LeaguePicker({
             if (displayLeagues.length === 0) return null
 
             const allSelected = isSportFullySelected(sport)
+            const selectedCount = displayLeagues.filter(l => selectedSet.has(l.slug)).length
 
-            // Soccer in multi-select mode: show as single consolidated checkbox (too many leagues)
-            if (!singleSelect && sport.toLowerCase() === "soccer") {
+            const isSoccer = sport.toLowerCase() === 'soccer'
+            if (!singleSelect && isSoccer && !search) {
+              const soccerLeagues = leaguesBySport[sport] || []
+              const topSoccerLeagues = soccerLeagues.filter(l => SOCCER_TOP_LEAGUE_SLUGS.has(l.slug))
+              const otherSoccerLeagues = soccerLeagues.filter(l => !SOCCER_TOP_LEAGUE_SLUGS.has(l.slug))
+              const topSelectedCount = topSoccerLeagues.filter(l => selectedSet.has(l.slug)).length
+              const otherSelectedCount = otherSoccerLeagues.filter(l => selectedSet.has(l.slug)).length
+              const allTopSelected = topSoccerLeagues.length > 0 && topSelectedCount === topSoccerLeagues.length
+              const allOtherSelected = otherSoccerLeagues.length > 0 && otherSelectedCount === otherSoccerLeagues.length
+              const otherSlugs = otherSoccerLeagues.map(l => l.slug)
+
               return (
-                <label
-                  key={sport}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-accent",
-                    allSelected && "bg-primary/10"
-                  )}
-                >
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={() => toggleSport(sport)}
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">
-                      {getSportDisplayName(sport, sportsMap)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      All {leagues.length} leagues (EPL, La Liga, Bundesliga, Serie A, Ligue 1, MLS, Champions League, etc.)
+                <div key={sport}>
+                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 sticky top-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">
+                        {getSportDisplayName(sport, sportsMap)} ({soccerLeagues.length})
+                      </span>
+                      {selectedCount > 0 && (
+                        <Badge variant="secondary" className="text-xs h-5">
+                          {selectedCount} selected
+                        </Badge>
+                      )}
                     </div>
                   </div>
-                </label>
+                  <div className="space-y-2 p-2">
+                    <label
+                      className={cn(
+                        "flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-accent",
+                        allSelected && "bg-primary/10"
+                      )}
+                    >
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={() => toggleSport(sport)}
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">All Soccer Leagues</div>
+                        <div className="text-xs text-muted-foreground">
+                          Select or clear every soccer league in this group
+                        </div>
+                      </div>
+                    </label>
+                    <label
+                      className={cn(
+                        "flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-accent",
+                        allTopSelected && "bg-primary/10"
+                      )}
+                    >
+                      <Checkbox
+                        checked={allTopSelected}
+                        onCheckedChange={() =>
+                          setLeagueSelection(
+                            topSoccerLeagues.map(l => l.slug),
+                            !allTopSelected
+                          )
+                        }
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">Top Domestic + Champions Leagues</div>
+                        <div className="text-xs text-muted-foreground">
+                          EPL, La Liga, Bundesliga, Serie A, Ligue 1, UCL, UEL, UECL
+                        </div>
+                      </div>
+                    </label>
+                    <div className="rounded border border-border/50">
+                      <div className="flex items-center justify-between px-2 py-2">
+                        <label
+                          className={cn(
+                            "flex items-center gap-3 cursor-pointer",
+                            allOtherSelected && "text-primary"
+                          )}
+                        >
+                          <Checkbox
+                            checked={allOtherSelected}
+                            onCheckedChange={() => setLeagueSelection(otherSlugs, !allOtherSelected)}
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-sm">Other Soccer Leagues</div>
+                            <div className="text-xs text-muted-foreground">
+                              {otherSoccerLeagues.length} leagues (expand for individual picks)
+                            </div>
+                          </div>
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => setExpandedSoccerOther((prev) => !prev)}
+                        >
+                          {expandedSoccerOther ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                      {expandedSoccerOther && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-1 p-2 pt-0">
+                          {otherSoccerLeagues.map((league) => {
+                            const isSelected = selectedSet.has(league.slug)
+                            return (
+                              <label
+                                key={league.slug}
+                                className={cn(
+                                  "flex items-center gap-2 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-accent",
+                                  isSelected && "bg-primary/10"
+                                )}
+                              >
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => selectLeague(league.slug)}
+                                />
+                                {league.logo_url && (
+                                  <img src={league.logo_url} alt="" className="h-4 w-4 object-contain" />
+                                )}
+                                <span className="truncate">{getLeagueDisplayName(league, true)}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )
             }
 
             // Render leagues for this sport
             const isExpanded = expandedSports.has(sport) || !!search
-            const selectedCount = displayLeagues.filter(l => selectedSet.has(l.slug)).length
 
             return (
               <div key={sport}>
@@ -290,7 +417,11 @@ export function LeaguePicker({
                       className="h-6 text-xs"
                       onClick={(e) => {
                         e.stopPropagation()
-                        allSelected ? clearAllInSport(sport) : selectAllInSport(sport)
+                        if (allSelected) {
+                          clearAllInSport(sport)
+                        } else {
+                          selectAllInSport(sport)
+                        }
                       }}
                     >
                       {allSelected ? "Clear" : "Select All"}

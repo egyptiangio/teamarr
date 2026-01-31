@@ -174,6 +174,13 @@ DATE_PATTERNS = [
     (rf"\b({_MONTHS})[a-z]*\s+(\d{{1,2}})(?:st|nd|rd|th)?(?!:)\b", "DATE_MASK"),
 ]
 
+# Soccer/European hints for preferring DD/MM in ambiguous numeric dates
+_SOCCER_DATE_HINTS = re.compile(
+    r"\b(epl|premier\s+league|la\s+liga|bundesliga|serie\s+a|ligue\s+1|uefa|"
+    r"champions\s+league|europa\s+league|conference\s+league|ucl|uel|uecl)\b",
+    re.IGNORECASE,
+)
+
 # Time patterns to extract and mask
 TIME_PATTERNS = [
     # 7:00 PM, 7:00PM, 19:00, 15:00:05
@@ -181,6 +188,16 @@ TIME_PATTERNS = [
     # 7PM, 7 PM
     (r"\b(\d{1,2})\s*(AM|PM|am|pm)\b", "TIME_MASK"),
 ]
+
+# Common team suffix/prefix tokens that add noise in soccer matching.
+_TEAM_NOISE_TOKENS = {
+    "fc",
+    "cf",
+    "ac",
+    "sc",
+    "afc",
+    "ssc",
+}
 
 
 def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]:
@@ -200,8 +217,8 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
 
     result = text
 
-    # Normalize em dashes (—) and en dashes (–) to spaces for pattern matching
-    result = result.replace("\u2014", " ").replace("\u2013", " ")
+    # Normalize em/en dashes to hyphen separators for pattern matching
+    result = result.replace("\u2014", " - ").replace("\u2013", " - ")
 
     extracted_date = None
     extracted_time = None
@@ -212,7 +229,13 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
         if match:
             is_iso = mask == "DATE_MASK_ISO"
             no_year = mask == "DATE_MASK_NO_YEAR"
-            extracted_date = _parse_date_match(match, is_iso=is_iso, no_year=no_year)
+            prefer_day_first = "-" in match.group(0) or bool(_SOCCER_DATE_HINTS.search(result))
+            extracted_date = _parse_date_match(
+                match,
+                is_iso=is_iso,
+                no_year=no_year,
+                prefer_day_first=prefer_day_first,
+            )
             result = re.sub(pattern, " DATE_MASK ", result, count=1, flags=re.IGNORECASE)
             break
 
@@ -230,7 +253,12 @@ def extract_and_mask_datetime(text: str) -> tuple[str, date | None, time | None]
     return result, extracted_date, extracted_time
 
 
-def _parse_date_match(match: re.Match, is_iso: bool = False, no_year: bool = False) -> date | None:
+def _parse_date_match(
+    match: re.Match,
+    is_iso: bool = False,
+    no_year: bool = False,
+    prefer_day_first: bool = False,
+) -> date | None:
     """Parse a date from regex match.
 
     Args:
@@ -267,10 +295,15 @@ def _parse_date_match(match: re.Match, is_iso: bool = False, no_year: bool = Fal
                     return _infer_year_for_date(month_num, day)
                 return None
 
-        # MM/DD without year - infer year based on proximity to today
+        # MM/DD or DD/MM without year - infer year based on proximity to today
         if no_year and len(groups) >= 2:
-            month = int(groups[0])
-            day = int(groups[1])
+            first = int(groups[0])
+            second = int(groups[1])
+            day_first = _is_day_first(first, second, prefer_day_first)
+            if day_first:
+                day, month = first, second
+            else:
+                month, day = first, second
             return _infer_year_for_date(month, day)
 
         # Numeric date patterns with year
@@ -281,9 +314,14 @@ def _parse_date_match(match: re.Match, is_iso: bool = False, no_year: bool = Fal
                 month = int(groups[1])
                 day = int(groups[2])
             else:
-                # US format: MM/DD/YY or MM/DD/YYYY
-                month = int(groups[0])
-                day = int(groups[1])
+                # Numeric format: MM/DD/YY or DD/MM/YY (use heuristics)
+                first = int(groups[0])
+                second = int(groups[1])
+                day_first = _is_day_first(first, second, prefer_day_first)
+                if day_first:
+                    day, month = first, second
+                else:
+                    month, day = first, second
                 year = int(groups[2])
 
                 # Handle 2-digit year
@@ -296,6 +334,18 @@ def _parse_date_match(match: re.Match, is_iso: bool = False, no_year: bool = Fal
         pass
 
     return None
+
+
+def _is_day_first(first: int, second: int, prefer_day_first: bool) -> bool:
+    """Decide if numeric date should be parsed as DD/MM.
+
+    Uses unambiguous values first, falls back to preference for ambiguous cases.
+    """
+    if first > 12 and second <= 12:
+        return True
+    if second > 12 and first <= 12:
+        return False
+    return prefer_day_first
 
 
 def _infer_year_for_date(month: int, day: int) -> date | None:
@@ -458,5 +508,12 @@ def normalize_for_matching(text: str) -> str:
 
     # Normalize whitespace
     text = " ".join(text.split())
+
+    # Drop common team suffix/prefix tokens (e.g., FC, CF) when they add noise
+    tokens = text.split()
+    if len(tokens) > 1:
+        filtered = [token for token in tokens if token not in _TEAM_NOISE_TOKENS]
+        if filtered:
+            text = " ".join(filtered)
 
     return text.strip()

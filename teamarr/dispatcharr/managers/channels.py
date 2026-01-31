@@ -122,6 +122,7 @@ class ChannelManager:
 
     # Class-level caches shared across instances (keyed by base URL)
     _caches: dict[str, ChannelCache] = {}
+    _locks: dict[str, threading.Lock] = {}
 
     def __init__(self, client: DispatcharrClient):
         """Initialize channel manager.
@@ -131,7 +132,7 @@ class ChannelManager:
         """
         self._client = client
         self._url = client._base_url
-        self._lock = threading.Lock()
+        self._lock = self._locks.setdefault(self._url, threading.Lock())
 
         # Initialize cache for this URL if not exists
         if self._url not in self._caches:

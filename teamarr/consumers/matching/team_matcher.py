@@ -18,6 +18,7 @@ from teamarr.consumers.matching import MATCH_WINDOW_DAYS
 from teamarr.consumers.matching.classifier import ClassifiedStream, StreamCategory
 from teamarr.consumers.matching.constants import (
     BOTH_TEAMS_THRESHOLD,
+    DATE_MISMATCH_PENALTY,
     HIGH_CONFIDENCE_THRESHOLD,
 )
 from teamarr.consumers.matching.normalizer import normalize_for_matching
@@ -471,10 +472,10 @@ class TeamMatcher:
 
             event_date = event.start_time.astimezone(ctx.user_tz).date()
 
-            # Check for date mismatch from stream (if extracted)
+            date_penalty = 0.0
             if ctx.classified.normalized.extracted_date:
                 if ctx.classified.normalized.extracted_date != event_date:
-                    continue
+                    date_penalty = DATE_MISMATCH_PENALTY
 
             # Check for sport mismatch from stream (if detected)
             if ctx.classified.sport_hint:
@@ -508,6 +509,10 @@ class TeamMatcher:
                     time_distance = abs(
                         int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
                     )
+
+                # Apply penalty for date mismatches (avoid hard exclusion)
+                if date_penalty:
+                    score = max(score - date_penalty, 0.0)
 
                 # Ranking: score > time proximity > future over past > date proximity
                 is_better = False
@@ -616,10 +621,10 @@ class TeamMatcher:
 
             event_date = event.start_time.astimezone(ctx.user_tz).date()
 
-            # Check for date mismatch from stream (if extracted)
+            date_penalty = 0.0
             if ctx.classified.normalized.extracted_date:
                 if ctx.classified.normalized.extracted_date != event_date:
-                    continue
+                    date_penalty = DATE_MISMATCH_PENALTY
 
             # Check for sport mismatch from stream (if detected)
             if ctx.classified.sport_hint:
@@ -653,6 +658,10 @@ class TeamMatcher:
                     time_distance = abs(
                         int((event.start_time.astimezone(ctx.user_tz) - stream_dt).total_seconds())
                     )
+
+                # Apply penalty for date mismatches (avoid hard exclusion)
+                if date_penalty:
+                    score = max(score - date_penalty, 0.0)
 
                 # Ranking: score > time proximity > future over past > date proximity
                 is_better = False
@@ -748,9 +757,15 @@ class TeamMatcher:
         """
         # Apply threshold based on whether date validation is available
 
-        # Normalize event team names for comparison
-        home_normalized = normalize_text(event.home_team.name)
-        away_normalized = normalize_text(event.away_team.name)
+        # Normalize event team names for comparison (include short name + abbrev patterns)
+        home_patterns = self._fuzzy.generate_team_patterns(event.home_team)
+        away_patterns = self._fuzzy.generate_team_patterns(event.away_team)
+
+        def score_against_patterns(team_normalized: str, patterns: list) -> float:
+            return max(
+                (fuzz.token_set_ratio(team_normalized, p.pattern) for p in patterns),
+                default=0.0,
+            )
 
         # Note: Pipe-separated content (e.g., "Sacramento Kings | Golden 1 Center")
         # is handled naturally by token_set_ratio which finds best token overlap.
@@ -761,11 +776,11 @@ class TeamMatcher:
             t1_norm = normalize_text(team1)
             t2_norm = normalize_text(team2)
 
-            # Score each stream team against each event team
-            t1_vs_home = fuzz.token_set_ratio(t1_norm, home_normalized)
-            t1_vs_away = fuzz.token_set_ratio(t1_norm, away_normalized)
-            t2_vs_home = fuzz.token_set_ratio(t2_norm, home_normalized)
-            t2_vs_away = fuzz.token_set_ratio(t2_norm, away_normalized)
+            # Score each stream team against each event team (full/short/abbrev patterns)
+            t1_vs_home = score_against_patterns(t1_norm, home_patterns)
+            t1_vs_away = score_against_patterns(t1_norm, away_patterns)
+            t2_vs_home = score_against_patterns(t2_norm, home_patterns)
+            t2_vs_away = score_against_patterns(t2_norm, away_patterns)
 
             # Try both valid assignments (each stream team matches a different event team)
             # Option 1: team1 → home, team2 → away
@@ -789,7 +804,11 @@ class TeamMatcher:
             event_name = f"{event.home_team.name} vs {event.away_team.name}"
             event_norm = normalize_text(event_name)
 
-            score = fuzz.token_set_ratio(single_norm, event_norm)
+            score = max(
+                fuzz.token_set_ratio(single_norm, event_norm),
+                score_against_patterns(single_norm, home_patterns),
+                score_against_patterns(single_norm, away_patterns),
+            )
 
             # For single-team matches, always require high confidence
             if score >= HIGH_CONFIDENCE_THRESHOLD:
@@ -802,8 +821,8 @@ class TeamMatcher:
         """Resolve a team name to its canonical form via alias lookup.
 
         Priority:
-        1. Built-in aliases (TEAM_ALIASES constant) - league-agnostic
-        2. User-defined aliases (database) - league-specific
+        1. User-defined aliases (database) - league-specific
+        2. Built-in aliases (TEAM_ALIASES constant) - league-agnostic
 
         Args:
             team_name: The team name to look up
@@ -814,16 +833,16 @@ class TeamMatcher:
         """
         normalized = team_name.lower()
 
-        # First check built-in aliases (league-agnostic)
-        canonical = TEAM_ALIASES.get(normalized)
-        if canonical:
-            return canonical
-
-        # Then check user-defined aliases (league-specific)
+        # First check user-defined aliases (league-specific)
         if league and self._user_aliases:
             user_canonical = self._lookup_user_alias(normalized, league)
             if user_canonical:
                 return user_canonical
+
+        # Then check built-in aliases (league-agnostic)
+        canonical = TEAM_ALIASES.get(normalized)
+        if canonical:
+            return canonical
 
         return None
 
@@ -966,15 +985,15 @@ class TeamMatcher:
         results: list[tuple[str, str | None]] = []
         normalized = team_name.lower()
 
-        # Check built-in aliases first (already league-agnostic)
-        canonical = TEAM_ALIASES.get(normalized)
-        if canonical:
-            results.append((canonical, None))
-
-        # Check reverse cache - returns ALL leagues where this alias exists
+        # Check reverse cache first - returns ALL leagues where this alias exists
         if self._reverse_aliases:
             matches = self._reverse_aliases.get(normalized, [])
             results.extend(matches)
+
+        # Check built-in aliases last (already league-agnostic)
+        canonical = TEAM_ALIASES.get(normalized)
+        if canonical:
+            results.append((canonical, None))
 
         return results
 

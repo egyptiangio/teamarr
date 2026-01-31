@@ -152,7 +152,7 @@ export interface TemplateCreate {
   event_channel_logo_url?: string | null
 }
 
-export interface TemplateUpdate extends Partial<TemplateCreate> {}
+export type TemplateUpdate = Partial<TemplateCreate>;
 
 export async function listTemplates(): Promise<Template[]> {
   return api.get("/templates")

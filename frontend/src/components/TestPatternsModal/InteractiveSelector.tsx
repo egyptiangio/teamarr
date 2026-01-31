@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { generatePattern, generateTeamsPattern } from "@/lib/pattern-generator"
 import type { TextSelection } from "@/lib/pattern-generator"
-import type { PatternState } from "./index"
+import type { PatternState } from "./patterns"
 import { Users, Calendar, Clock, Trophy } from "lucide-react"
 
 // ---------------------------------------------------------------------------

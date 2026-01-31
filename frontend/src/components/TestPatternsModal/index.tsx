@@ -9,7 +9,7 @@
  * 5. Syncs patterns bidirectionally with the form (reads on open, writes on Apply)
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Dialog,
@@ -25,42 +25,7 @@ import { StreamList } from "./StreamList"
 import { PatternPanel } from "./PatternPanel"
 import { InteractiveSelector } from "./InteractiveSelector"
 import { FlaskConical, Loader2 } from "lucide-react"
-
-// ---------------------------------------------------------------------------
-// Types — shared across child components
-// ---------------------------------------------------------------------------
-
-export interface PatternState {
-  skip_builtin_filter: boolean
-  stream_include_regex: string | null
-  stream_include_regex_enabled: boolean
-  stream_exclude_regex: string | null
-  stream_exclude_regex_enabled: boolean
-  custom_regex_teams: string | null
-  custom_regex_teams_enabled: boolean
-  custom_regex_date: string | null
-  custom_regex_date_enabled: boolean
-  custom_regex_time: string | null
-  custom_regex_time_enabled: boolean
-  custom_regex_league: string | null
-  custom_regex_league_enabled: boolean
-}
-
-export const EMPTY_PATTERNS: PatternState = {
-  skip_builtin_filter: false,
-  stream_include_regex: null,
-  stream_include_regex_enabled: false,
-  stream_exclude_regex: null,
-  stream_exclude_regex_enabled: false,
-  custom_regex_teams: null,
-  custom_regex_teams_enabled: false,
-  custom_regex_date: null,
-  custom_regex_date_enabled: false,
-  custom_regex_time: null,
-  custom_regex_time_enabled: false,
-  custom_regex_league: null,
-  custom_regex_league_enabled: false,
-}
+import { EMPTY_PATTERNS, type PatternState } from "./patterns"
 
 // ---------------------------------------------------------------------------
 // Props
@@ -88,7 +53,11 @@ export function TestPatternsModal({
   onApply,
 }: TestPatternsModalProps) {
   // Local pattern state — initialized from form, editable in modal
-  const [patterns, setPatterns] = useState<PatternState>(EMPTY_PATTERNS)
+  const mergedPatterns = useMemo(
+    () => ({ ...EMPTY_PATTERNS, ...initialPatterns }),
+    [initialPatterns]
+  )
+  const [patterns, setPatterns] = useState<PatternState>(mergedPatterns)
 
   // Text selection state for interactive pattern generation
   const [selection, setSelection] = useState<{
@@ -96,12 +65,14 @@ export function TestPatternsModal({
     streamName: string
   } | null>(null)
 
-  // Sync form → modal when opening
-  useEffect(() => {
-    if (open && initialPatterns) {
-      setPatterns({ ...EMPTY_PATTERNS, ...initialPatterns })
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      setPatterns(mergedPatterns)
+    } else {
+      setSelection(null)
     }
-  }, [open, initialPatterns])
+    onOpenChange(nextOpen)
+  }, [mergedPatterns, onOpenChange])
 
   // Fetch raw streams
   const {
@@ -130,16 +101,15 @@ export function TestPatternsModal({
 
   const handleApply = useCallback(() => {
     onApply?.(patterns)
-    onOpenChange(false)
-  }, [patterns, onApply, onOpenChange])
+    handleOpenChange(false)
+  }, [patterns, onApply, handleOpenChange])
 
   const handleClose = useCallback(() => {
-    setSelection(null)
-    onOpenChange(false)
-  }, [onOpenChange])
+    handleOpenChange(false)
+  }, [handleOpenChange])
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-6xl h-[85vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">

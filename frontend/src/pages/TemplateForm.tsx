@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft, Loader2, Save, ChevronDown, Search, X, BookOpen, Download, Upload, Trash2, ChevronRight, AlertTriangle } from "lucide-react"
@@ -121,13 +121,16 @@ export function TemplateForm() {
   const isEdit = !!templateId
 
   const [activeTab, setActiveTab] = useState<Tab>("basic")
-  const [formData, setFormData] = useState<TemplateCreate>(DEFAULT_FORM)
+  const [draftFormData, setDraftFormData] = useState<TemplateCreate | null>(null)
   const [typeConfirmed, setTypeConfirmed] = useState(isEdit)
   const [lastFocusedField, setLastFocusedField] = useState<string | null>(null)
   const [previewSport, setPreviewSport] = useState("NBA")
 
   // Refs for template fields
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({})
+  const registerFieldRef = useCallback((id: string, element: HTMLInputElement | HTMLTextAreaElement | null) => {
+    fieldRefs.current = { ...fieldRefs.current, [id]: element }
+  }, [])
 
   // Fetch existing template if editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery({
@@ -156,16 +159,15 @@ export function TemplateForm() {
   const availableSports = samplesData?.available_sports ?? variablesData?.available_sports ?? ["NBA", "NFL", "MLB", "NHL"]
 
   // Build validation set from variables data
-  const validationData = useMemo(() => {
+  const validationData = (() => {
     if (!variablesData?.categories) {
       return { validNames: new Set<string>(), baseNames: new Set<string>() }
     }
-    const { validNames, baseNames } = buildValidVariableSet(variablesData.categories)
-    return { validNames, baseNames }
-  }, [variablesData?.categories])
+    return buildValidVariableSet(variablesData.categories)
+  })()
 
   // Helper to merge filler content with defaults, ensuring no null values
-  const mergeFillerContent = (content: FillerContent | null, defaults: FillerContent): FillerContent => {
+  const mergeFillerContent = useCallback((content: FillerContent | null, defaults: FillerContent): FillerContent => {
     if (!content) return defaults
     return {
       title: content.title ?? defaults.title,
@@ -173,42 +175,52 @@ export function TemplateForm() {
       description: content.description ?? defaults.description,
       art_url: content.art_url ?? defaults.art_url,
     }
-  }
+  }, [])
 
-  // Populate form when template loads
-  useEffect(() => {
-    if (template) {
-      setFormData({
-        name: template.name,
-        template_type: template.template_type,
-        sport: template.sport,
-        league: template.league,
-        title_format: template.title_format || "",
-        subtitle_template: template.subtitle_template,
-        description_template: template.description_template,
-        program_art_url: template.program_art_url,
-        game_duration_mode: template.game_duration_mode || "sport",
-        game_duration_override: template.game_duration_override,
-        xmltv_flags: template.xmltv_flags || { new: true, live: false, date: false },
-        xmltv_video: template.xmltv_video || { enabled: false, quality: "HDTV" },
-        xmltv_categories: template.xmltv_categories || ["Sports"],
-        categories_apply_to: template.categories_apply_to || "events",
-        pregame_enabled: template.pregame_enabled ?? true,
-        pregame_fallback: mergeFillerContent(template.pregame_fallback, DEFAULT_PREGAME),
-        postgame_enabled: template.postgame_enabled ?? true,
-        postgame_fallback: mergeFillerContent(template.postgame_fallback, DEFAULT_POSTGAME),
-        postgame_conditional: template.postgame_conditional || { enabled: true, description_final: null, description_not_final: null },
-        idle_enabled: template.idle_enabled ?? true,
-        idle_content: mergeFillerContent(template.idle_content, DEFAULT_IDLE),
-        idle_conditional: template.idle_conditional || { enabled: true, description_final: null, description_not_final: null },
-        idle_offseason: template.idle_offseason || { title_enabled: false, title: null, subtitle_enabled: false, subtitle: null, description_enabled: false, description: null },
-        conditional_descriptions: template.conditional_descriptions || [],
-        event_channel_name: template.event_channel_name,
-        event_channel_logo_url: template.event_channel_logo_url,
-      })
-      setTypeConfirmed(true)
+  const templateFormData = useMemo<TemplateCreate>(() => {
+    if (!template) return DEFAULT_FORM
+    return {
+      name: template.name,
+      template_type: template.template_type,
+      sport: template.sport,
+      league: template.league,
+      title_format: template.title_format || "",
+      subtitle_template: template.subtitle_template,
+      description_template: template.description_template,
+      program_art_url: template.program_art_url,
+      game_duration_mode: template.game_duration_mode || "sport",
+      game_duration_override: template.game_duration_override,
+      xmltv_flags: template.xmltv_flags || { new: true, live: false, date: false },
+      xmltv_video: template.xmltv_video || { enabled: false, quality: "HDTV" },
+      xmltv_categories: template.xmltv_categories || ["Sports"],
+      categories_apply_to: template.categories_apply_to || "events",
+      pregame_enabled: template.pregame_enabled ?? true,
+      pregame_fallback: mergeFillerContent(template.pregame_fallback, DEFAULT_PREGAME),
+      postgame_enabled: template.postgame_enabled ?? true,
+      postgame_fallback: mergeFillerContent(template.postgame_fallback, DEFAULT_POSTGAME),
+      postgame_conditional: template.postgame_conditional || { enabled: true, description_final: null, description_not_final: null },
+      idle_enabled: template.idle_enabled ?? true,
+      idle_content: mergeFillerContent(template.idle_content, DEFAULT_IDLE),
+      idle_conditional: template.idle_conditional || { enabled: true, description_final: null, description_not_final: null },
+      idle_offseason: template.idle_offseason || { title_enabled: false, title: null, subtitle_enabled: false, subtitle: null, description_enabled: false, description: null },
+      conditional_descriptions: template.conditional_descriptions || [],
+      event_channel_name: template.event_channel_name,
+      event_channel_logo_url: template.event_channel_logo_url,
     }
-  }, [template])
+  }, [mergeFillerContent, template])
+
+  const formData = draftFormData ?? templateFormData
+  const setFormData = useCallback(
+    (updater: TemplateCreate | ((prev: TemplateCreate) => TemplateCreate)) => {
+      setDraftFormData((prev) => {
+        const base = prev ?? templateFormData
+        return typeof updater === "function"
+          ? (updater as (prev: TemplateCreate) => TemplateCreate)(base)
+          : updater
+      })
+    },
+    [templateFormData]
+  )
 
   const createMutation = useMutation({
     mutationFn: createTemplate,
@@ -451,7 +463,7 @@ export function TemplateForm() {
             <BasicTab
               formData={formData}
               setFormData={setFormData}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -463,7 +475,7 @@ export function TemplateForm() {
               formData={formData}
               setFormData={setFormData}
               isTeamTemplate={isTeamTemplate}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -483,7 +495,7 @@ export function TemplateForm() {
               formData={formData}
               setFormData={setFormData}
               isTeamTemplate={isTeamTemplate}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -862,7 +874,7 @@ function VariableSidebar({ categories, onInsert, lastFocusedField, isTeamTemplat
 interface TabProps {
   formData: TemplateCreate
   setFormData: React.Dispatch<React.SetStateAction<TemplateCreate>>
-  fieldRefs?: React.MutableRefObject<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>
+  registerFieldRef?: (id: string, element: HTMLInputElement | HTMLTextAreaElement | null) => void
   setLastFocusedField?: (field: string | null) => void
   isTeamTemplate?: boolean
   resolveTemplate: (template: string) => string
@@ -877,7 +889,7 @@ interface TemplateFieldProps {
   onChange: (value: string) => void
   placeholder?: string
   helpText?: string
-  fieldRefs?: React.MutableRefObject<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>
+  registerFieldRef?: (id: string, element: HTMLInputElement | HTMLTextAreaElement | null) => void
   setLastFocusedField?: (field: string | null) => void
   multiline?: boolean
   resolveTemplate?: (template: string) => string
@@ -895,7 +907,7 @@ function TemplateField({
   onChange,
   placeholder,
   helpText,
-  fieldRefs,
+  registerFieldRef,
   setLastFocusedField,
   multiline = false,
   resolveTemplate = defaultResolver,
@@ -923,9 +935,7 @@ function TemplateField({
       {multiline ? (
         <Textarea
           id={id}
-          ref={(el) => {
-            if (fieldRefs) fieldRefs.current[id] = el
-          }}
+          ref={(el) => registerFieldRef?.(id, el)}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setLastFocusedField?.(id)}
@@ -935,9 +945,7 @@ function TemplateField({
       ) : (
         <Input
           id={id}
-          ref={(el) => {
-            if (fieldRefs) fieldRefs.current[id] = el
-          }}
+          ref={(el) => registerFieldRef?.(id, el)}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setLastFocusedField?.(id)}
@@ -971,7 +979,7 @@ function TemplateField({
   )
 }
 
-function BasicTab({ formData, setFormData, fieldRefs, setLastFocusedField, resolveTemplate: _resolveTemplate }: TabProps) {
+function BasicTab({ formData, setFormData, registerFieldRef, setLastFocusedField }: TabProps) {
   return (
     <div className="space-y-6">
       {/* Template Name */}
@@ -984,9 +992,7 @@ function BasicTab({ formData, setFormData, fieldRefs, setLastFocusedField, resol
             <Label htmlFor="name">Name *</Label>
             <Input
               id="name"
-              ref={(el) => {
-                if (fieldRefs) fieldRefs.current["name"] = el
-              }}
+              ref={(el) => registerFieldRef?.("name", el)}
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               onFocus={() => setLastFocusedField?.("name")}
@@ -1061,7 +1067,7 @@ function BasicTab({ formData, setFormData, fieldRefs, setLastFocusedField, resol
   )
 }
 
-function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastFocusedField, resolveTemplate, validationData }: TabProps) {
+function DefaultsTab({ formData, setFormData, isTeamTemplate, registerFieldRef, setLastFocusedField, resolveTemplate, validationData }: TabProps) {
   const isEventTemplate = !isTeamTemplate
   // Extract fallback descriptions from conditional_descriptions (priority === 100)
   const fallbacks = useMemo(() => {
@@ -1175,7 +1181,7 @@ function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLast
               onChange={(v) => setFormData((prev) => ({ ...prev, event_channel_name: v || null }))}
               placeholder="{away_team} @ {home_team}"
               helpText="Name for auto-created Dispatcharr channels"
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1188,7 +1194,7 @@ function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLast
               onChange={(v) => setFormData((prev) => ({ ...prev, event_channel_logo_url: v || null }))}
               placeholder="Optional"
               helpText="Optional. Static URL or template with variables."
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1210,7 +1216,7 @@ function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLast
             value={formData.title_format || ""}
             onChange={(v) => setFormData((prev) => ({ ...prev, title_format: v }))}
             placeholder="{league} {sport}"
-            fieldRefs={fieldRefs}
+            registerFieldRef={registerFieldRef}
             setLastFocusedField={setLastFocusedField}
             resolveTemplate={resolveTemplate}
             validationData={validationData}
@@ -1222,7 +1228,7 @@ function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLast
             value={formData.subtitle_template || ""}
             onChange={(v) => setFormData((prev) => ({ ...prev, subtitle_template: v || null }))}
             placeholder="{away_team} at {home_team}"
-            fieldRefs={fieldRefs}
+            registerFieldRef={registerFieldRef}
             setLastFocusedField={setLastFocusedField}
             resolveTemplate={resolveTemplate}
             validationData={validationData}
@@ -1322,7 +1328,7 @@ function DefaultsTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLast
             onChange={(v) => setFormData((prev) => ({ ...prev, program_art_url: v || null }))}
             placeholder="Optional. Leave blank to disable program art."
             helpText="Optional. Static URL or template with variables."
-            fieldRefs={fieldRefs}
+            registerFieldRef={registerFieldRef}
             setLastFocusedField={setLastFocusedField}
             resolveTemplate={resolveTemplate}
             validationData={validationData}
@@ -1772,7 +1778,7 @@ function ConditionsTab({ formData, setFormData, resolveTemplate, isTeamTemplate 
   )
 }
 
-function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastFocusedField, resolveTemplate, validationData }: TabProps) {
+function FillersTab({ formData, setFormData, isTeamTemplate, registerFieldRef, setLastFocusedField, resolveTemplate, validationData }: TabProps) {
   const isEventTemplate = !isTeamTemplate
   const pregame = formData.pregame_fallback || DEFAULT_PREGAME
   const postgame = formData.postgame_fallback || DEFAULT_POSTGAME
@@ -1841,7 +1847,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               label="Title"
               value={pregame.title}
               onChange={(v) => updatePregame("title", v)}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1853,7 +1859,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               value={pregame.subtitle || ""}
               onChange={(v) => updatePregame("subtitle", v || null)}
               placeholder="Optional"
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1864,7 +1870,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               label="Description"
               value={pregame.description}
               onChange={(v) => updatePregame("description", v)}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1876,7 +1882,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               value={pregame.art_url || ""}
               onChange={(v) => updatePregame("art_url", v || null)}
               placeholder="Optional"
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1902,7 +1908,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               label="Title"
               value={postgame.title}
               onChange={(v) => updatePostgame("title", v)}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1914,7 +1920,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               value={postgame.subtitle || ""}
               onChange={(v) => updatePostgame("subtitle", v || null)}
               placeholder="Optional"
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1925,7 +1931,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               label="Description"
               value={postgame.description}
               onChange={(v) => updatePostgame("description", v)}
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -1949,7 +1955,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                     value={postgameCond.description_final || ""}
                     onChange={(v) => updatePostgameCond("description_final", v || null)}
                     placeholder="The {team_name} {result_text.last} the {opponent.last} {final_score.last}"
-                    fieldRefs={fieldRefs}
+                    registerFieldRef={registerFieldRef}
                     setLastFocusedField={setLastFocusedField}
                     resolveTemplate={resolveTemplate}
                   />
@@ -1959,7 +1965,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                     value={postgameCond.description_not_final || ""}
                     onChange={(v) => updatePostgameCond("description_not_final", v || null)}
                     placeholder="The game between {team_name} and {opponent.last} has not yet ended."
-                    fieldRefs={fieldRefs}
+                    registerFieldRef={registerFieldRef}
                     setLastFocusedField={setLastFocusedField}
                     resolveTemplate={resolveTemplate}
                   />
@@ -1973,7 +1979,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
               value={postgame.art_url || ""}
               onChange={(v) => updatePostgame("art_url", v || null)}
               placeholder="Optional"
-              fieldRefs={fieldRefs}
+              registerFieldRef={registerFieldRef}
               setLastFocusedField={setLastFocusedField}
               resolveTemplate={resolveTemplate}
               validationData={validationData}
@@ -2001,7 +2007,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 label="Title"
                 value={idle.title}
                 onChange={(v) => updateIdle("title", v)}
-                fieldRefs={fieldRefs}
+                registerFieldRef={registerFieldRef}
                 setLastFocusedField={setLastFocusedField}
                 resolveTemplate={resolveTemplate}
               />
@@ -2020,7 +2026,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                     value={idleOffseason.title || ""}
                     onChange={(v) => updateIdleOffseason("title", v || null)}
                     placeholder="Off-Season Programming"
-                    fieldRefs={fieldRefs}
+                    registerFieldRef={registerFieldRef}
                     setLastFocusedField={setLastFocusedField}
                     resolveTemplate={resolveTemplate}
                   />
@@ -2034,7 +2040,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 value={idle.subtitle || ""}
                 onChange={(v) => updateIdle("subtitle", v || null)}
                 placeholder="Optional"
-                fieldRefs={fieldRefs}
+                registerFieldRef={registerFieldRef}
                 setLastFocusedField={setLastFocusedField}
                 resolveTemplate={resolveTemplate}
               />
@@ -2053,7 +2059,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                     value={idleOffseason.subtitle || ""}
                     onChange={(v) => updateIdleOffseason("subtitle", v || null)}
                     placeholder="See you next season!"
-                    fieldRefs={fieldRefs}
+                    registerFieldRef={registerFieldRef}
                     setLastFocusedField={setLastFocusedField}
                     resolveTemplate={resolveTemplate}
                   />
@@ -2066,7 +2072,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 label="Description"
                 value={idle.description}
                 onChange={(v) => updateIdle("description", v)}
-                fieldRefs={fieldRefs}
+                registerFieldRef={registerFieldRef}
                 setLastFocusedField={setLastFocusedField}
                 resolveTemplate={resolveTemplate}
               />
@@ -2085,7 +2091,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                     value={idleOffseason.description || ""}
                     onChange={(v) => updateIdleOffseason("description", v || null)}
                     placeholder="No upcoming {team_name} games scheduled."
-                    fieldRefs={fieldRefs}
+                    registerFieldRef={registerFieldRef}
                     setLastFocusedField={setLastFocusedField}
                     resolveTemplate={resolveTemplate}
                   />
@@ -2109,7 +2115,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                       value={idleCond.description_final || ""}
                       onChange={(v) => updateIdleCond("description_final", v || null)}
                       placeholder="The {team_name} {result_text.last} the {opponent.last} {final_score.last}"
-                      fieldRefs={fieldRefs}
+                      registerFieldRef={registerFieldRef}
                       setLastFocusedField={setLastFocusedField}
                       resolveTemplate={resolveTemplate}
                     />
@@ -2119,7 +2125,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                       value={idleCond.description_not_final || ""}
                       onChange={(v) => updateIdleCond("description_not_final", v || null)}
                       placeholder="The {team_name} last played against {opponent.last}."
-                      fieldRefs={fieldRefs}
+                      registerFieldRef={registerFieldRef}
                       setLastFocusedField={setLastFocusedField}
                       resolveTemplate={resolveTemplate}
                     />
@@ -2133,7 +2139,7 @@ function FillersTab({ formData, setFormData, isTeamTemplate, fieldRefs, setLastF
                 value={idle.art_url || ""}
                 onChange={(v) => updateIdle("art_url", v || null)}
                 placeholder="Optional"
-                fieldRefs={fieldRefs}
+                registerFieldRef={registerFieldRef}
                 setLastFocusedField={setLastFocusedField}
                 resolveTemplate={resolveTemplate}
               />
@@ -2155,19 +2161,8 @@ function XmltvTab({ formData, setFormData }: TabProps) {
 
   // Use local state for the input to preserve user's typing (including spaces)
   // This prevents the input from being cleared when typing words that match base categories
-  const [customInput, setCustomInput] = useState(customCategories.join(", "))
-
-  // Sync local input when customCategories changes externally (e.g., form reset, initial load)
-  // but not when we're actively typing (tracked by comparing parsed values)
-  useEffect(() => {
-    const currentParsed = customInput.split(",").map((s) => s.trim()).filter(Boolean)
-    const customCatsStr = customCategories.join(",")
-    const currentStr = currentParsed.join(",")
-    // Only sync if external change (not from our own typing)
-    if (customCatsStr !== currentStr) {
-      setCustomInput(customCategories.join(", "))
-    }
-  }, [customCategories.join(",")])
+  const [customInput, setCustomInput] = useState<string | null>(null)
+  const resolvedCustomInput = customInput ?? customCategories.join(", ")
 
   const updateFlags = (field: keyof XmltvFlags, value: boolean) => {
     setFormData((prev) => ({
@@ -2223,7 +2218,7 @@ function XmltvTab({ formData, setFormData }: TabProps) {
             <Label htmlFor="custom_categories">Custom Categories (comma-separated)</Label>
             <Input
               id="custom_categories"
-              value={customInput}
+              value={resolvedCustomInput}
               onChange={(e) => updateCustomCategories(e.target.value)}
               placeholder="e.g., Entertainment, Live Events"
             />

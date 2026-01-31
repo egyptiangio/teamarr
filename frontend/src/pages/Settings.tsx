@@ -21,13 +21,10 @@ import {
   RefreshCw,
   ExternalLink,
 } from "lucide-react"
-import {
-  ChannelProfileSelector,
-  profileIdsToApi,
-  apiToProfileIds,
-} from "@/components/ChannelProfileSelector"
+import { ChannelProfileSelector } from '@/components/ChannelProfileSelector';
+import { apiToProfileIds, profileIdsToApi } from '@/lib/channel-profiles';
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
-import { useGenerationProgress } from "@/contexts/GenerationContext"
+import { useGenerationProgress } from "@/contexts/generation-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -485,7 +482,7 @@ export function Settings() {
       setEditingKeyword(null)
       toast.success("Keyword updated")
     } catch (err) {
-      toast.error("Failed to update keyword")
+      toast.error(err instanceof Error ? err.message : "Failed to update keyword")
     }
   }
 
@@ -907,7 +904,7 @@ export function Settings() {
                             keywordsQuery.refetch()
                             toast.success(`Updated behavior to "${newBehavior}"`)
                           } catch (err) {
-                            toast.error("Failed to update keyword behavior")
+                            toast.error(err instanceof Error ? err.message : "Failed to update keyword behavior")
                           }
                         }}
                         className="w-40 h-8"
