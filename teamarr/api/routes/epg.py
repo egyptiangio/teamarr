@@ -5,6 +5,7 @@ import logging
 import queue
 import threading
 from datetime import date, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
@@ -359,8 +360,6 @@ def get_xmltv():
 
     Dispatcharr EPG source URL: http://teamarr:9195/api/v1/epg/xmltv
     """
-    from pathlib import Path
-
     from fastapi.responses import FileResponse
 
     from teamarr.database.settings import get_epg_settings
@@ -371,16 +370,31 @@ def get_xmltv():
     output_path = epg_settings.epg_output_path or "./data/teamarr.xml"
     file_path = Path(output_path)
 
-    if not file_path.exists():
+    if file_path.exists():
+        return FileResponse(
+            path=file_path,
+            media_type="application/xml",
+            filename="teamarr.xml",
+        )
+
+    xmltv = _load_or_build_xmltv(file_path)
+    if file_path.exists():
+        return FileResponse(
+            path=file_path,
+            media_type="application/xml",
+            filename="teamarr.xml",
+        )
+
+    if not xmltv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="EPG file not found. Run EPG generation first.",
         )
 
-    return FileResponse(
-        path=file_path,
+    return Response(
+        content=xmltv,
         media_type="application/xml",
-        filename="teamarr.xml",
+        headers={"Content-Disposition": "inline; filename=teamarr.xml"},
     )
 
 
@@ -538,24 +552,58 @@ def match_streams(
 # =============================================================================
 
 
+def _build_combined_xmltv_from_db() -> str:
+    """Build combined XMLTV content from stored team and group XMLTV."""
+    from teamarr.consumers.team_processor import get_all_team_xmltv
+    from teamarr.database.groups import get_all_group_xmltv
+    from teamarr.database.settings import get_display_settings
+    from teamarr.utilities.xmltv import merge_xmltv_content
+
+    with get_db() as conn:
+        display_settings = get_display_settings(conn)
+        xmltv_contents = get_all_team_xmltv(conn) + get_all_group_xmltv(conn)
+
+    if not xmltv_contents:
+        return ""
+
+    return merge_xmltv_content(
+        xmltv_contents,
+        generator_name=display_settings.xmltv_generator_name,
+        generator_url=display_settings.xmltv_generator_url,
+    )
+
+
+def _load_or_build_xmltv(output_path: Path) -> str:
+    """Load XMLTV from disk or rebuild from DB when missing."""
+    if output_path.exists():
+        return output_path.read_text(encoding="utf-8")
+
+    xmltv = _build_combined_xmltv_from_db()
+    if not xmltv:
+        return ""
+
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(xmltv, encoding="utf-8")
+    except Exception as e:
+        logger.warning("[EPG] Failed to write XMLTV to %s: %s", output_path, e)
+
+    return xmltv
+
+
 def _get_combined_xmltv() -> str:
     """Get combined XMLTV content from the generated file.
 
     Uses the same file that's served to users via /epg/xmltv endpoint,
     guaranteeing consistency between preview and actual output.
     """
-    from pathlib import Path
-
     from teamarr.database.settings import get_epg_settings
 
     with get_db() as conn:
         epg_settings = get_epg_settings(conn)
 
-    output_path = Path(epg_settings.epg_output_path)
-    if not output_path.exists():
-        return ""
-
-    return output_path.read_text(encoding="utf-8")
+    output_path = Path(epg_settings.epg_output_path or "./data/teamarr.xml")
+    return _load_or_build_xmltv(output_path)
 
 
 def _analyze_xmltv(xmltv_content: str) -> dict:

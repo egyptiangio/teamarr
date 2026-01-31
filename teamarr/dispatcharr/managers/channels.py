@@ -425,7 +425,7 @@ class ChannelManager:
         Returns:
             OperationResult with success status
         """
-        response = self._client.post(
+        response = self._client.post_form(
             f"/api/channels/channels/{channel_id}/set-epg/",
             {"epg_data_id": epg_data_id},
         )
