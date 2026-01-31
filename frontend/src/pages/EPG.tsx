@@ -984,7 +984,9 @@ export function EPG() {
               </div>
             ) : filteredMatchedStreams.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                {matchedData?.streams.length === 0 ? "No matched streams for this run." : "No streams match your filter."}
+                {(matchedData?.streams.length ?? 0) === 0
+                  ? "No matched streams for this run."
+                  : "No streams match your filter."}
               </div>
             ) : (
               <VirtualizedTable<MatchedStream>
@@ -1134,7 +1136,9 @@ export function EPG() {
               </div>
             ) : filteredFailedMatches.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                {failedData?.failures.length === 0 ? "No failed matches for this run." : "No streams match your filter."}
+                {(failedData?.failures.length ?? 0) === 0
+                  ? "No failed matches for this run."
+                  : "No streams match your filter."}
               </div>
             ) : (
               <VirtualizedTable<FailedMatch>
