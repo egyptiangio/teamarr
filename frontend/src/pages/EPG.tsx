@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog"
 import { useGenerationProgress } from "@/contexts/GenerationContext"
 import { useDateFormat } from "@/hooks/useDateFormat"
+import { VirtualizedTable } from "@/components/VirtualizedTable"
 import {
   useStats,
   useRecentRuns,
@@ -161,17 +162,17 @@ export function EPG() {
   // EPG URL for IPTV apps
   const epgUrl = `${window.location.origin}${getTeamXmltvUrl()}`
 
-  // Fetch matched streams when modal is open
+  // Fetch matched streams when modal is open (high limit for virtualization)
   const { data: matchedData, isLoading: matchedLoading } = useQuery({
     queryKey: ["matched-streams", matchedModalRunId],
-    queryFn: () => getMatchedStreams(matchedModalRunId ?? undefined),
+    queryFn: () => getMatchedStreams(matchedModalRunId ?? undefined, undefined, 5000),
     enabled: matchedModalRunId !== null,
   })
 
-  // Fetch failed matches when modal is open
+  // Fetch failed matches when modal is open (high limit for virtualization)
   const { data: failedData, isLoading: failedLoading } = useQuery({
     queryKey: ["failed-matches", failedModalRunId],
-    queryFn: () => getFailedMatches(failedModalRunId ?? undefined),
+    queryFn: () => getFailedMatches(failedModalRunId ?? undefined, undefined, undefined, 5000),
     enabled: failedModalRunId !== null,
   })
 
@@ -889,24 +890,25 @@ export function EPG() {
                 No matched streams for this run.
               </div>
             ) : (
-              <Table className="table-fixed w-full">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[28%]">Stream Name</TableHead>
-                    <TableHead className="w-[23%]">Event</TableHead>
-                    <TableHead className="w-[70px]">League</TableHead>
-                    <TableHead className="w-[100px]">Method</TableHead>
-                    <TableHead className="w-[18%]">Group</TableHead>
-                    <TableHead className="w-[60px]">Fix</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {matchedData?.streams.map((stream) => (
-                    <TableRow key={stream.id}>
-                      <TableCell className="font-medium truncate" title={stream.stream_name}>
+              <VirtualizedTable<MatchedStream>
+                data={matchedData?.streams ?? []}
+                getRowKey={(item) => item.id}
+                rowHeight={56}
+                columns={[
+                  {
+                    header: "Stream Name",
+                    width: "w-[28%]",
+                    render: (stream) => (
+                      <span className="font-medium truncate block" title={stream.stream_name}>
                         {stream.stream_name}
-                      </TableCell>
-                      <TableCell>
+                      </span>
+                    ),
+                  },
+                  {
+                    header: "Event",
+                    width: "w-[23%]",
+                    render: (stream) => (
+                      <div>
                         <div className="truncate" title={stream.event_name || `${stream.away_team} @ ${stream.home_team}`}>
                           {stream.event_name || `${stream.away_team} @ ${stream.home_team}`}
                         </div>
@@ -915,34 +917,53 @@ export function EPG() {
                             {new Date(stream.event_date).toLocaleDateString()}
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{getLeagueDisplay(stream.league)}</Badge>
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                    ),
+                  },
+                  {
+                    header: "League",
+                    width: "w-[70px]",
+                    render: (stream) => (
+                      <Badge variant="secondary">{getLeagueDisplay(stream.league)}</Badge>
+                    ),
+                  },
+                  {
+                    header: "Method",
+                    width: "w-[100px]",
+                    render: (stream) => (
+                      <div>
                         {getMatchMethodBadge(stream.match_method)}
-                        {/* Use !! to convert number to boolean - prevents React rendering 0 */}
                         {!!stream.from_cache && stream.match_method !== "cache" && (
                           <Badge variant="outline" className="ml-1">Cached</Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm truncate" title={stream.group_name ?? undefined}>
+                      </div>
+                    ),
+                  },
+                  {
+                    header: "Group",
+                    width: "w-[18%]",
+                    render: (stream) => (
+                      <span className="text-muted-foreground text-sm truncate block" title={stream.group_name ?? undefined}>
                         {stream.group_name}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenEventMatcher(stream)}
-                          title="Correct this match"
-                        >
-                          <AlertTriangle className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </span>
+                    ),
+                  },
+                  {
+                    header: "Fix",
+                    width: "w-[60px]",
+                    render: (stream) => (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenEventMatcher(stream)}
+                        title="Correct this match"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
             )}
           </div>
 
@@ -980,60 +1001,75 @@ export function EPG() {
                 No failed matches for this run.
               </div>
             ) : (
-              <Table className="table-fixed w-full">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[30%]">Stream Name</TableHead>
-                    <TableHead className="w-[100px]">Reason</TableHead>
-                    <TableHead className="w-[25%]">Detected Teams</TableHead>
-                    <TableHead className="w-[18%]">Group</TableHead>
-                    <TableHead className="w-[60px]">Fix</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {failedData?.failures.map((failure) => (
-                    <TableRow key={failure.id}>
-                      <TableCell className="font-medium truncate" title={failure.stream_name}>
+              <VirtualizedTable<FailedMatch>
+                data={failedData?.failures ?? []}
+                getRowKey={(item) => item.id}
+                rowHeight={56}
+                columns={[
+                  {
+                    header: "Stream Name",
+                    width: "w-[30%]",
+                    render: (failure) => (
+                      <span className="font-medium truncate block" title={failure.stream_name}>
                         {failure.stream_name}
-                      </TableCell>
-                      <TableCell>
+                      </span>
+                    ),
+                  },
+                  {
+                    header: "Reason",
+                    width: "w-[100px]",
+                    render: (failure) => (
+                      <div>
                         {getFailReasonBadge(failure.reason)}
                         {failure.exclusion_reason && (
                           <div className="text-xs text-muted-foreground mt-1 truncate" title={failure.exclusion_reason}>
                             {failure.exclusion_reason}
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {failure.extracted_team1 || failure.extracted_team2 ? (
-                          <div>
-                            {failure.extracted_team1 && <div className="truncate" title={failure.extracted_team1}>{failure.extracted_team1}</div>}
-                            {failure.extracted_team2 && <div className="text-muted-foreground truncate" title={failure.extracted_team2}>vs {failure.extracted_team2}</div>}
-                            {failure.detected_league && (
-                              <Badge variant="outline" className="mt-1">{getLeagueDisplay(failure.detected_league)}</Badge>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm truncate" title={failure.group_name ?? undefined}>
+                      </div>
+                    ),
+                  },
+                  {
+                    header: "Detected Teams",
+                    width: "w-[25%]",
+                    render: (failure) =>
+                      failure.extracted_team1 || failure.extracted_team2 ? (
+                        <div className="text-sm">
+                          {failure.extracted_team1 && <div className="truncate" title={failure.extracted_team1}>{failure.extracted_team1}</div>}
+                          {failure.extracted_team2 && <div className="text-muted-foreground truncate" title={failure.extracted_team2}>vs {failure.extracted_team2}</div>}
+                          {failure.detected_league && (
+                            <Badge variant="outline" className="mt-1">{getLeagueDisplay(failure.detected_league)}</Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      ),
+                  },
+                  {
+                    header: "Group",
+                    width: "w-[18%]",
+                    render: (failure) => (
+                      <span className="text-muted-foreground text-sm truncate block" title={failure.group_name ?? undefined}>
                         {failure.group_name}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenEventMatcher(failure)}
-                          title="Fix this stream's match"
-                        >
-                          <AlertTriangle className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </span>
+                    ),
+                  },
+                  {
+                    header: "Fix",
+                    width: "w-[60px]",
+                    render: (failure) => (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenEventMatcher(failure)}
+                        title="Fix this stream's match"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
             )}
           </div>
 
