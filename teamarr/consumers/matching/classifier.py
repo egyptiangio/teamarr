@@ -558,6 +558,32 @@ def extract_teams_from_separator(
     return team1, team2
 
 
+def extract_teams_from_time_mask(text: str) -> tuple[str | None, str | None]:
+    """Extract team names when time sits between teams.
+
+    Example: "UEFA 01: Napoli TIME_MASK Chelsea DATE_MASK"
+    """
+    if not text or "TIME_MASK" not in text:
+        return None, None
+
+    parts = re.split(r"\bTIME_MASK\b", text, maxsplit=1)
+    if len(parts) != 2:
+        return None, None
+
+    left = parts[0].strip()
+    right = parts[1].strip()
+
+    team1 = _clean_team_name(left)
+    team2 = _clean_team_name(right)
+
+    if not team1 or len(team1) < 3:
+        team1 = None
+    if not team2 or len(team2) < 3:
+        team2 = None
+
+    return team1, team2
+
+
 def _clean_team_name(name: str) -> str:
     """Clean extracted team name."""
     if not name:
@@ -1103,7 +1129,21 @@ def classify_stream(
                     custom_regex_used=True,
                 )
 
-        # Step 4: Check for game separator (builtin fallback)
+        # Step 4: Check for time between teams (e.g., "Napoli TIME_MASK Chelsea")
+        if result is None and "TIME_MASK" in text:
+            team1, team2 = extract_teams_from_time_mask(text)
+            if team1 or team2:
+                result = ClassifiedStream(
+                    category=StreamCategory.TEAM_VS_TEAM,
+                    normalized=normalized,
+                    team1=team1,
+                    team2=team2,
+                    separator_found="time",
+                    league_hint=league_hint,
+                    sport_hint=sport_hint,
+                )
+
+        # Step 5: Check for game separator (builtin fallback)
         if result is None:
             separator, sep_position = find_game_separator(text)
             if separator:
@@ -1121,7 +1161,7 @@ def classify_stream(
                         sport_hint=sport_hint,
                     )
 
-        # Step 5: Default to placeholder if we can't classify
+        # Step 6: Default to placeholder if we can't classify
         if result is None:
             result = ClassifiedStream(
                 category=StreamCategory.PLACEHOLDER,
