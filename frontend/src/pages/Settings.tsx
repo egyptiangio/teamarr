@@ -1286,7 +1286,7 @@ export function Settings() {
               <label className={`flex flex-col p-3 border-2 cursor-pointer transition-colors rounded-tl-lg ${
                 channelNumbering.numbering_mode === "strict_block"
                   ? "border-primary border-b-0 bg-muted/30 relative z-10"
-                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+                  : "border-border border-b-primary hover:border-muted-foreground/50 bg-background"
               }`}>
                 <div className="flex items-center gap-2 mb-1">
                   <input
@@ -1311,10 +1311,10 @@ export function Settings() {
               </label>
 
               {/* Rational Block */}
-              <label className={`flex flex-col p-3 border-2 border-l-0 cursor-pointer transition-colors ${
+              <label className={`flex flex-col p-3 border-2 cursor-pointer transition-colors ${
                 channelNumbering.numbering_mode === "rational_block"
-                  ? "border-primary border-b-0 bg-muted/30 relative z-10"
-                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+                  ? "border-primary border-b-0 bg-muted/30 relative z-10 -ml-[2px]"
+                  : "border-border border-l-0 border-b-primary hover:border-muted-foreground/50 bg-background"
               }`}>
                 <div className="flex items-center gap-2 mb-1">
                   <input
@@ -1338,10 +1338,10 @@ export function Settings() {
               </label>
 
               {/* Strict Compact */}
-              <label className={`flex flex-col p-3 border-2 border-l-0 cursor-pointer transition-colors rounded-tr-lg ${
+              <label className={`flex flex-col p-3 border-2 cursor-pointer transition-colors rounded-tr-lg ${
                 channelNumbering.numbering_mode === "strict_compact"
-                  ? "border-primary border-b-0 bg-muted/30 relative z-10"
-                  : "border-border border-b-primary/20 hover:border-muted-foreground/50 bg-background"
+                  ? "border-primary border-b-0 bg-muted/30 relative z-10 -ml-[2px]"
+                  : "border-border border-l-0 border-b-primary hover:border-muted-foreground/50 bg-background"
               }`}>
                 <div className="flex items-center gap-2 mb-1">
                   <input
