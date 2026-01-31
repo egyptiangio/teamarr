@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from teamarr.database.checkpoint_v43 import apply_checkpoint_v43
+from teamarr.database.checkpoint_v47 import apply_checkpoint_v47
 
 logger = logging.getLogger(__name__)
 
@@ -1077,6 +1078,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE settings SET schema_version = 46 WHERE id = 1")
         logger.info("[MIGRATE] Schema upgraded to version 46 (stream profile support)")
         current_version = 46
+
+    # ==========================================================================
+    # v47: Unmatched Stream Handling
+    # ==========================================================================
+    if current_version < 47:
+        apply_checkpoint_v47(conn, current_version)
+        current_version = 47
 
 
 # =============================================================================

@@ -548,6 +548,247 @@ class ChannelLifecycleService:
 
         return result
 
+    def process_unmatched_streams(
+        self,
+        streams: list[dict],
+        group_config: dict,
+    ) -> StreamProcessResult:
+        """Process unmatched streams and create channels if enabled.
+
+        Args:
+            streams: List of stream dicts (unmatched)
+            group_config: Event EPG group configuration
+
+        Returns:
+            StreamProcessResult
+        """
+        from teamarr.consumers.stream_match_cache import compute_fingerprint
+        from teamarr.database.channels import (
+            add_stream_to_channel,
+            create_managed_channel,
+            find_existing_channel,
+        )
+
+        result = StreamProcessResult()
+
+        if not group_config.get("create_unmatched_channels"):
+            return result
+
+        epg_source_id = group_config.get("unmatched_channel_epg_source_id")
+        group_id = group_config.get("id")
+
+        # Channel group settings
+        static_channel_group_id = group_config.get("channel_group_id")
+        channel_group_mode = group_config.get("channel_group_mode", "static")
+
+        # Profile settings
+        raw_profile_ids = group_config.get("channel_profile_ids")
+        stream_profile_id = group_config.get("stream_profile_id")
+
+        with self._db_factory() as conn:
+            # Initialize dynamic resolver
+            self._dynamic_resolver.initialize(self._db_factory, conn)
+
+            # Resolve defaults if needed
+            if raw_profile_ids is None:
+                from teamarr.database.settings import get_dispatcharr_settings
+
+                dispatcharr_settings = get_dispatcharr_settings(conn)
+                raw_profile_ids = dispatcharr_settings.default_channel_profile_ids
+
+            if stream_profile_id is None:
+                from teamarr.database.settings import get_dispatcharr_settings
+
+                if not "dispatcharr_settings" in locals():
+                    dispatcharr_settings = get_dispatcharr_settings(conn)
+                stream_profile_id = dispatcharr_settings.default_stream_profile_id
+
+            # Resolve dummy EPG data ID if configured
+            dummy_epg_data_id = None
+            if epg_source_id and self._channel_manager:
+                try:
+                    # We need an actual EPG Data ID to link the channel.
+                    # Since this is a "dummy" source, we grab the first available entry.
+                    epg_entries = self._channel_manager.get_epg_data_list(epg_source_id)
+                    if epg_entries:
+                        dummy_epg_data_id = epg_entries[0]["id"]
+                    else:
+                        logger.warning(
+                            "Unmatched EPG source %d has no data entries - channels will be created without EPG link",
+                            epg_source_id,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to resolve dummy EPG data for source %d: %s", epg_source_id, e
+                    )
+
+            for stream in streams:
+                stream_name = stream.get("name", "")
+                stream_id = stream.get("id")
+
+                # Generate unique event ID for unmatched stream
+                # Use fingerprint to ensure stability across runs
+                fingerprint = compute_fingerprint(group_id, stream_id, stream_name)
+                event_id = f"unmatched_{fingerprint}"
+                event_provider = "unmatched"
+
+                # Check if channel exists
+                # We use find_existing_channel but force consolidate mode (one channel per unmatched stream)
+                existing = find_existing_channel(
+                    conn=conn,
+                    group_id=group_id,
+                    event_id=event_id,
+                    event_provider=event_provider,
+                    exception_keyword=None,
+                    stream_id=stream_id,
+                    mode="consolidate",
+                )
+
+                if existing:
+                    # Channel already exists - sync logic would go here if we needed to update anything
+                    # For now, just report as existing
+                    result.existing.append(
+                        {
+                            "stream": stream_name,
+                            "channel_id": existing.dispatcharr_channel_id,
+                            "channel_number": existing.channel_number,
+                            "action": "exists",
+                        }
+                    )
+                    continue
+
+                # Create new channel
+
+                # Resolve channel group (no event context, so sport/league are None)
+                resolved_channel_group_id = self._dynamic_resolver.resolve_channel_group(
+                    mode=channel_group_mode,
+                    static_group_id=static_channel_group_id,
+                    event_sport=None,
+                    event_league=None,
+                )
+
+                # Resolve profiles
+                resolved_channel_profile_ids = self._dynamic_resolver.resolve_channel_profiles(
+                    profile_ids=raw_profile_ids,
+                    event_sport=None,
+                    event_league=None,
+                )
+
+                # Get next channel number
+                group_start_number = group_config.get("channel_start_number")
+                channel_number = self._get_next_channel_number(conn, group_id, group_start_number)
+
+                if not channel_number:
+                    result.errors.append(
+                        {"stream": stream_name, "error": "No channel number available"}
+                    )
+                    continue
+
+                channel_name = stream_name
+                tvg_id = f"unmatched.{fingerprint}"
+
+                # Create in Dispatcharr
+                dispatcharr_channel_id = None
+                dispatcharr_uuid = None
+
+                if self._channel_manager:
+                    with self._dispatcharr_lock:
+                        effective_profile_ids = (
+                            resolved_channel_profile_ids
+                            if resolved_channel_profile_ids is not None
+                            else [0]
+                        )
+                        create_result = self._channel_manager.create_channel(
+                            name=channel_name,
+                            channel_number=channel_number,
+                            stream_ids=[stream_id],
+                            tvg_id=tvg_id,
+                            channel_group_id=resolved_channel_group_id,
+                            channel_profile_ids=effective_profile_ids,
+                            stream_profile_id=stream_profile_id,
+                        )
+
+                        if create_result.success and create_result.channel:
+                            dispatcharr_channel_id = create_result.channel.get("id")
+                            dispatcharr_uuid = create_result.channel.get("uuid")
+
+                            # Link EPG Source
+                            if dummy_epg_data_id:
+                                try:
+                                    self._channel_manager.set_channel_epg(
+                                        dispatcharr_channel_id, dummy_epg_data_id
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to set EPG source for unmatched channel: {e}"
+                                    )
+                        else:
+                            result.errors.append(
+                                {"stream": stream_name, "error": create_result.error}
+                            )
+                            continue
+
+                # Create in DB
+                try:
+                    managed_channel_id = create_managed_channel(
+                        conn=conn,
+                        event_epg_group_id=group_id,
+                        event_id=event_id,
+                        event_provider=event_provider,
+                        tvg_id=tvg_id,
+                        channel_name=channel_name,
+                        channel_number=channel_number,
+                        logo_url=None,
+                        dispatcharr_channel_id=dispatcharr_channel_id,
+                        dispatcharr_uuid=dispatcharr_uuid,
+                        dispatcharr_logo_id=None,
+                        channel_group_id=resolved_channel_group_id,
+                        channel_profile_ids=resolved_channel_profile_ids,
+                        primary_stream_id=stream_id,
+                        exception_keyword=None,
+                        home_team=None,
+                        away_team=None,
+                        event_date=datetime.now().isoformat(),  # Use now for unmatched
+                        event_name=stream_name,
+                        league="Unmatched",
+                        sport="Unmatched",
+                        venue=None,
+                        broadcast=None,
+                        scheduled_delete_at=None,
+                        sync_status="in_sync" if dispatcharr_channel_id else "pending",
+                    )
+
+                    add_stream_to_channel(
+                        conn=conn,
+                        managed_channel_id=managed_channel_id,
+                        dispatcharr_stream_id=stream_id,
+                        stream_name=stream_name,
+                        priority=0,
+                        m3u_account_id=stream.get("m3u_account_id"),
+                        m3u_account_name=group_config.get("m3u_account_name"),
+                        source_group_id=group_id,
+                    )
+                    conn.commit()
+
+                    result.created.append(
+                        {
+                            "stream": stream_name,
+                            "event_id": event_id,
+                            "channel_id": managed_channel_id,
+                            "dispatcharr_channel_id": dispatcharr_channel_id,
+                            "channel_number": channel_number,
+                        }
+                    )
+
+                except Exception as e:
+                    logger.error(f"DB insert failed for unmatched channel: {e}")
+                    if dispatcharr_channel_id and self._channel_manager:
+                        with self._dispatcharr_lock:
+                            self._channel_manager.delete_channel(dispatcharr_channel_id)
+                    result.errors.append({"stream": stream_name, "error": str(e)})
+
+        return result
+
     def _handle_cross_group_overlap(
         self,
         conn: Connection,

@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS settings (
     update_auto_detect_branch BOOLEAN DEFAULT 1,         -- Auto-detect branch from version string
 
     -- Schema Version
-    schema_version INTEGER DEFAULT 46
+    schema_version INTEGER DEFAULT 47
 );
 
 -- Insert default settings
@@ -405,6 +405,10 @@ CREATE TABLE IF NOT EXISTS event_epg_groups (
         CHECK(channel_sort_order IN ('time', 'sport_time', 'league_time')),
     overlap_handling TEXT DEFAULT 'add_stream'
         CHECK(overlap_handling IN ('add_stream', 'add_only', 'create_all', 'skip')),
+
+    -- Unmatched Stream Handling
+    create_unmatched_channels BOOLEAN DEFAULT 0,    -- Create channels for unmatched streams
+    unmatched_channel_epg_source_id INTEGER,        -- Dispatcharr EPG source ID for unmatched channels
 
     -- Status
     enabled BOOLEAN DEFAULT 1,

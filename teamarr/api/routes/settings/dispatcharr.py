@@ -160,7 +160,7 @@ def get_dispatcharr_status() -> dict:
 
 
 @router.get("/dispatcharr/epg-sources")
-def get_dispatcharr_epg_sources() -> dict:
+def get_dispatcharr_epg_sources(include_dummy: bool = False) -> dict:
     """Get available EPG sources from Dispatcharr.
 
     Returns list of EPG sources that can be selected for EPG ID.
@@ -177,7 +177,7 @@ def get_dispatcharr_epg_sources() -> dict:
                 "sources": [],
             }
 
-        sources = conn.epg.list_sources(include_dummy=False)
+        sources = conn.epg.list_sources(include_dummy=include_dummy)
         return {
             "success": True,
             "sources": [
