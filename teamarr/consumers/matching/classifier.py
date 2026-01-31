@@ -1072,9 +1072,27 @@ def classify_stream(
             # Use original stream name for more accurate pattern matching
             card_segment = detect_card_segment(stream_name)
 
-            # Extract fighter names from "vs" pattern (reuse team extraction logic)
-            # Fighters are treated as "teams" for matching purposes
-            fighter1, fighter2 = extract_fighters_from_event_card(text)
+            # Extract fighter names - try custom regex first if enabled
+            # This allows a single custom_regex_teams pattern to work for BOTH
+            # team sports and combat sports in mixed groups (e.g., Paramount+)
+            fighter1: str | None = None
+            fighter2: str | None = None
+            custom_regex_used = False
+
+            if custom_regex and custom_regex.teams_enabled:
+                fighter1, fighter2, custom_regex_used = extract_teams_with_custom_regex(
+                    stream_name, custom_regex
+                )
+                if custom_regex_used:
+                    logger.debug(
+                        "[CLASSIFY] Custom regex extracted fighters: %s vs %s",
+                        fighter1,
+                        fighter2,
+                    )
+
+            # Fall back to built-in extraction if custom regex didn't match
+            if not custom_regex_used:
+                fighter1, fighter2 = extract_fighters_from_event_card(text)
 
             result = ClassifiedStream(
                 category=StreamCategory.EVENT_CARD,
@@ -1085,6 +1103,7 @@ def classify_stream(
                 card_segment=card_segment,
                 league_hint=league_hint,
                 sport_hint=sport_hint,
+                custom_regex_used=custom_regex_used,
             )
 
         # Step 3: Try custom regex for team extraction (if configured)
