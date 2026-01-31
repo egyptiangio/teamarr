@@ -974,10 +974,6 @@ def is_combat_sports_excluded(text: str) -> bool:
     return is_excluded
 
 
-# Legacy alias for backwards compatibility
-is_ufc_excluded = is_combat_sports_excluded
-
-
 def extract_fighters_from_event_card(text: str) -> tuple[str | None, str | None]:
     """Extract fighter names from an EVENT_CARD stream.
 

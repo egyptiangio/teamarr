@@ -657,6 +657,3 @@ COMBAT_SPORTS_EXCLUDE_PATTERNS: list[str] = [
     r"\banalysis\b",
     r"\bbreakdown\b",
 ]
-
-# Legacy alias for backwards compatibility
-UFC_EXCLUDE_PATTERNS = COMBAT_SPORTS_EXCLUDE_PATTERNS

@@ -16,7 +16,7 @@ from datetime import datetime, time, timedelta
 from teamarr.consumers.matching.classifier import (
     ClassifiedStream,
     detect_card_segment,
-    is_ufc_excluded,
+    is_combat_sports_excluded,
 )
 from teamarr.core.types import Event
 
@@ -185,7 +185,7 @@ def get_stream_segment(stream: dict, classified: ClassifiedStream | None = None)
 def should_exclude_stream(stream: dict) -> bool:
     """Check if UFC stream should be excluded (weigh-in, press conference, etc.)."""
     stream_name = stream.get("name", "")
-    return is_ufc_excluded(stream_name)
+    return is_combat_sports_excluded(stream_name)
 
 
 def get_segment_display_suffix(segment: str | None) -> str:
