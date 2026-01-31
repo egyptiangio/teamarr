@@ -203,9 +203,26 @@ class DetectionKeywordService:
     # Detection Methods
     # ==========================================================================
 
+    # Class-level cache for compiled combat keywords patterns
+    _combat_keyword_patterns: ClassVar[list[Pattern[str]] | None] = None
+
+    @classmethod
+    def _get_combat_keyword_patterns(cls) -> list[Pattern[str]]:
+        """Get compiled word-boundary patterns for combat keywords."""
+        if cls._combat_keyword_patterns is None:
+            cls._combat_keyword_patterns = []
+            for keyword in cls.get_combat_keywords():
+                # Use word boundaries to avoid matching 'wbo' in 'Cowboys'
+                pattern = re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE)
+                cls._combat_keyword_patterns.append(pattern)
+        return cls._combat_keyword_patterns
+
     @classmethod
     def is_combat_sport(cls, text: str) -> bool:
         """Check if text contains combat sports keywords.
+
+        Uses word boundary matching to avoid false positives like
+        'wbo' matching within 'Cowboys'.
 
         Args:
             text: Stream name or text to check
@@ -213,9 +230,8 @@ class DetectionKeywordService:
         Returns:
             True if any combat sports keyword is found
         """
-        text_lower = text.lower()
-        for keyword in cls.get_combat_keywords():
-            if keyword in text_lower:
+        for pattern in cls._get_combat_keyword_patterns():
+            if pattern.search(text):
                 return True
         return False
 
@@ -323,6 +339,7 @@ class DetectionKeywordService:
         or when constants change during testing.
         """
         cls._combat_keywords = None
+        cls._combat_keyword_patterns = None
         cls._league_hints = None
         cls._sport_hints = None
         cls._placeholder_patterns = None

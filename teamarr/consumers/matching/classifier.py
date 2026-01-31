@@ -15,15 +15,9 @@ from enum import Enum
 from re import Pattern
 
 from teamarr.consumers.matching.normalizer import NormalizedStream, normalize_stream
+from teamarr.services.detection_keywords import DetectionKeywordService
 from teamarr.utilities.constants import (
-    CARD_SEGMENT_PATTERNS,
-    COMBAT_SPORTS_EXCLUDE_PATTERNS,
-    COMBAT_SPORTS_KEYWORDS,
     EVENT_CARD_KEYWORDS,  # Legacy - used by extract_event_card_hint
-    GAME_SEPARATORS,
-    LEAGUE_HINT_PATTERNS,
-    PLACEHOLDER_PATTERNS,
-    SPORT_HINT_PATTERNS,
 )
 
 logger = logging.getLogger(__name__)
@@ -487,10 +481,9 @@ def is_placeholder(text: str) -> bool:
 
     text_lower = text.lower().strip()
 
-    # Check against placeholder patterns
-    for pattern in PLACEHOLDER_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
+    # Check against placeholder patterns via service
+    if DetectionKeywordService.is_placeholder(text_lower):
+        return True
 
     # Additional check: very short names with just numbers
     if re.match(r"^[\d\s\-:]+$", text_lower):
@@ -516,14 +509,7 @@ def find_game_separator(text: str) -> tuple[str | None, int]:
     if not text:
         return None, -1
 
-    text_lower = text.lower()
-
-    for sep in GAME_SEPARATORS:
-        pos = text_lower.find(sep.lower())
-        if pos != -1:
-            return sep, pos
-
-    return None, -1
+    return DetectionKeywordService.find_separator(text)
 
 
 def extract_teams_from_separator(
@@ -741,13 +727,7 @@ def detect_league_hint(text: str) -> str | list[str] | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, league_code in LEAGUE_HINT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return league_code
-
-    return None
+    return DetectionKeywordService.detect_league(text)
 
 
 def detect_sport_hint(text: str) -> str | None:
@@ -770,13 +750,7 @@ def detect_sport_hint(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, sport in SPORT_HINT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return sport
-
-    return None
+    return DetectionKeywordService.detect_sport(text)
 
 
 # =============================================================================
@@ -801,14 +775,7 @@ def is_event_card(text: str, league_event_type: str | None = None) -> bool:
     if league_event_type == "event_card":
         return True
 
-    text_lower = text.lower()
-
-    # Check against unified combat sports keywords
-    for keyword in COMBAT_SPORTS_KEYWORDS:
-        if keyword.lower() in text_lower:
-            return True
-
-    return False
+    return DetectionKeywordService.is_combat_sport(text)
 
 
 def extract_event_card_hint(text: str) -> str | None:
@@ -866,14 +833,10 @@ def detect_card_segment(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, segment in CARD_SEGMENT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            logger.debug("[CLASSIFY] Detected card segment '%s' from '%s'", segment, text[:50])
-            return segment
-
-    return None
+    segment = DetectionKeywordService.detect_card_segment(text)
+    if segment:
+        logger.debug("[CLASSIFY] Detected card segment '%s' from '%s'", segment, text[:50])
+    return segment
 
 
 def is_combat_sports_excluded(text: str) -> bool:
@@ -890,16 +853,10 @@ def is_combat_sports_excluded(text: str) -> bool:
     if not text:
         return False
 
-    text_lower = text.lower()
-
-    for pattern in COMBAT_SPORTS_EXCLUDE_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            logger.debug(
-                "[CLASSIFY] Combat sports excluded by pattern '%s': %s", pattern, text[:50]
-            )
-            return True
-
-    return False
+    is_excluded = DetectionKeywordService.is_excluded(text)
+    if is_excluded:
+        logger.debug("[CLASSIFY] Combat sports excluded: %s", text[:50])
+    return is_excluded
 
 
 # Legacy alias for backwards compatibility
@@ -952,8 +909,8 @@ def _clean_fighter_name(name: str) -> str | None:
         return None
 
     # Strip segment suffixes: (Prelims), (Main Card 1), etc.
-    for pattern, _segment in CARD_SEGMENT_PATTERNS:
-        name = re.sub(pattern, "", name, flags=re.IGNORECASE)
+    for pattern, _segment in DetectionKeywordService.get_card_segment_patterns():
+        name = pattern.sub("", name)
 
     # Strip empty parentheses left after segment removal
     name = re.sub(r"\(\s*\)", "", name)

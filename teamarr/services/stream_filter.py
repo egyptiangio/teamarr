@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from re import Pattern
 
-from teamarr.utilities.constants import PLACEHOLDER_PATTERNS, SPORT_HINT_PATTERNS
+from teamarr.services.detection_keywords import DetectionKeywordService
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,9 @@ def is_placeholder(text: str) -> bool:
 
     text_lower = text.lower().strip()
 
-    # Check against placeholder patterns
-    for pattern in PLACEHOLDER_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True
+    # Check against placeholder patterns via detection service
+    if DetectionKeywordService.is_placeholder(text_lower):
+        return True
 
     # Additional check: very short names with just numbers
     if re.match(r"^[\d\s\-:]+$", text_lower):
@@ -93,13 +92,7 @@ def detect_sport_hint(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower()
-
-    for pattern, sport in SPORT_HINT_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return sport
-
-    return None
+    return DetectionKeywordService.detect_sport(text)
 
 
 # Builtin patterns for identifying EVENT streams (inclusion approach)

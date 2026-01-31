@@ -25,6 +25,7 @@ from teamarr.services.channel_service import (
     ReconciliationSummary,
     create_channel_service,
 )
+from teamarr.services.detection_keywords import DetectionKeywordService
 from teamarr.services.epg_service import (
     EPGService,
     EventEPGOptions,
@@ -64,7 +65,6 @@ from teamarr.services.stream_ordering import (
     StreamWithPriority,
     get_stream_ordering_service,
 )
-from teamarr.services.detection_keywords import DetectionKeywordService
 
 __all__ = [
     # Core services
