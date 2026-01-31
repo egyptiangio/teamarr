@@ -36,6 +36,7 @@ export interface PatternState {
   stream_include_regex_enabled: boolean
   stream_exclude_regex: string | null
   stream_exclude_regex_enabled: boolean
+  // Team vs Team extraction patterns
   custom_regex_teams: string | null
   custom_regex_teams_enabled: boolean
   custom_regex_date: string | null
@@ -44,6 +45,11 @@ export interface PatternState {
   custom_regex_time_enabled: boolean
   custom_regex_league: string | null
   custom_regex_league_enabled: boolean
+  // Combat / Event Card extraction patterns
+  custom_regex_fighters: string | null
+  custom_regex_fighters_enabled: boolean
+  custom_regex_event_name: string | null
+  custom_regex_event_name_enabled: boolean
 }
 
 export const EMPTY_PATTERNS: PatternState = {
@@ -52,6 +58,7 @@ export const EMPTY_PATTERNS: PatternState = {
   stream_include_regex_enabled: false,
   stream_exclude_regex: null,
   stream_exclude_regex_enabled: false,
+  // Team vs Team
   custom_regex_teams: null,
   custom_regex_teams_enabled: false,
   custom_regex_date: null,
@@ -60,6 +67,11 @@ export const EMPTY_PATTERNS: PatternState = {
   custom_regex_time_enabled: false,
   custom_regex_league: null,
   custom_regex_league_enabled: false,
+  // Combat / Event Card
+  custom_regex_fighters: null,
+  custom_regex_fighters_enabled: false,
+  custom_regex_event_name: null,
+  custom_regex_event_name_enabled: false,
 }
 
 // ---------------------------------------------------------------------------
