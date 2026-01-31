@@ -1,12 +1,19 @@
 """Detection keyword service for stream classification.
 
-Phase 1: Loads detection patterns from constants.py
-Phase 2: Will read from DB with constants as fallback
+Loads detection patterns from both:
+1. Built-in constants (defaults)
+2. User-defined keywords from database (override/extend)
+
+User keywords are merged with built-in patterns:
+- Higher priority user keywords come first
+- User keywords can add new patterns or override defaults
+- Disabled user keywords are skipped
 
 Provides an abstraction layer so classifier uses the service,
 and the service handles where patterns come from.
 """
 
+import json
 import logging
 import re
 from re import Pattern
@@ -23,6 +30,33 @@ from teamarr.utilities.constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _load_user_keywords(category: str) -> list[dict]:
+    """Load user-defined keywords from database.
+
+    Args:
+        category: Keyword category to load
+
+    Returns:
+        List of keyword dicts with keys: keyword, is_regex, target_value, priority
+    """
+    try:
+        from teamarr.database import get_db
+
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT keyword, is_regex, target_value, priority
+                   FROM detection_keywords
+                   WHERE category = ? AND enabled = 1
+                   ORDER BY priority DESC, keyword""",
+                (category,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        # DB not available (tests, early startup) - return empty
+        logger.debug("[DETECT_SVC] Could not load user keywords for %s: %s", category, e)
+        return []
 
 
 class DetectionKeywordService:
@@ -52,13 +86,29 @@ class DetectionKeywordService:
     def get_combat_keywords(cls) -> list[str]:
         """Get keywords that indicate combat sports (EVENT_CARD category).
 
+        Merges built-in keywords with user-defined keywords from database.
+        User keywords with higher priority come first.
+
         Returns:
             List of lowercase keywords (e.g., ['ufc', 'bellator', 'main card', ...])
         """
         if cls._combat_keywords is None:
-            cls._combat_keywords = list(COMBAT_SPORTS_KEYWORDS)
+            # Start with built-in keywords
+            built_in = set(COMBAT_SPORTS_KEYWORDS)
+
+            # Add user-defined keywords (higher priority come first)
+            user_keywords = _load_user_keywords("combat_sports")
+            user_kw_list = [kw["keyword"].lower() for kw in user_keywords]
+
+            # Merge: user keywords first (by priority), then built-in not in user list
+            cls._combat_keywords = user_kw_list + [
+                kw for kw in COMBAT_SPORTS_KEYWORDS if kw.lower() not in user_kw_list
+            ]
             logger.debug(
-                "[DETECT_SVC] Loaded %d combat sports keywords", len(cls._combat_keywords)
+                "[DETECT_SVC] Loaded %d combat sports keywords (%d user, %d built-in)",
+                len(cls._combat_keywords),
+                len(user_kw_list),
+                len(built_in),
             )
         return cls._combat_keywords
 
@@ -66,12 +116,44 @@ class DetectionKeywordService:
     def get_league_hints(cls) -> list[tuple[Pattern[str], str | list[str]]]:
         """Get compiled league hint patterns.
 
+        Merges built-in patterns with user-defined patterns from database.
+        User patterns with higher priority come first.
+
         Returns:
             List of (compiled_pattern, league_code) tuples.
             league_code can be a string or list[str] for umbrella brands.
         """
         if cls._league_hints is None:
             cls._league_hints = []
+            user_count = 0
+
+            # Load user-defined patterns first (higher priority)
+            user_keywords = _load_user_keywords("league_hints")
+            for kw in user_keywords:
+                pattern_str = kw["keyword"]
+                target = kw["target_value"] or ""
+                # target_value may be JSON array for umbrella brands
+                try:
+                    code: str | list[str] = json.loads(target)
+                except (json.JSONDecodeError, TypeError):
+                    code = target
+
+                try:
+                    if kw["is_regex"]:
+                        compiled = re.compile(pattern_str, re.IGNORECASE)
+                    else:
+                        # Plain text - escape for literal match
+                        compiled = re.compile(re.escape(pattern_str), re.IGNORECASE)
+                    cls._league_hints.append((compiled, code))
+                    user_count += 1
+                except re.error as e:
+                    logger.warning(
+                        "[DETECT_SVC] Invalid user league hint '%s': %s",
+                        pattern_str,
+                        e,
+                    )
+
+            # Add built-in patterns
             for pattern_str, code in LEAGUE_HINT_PATTERNS:
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
@@ -83,7 +165,9 @@ class DetectionKeywordService:
                         e,
                     )
             logger.debug(
-                "[DETECT_SVC] Compiled %d league hint patterns", len(cls._league_hints)
+                "[DETECT_SVC] Compiled %d league hint patterns (%d user)",
+                len(cls._league_hints),
+                user_count,
             )
         return cls._league_hints
 
@@ -91,11 +175,36 @@ class DetectionKeywordService:
     def get_sport_hints(cls) -> list[tuple[Pattern[str], str]]:
         """Get compiled sport hint patterns.
 
+        Merges built-in patterns with user-defined patterns from database.
+        User patterns with higher priority come first.
+
         Returns:
             List of (compiled_pattern, sport_name) tuples.
         """
         if cls._sport_hints is None:
             cls._sport_hints = []
+            user_count = 0
+
+            # Load user-defined patterns first (higher priority)
+            user_keywords = _load_user_keywords("sport_hints")
+            for kw in user_keywords:
+                pattern_str = kw["keyword"]
+                sport = kw["target_value"] or ""
+                try:
+                    if kw["is_regex"]:
+                        compiled = re.compile(pattern_str, re.IGNORECASE)
+                    else:
+                        compiled = re.compile(re.escape(pattern_str), re.IGNORECASE)
+                    cls._sport_hints.append((compiled, sport))
+                    user_count += 1
+                except re.error as e:
+                    logger.warning(
+                        "[DETECT_SVC] Invalid user sport hint '%s': %s",
+                        pattern_str,
+                        e,
+                    )
+
+            # Add built-in patterns
             for pattern_str, sport in SPORT_HINT_PATTERNS:
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
@@ -107,7 +216,9 @@ class DetectionKeywordService:
                         e,
                     )
             logger.debug(
-                "[DETECT_SVC] Compiled %d sport hint patterns", len(cls._sport_hints)
+                "[DETECT_SVC] Compiled %d sport hint patterns (%d user)",
+                len(cls._sport_hints),
+                user_count,
             )
         return cls._sport_hints
 
@@ -115,11 +226,35 @@ class DetectionKeywordService:
     def get_placeholder_patterns(cls) -> list[Pattern[str]]:
         """Get compiled placeholder patterns.
 
+        Merges built-in patterns with user-defined patterns from database.
+        User patterns with higher priority come first.
+
         Returns:
             List of compiled regex patterns that identify placeholder streams.
         """
         if cls._placeholder_patterns is None:
             cls._placeholder_patterns = []
+            user_count = 0
+
+            # Load user-defined patterns first (higher priority)
+            user_keywords = _load_user_keywords("placeholders")
+            for kw in user_keywords:
+                pattern_str = kw["keyword"]
+                try:
+                    if kw["is_regex"]:
+                        compiled = re.compile(pattern_str, re.IGNORECASE)
+                    else:
+                        compiled = re.compile(re.escape(pattern_str), re.IGNORECASE)
+                    cls._placeholder_patterns.append(compiled)
+                    user_count += 1
+                except re.error as e:
+                    logger.warning(
+                        "[DETECT_SVC] Invalid user placeholder pattern '%s': %s",
+                        pattern_str,
+                        e,
+                    )
+
+            # Add built-in patterns
             for pattern_str in PLACEHOLDER_PATTERNS:
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
@@ -131,8 +266,9 @@ class DetectionKeywordService:
                         e,
                     )
             logger.debug(
-                "[DETECT_SVC] Compiled %d placeholder patterns",
+                "[DETECT_SVC] Compiled %d placeholder patterns (%d user)",
                 len(cls._placeholder_patterns),
+                user_count,
             )
         return cls._placeholder_patterns
 
@@ -140,12 +276,37 @@ class DetectionKeywordService:
     def get_card_segment_patterns(cls) -> list[tuple[Pattern[str], str]]:
         """Get compiled card segment patterns.
 
+        Merges built-in patterns with user-defined patterns from database.
+        User patterns with higher priority come first.
+
         Returns:
             List of (compiled_pattern, segment_name) tuples.
             segment_name is one of: 'early_prelims', 'prelims', 'main_card', 'combined'
         """
         if cls._card_segment_patterns is None:
             cls._card_segment_patterns = []
+            user_count = 0
+
+            # Load user-defined patterns first (higher priority)
+            user_keywords = _load_user_keywords("card_segments")
+            for kw in user_keywords:
+                pattern_str = kw["keyword"]
+                segment = kw["target_value"] or "combined"
+                try:
+                    if kw["is_regex"]:
+                        compiled = re.compile(pattern_str, re.IGNORECASE)
+                    else:
+                        compiled = re.compile(re.escape(pattern_str), re.IGNORECASE)
+                    cls._card_segment_patterns.append((compiled, segment))
+                    user_count += 1
+                except re.error as e:
+                    logger.warning(
+                        "[DETECT_SVC] Invalid user card segment pattern '%s': %s",
+                        pattern_str,
+                        e,
+                    )
+
+            # Add built-in patterns
             for pattern_str, segment in CARD_SEGMENT_PATTERNS:
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
@@ -157,8 +318,9 @@ class DetectionKeywordService:
                         e,
                     )
             logger.debug(
-                "[DETECT_SVC] Compiled %d card segment patterns",
+                "[DETECT_SVC] Compiled %d card segment patterns (%d user)",
                 len(cls._card_segment_patterns),
+                user_count,
             )
         return cls._card_segment_patterns
 
@@ -166,11 +328,35 @@ class DetectionKeywordService:
     def get_exclusion_patterns(cls) -> list[Pattern[str]]:
         """Get compiled combat sports exclusion patterns.
 
+        Merges built-in patterns with user-defined patterns from database.
+        User patterns with higher priority come first.
+
         Returns:
             List of compiled patterns for content to exclude (weigh-ins, etc.)
         """
         if cls._exclusion_patterns is None:
             cls._exclusion_patterns = []
+            user_count = 0
+
+            # Load user-defined patterns first (higher priority)
+            user_keywords = _load_user_keywords("exclusions")
+            for kw in user_keywords:
+                pattern_str = kw["keyword"]
+                try:
+                    if kw["is_regex"]:
+                        compiled = re.compile(pattern_str, re.IGNORECASE)
+                    else:
+                        compiled = re.compile(re.escape(pattern_str), re.IGNORECASE)
+                    cls._exclusion_patterns.append(compiled)
+                    user_count += 1
+                except re.error as e:
+                    logger.warning(
+                        "[DETECT_SVC] Invalid user exclusion pattern '%s': %s",
+                        pattern_str,
+                        e,
+                    )
+
+            # Add built-in patterns
             for pattern_str in COMBAT_SPORTS_EXCLUDE_PATTERNS:
                 try:
                     compiled = re.compile(pattern_str, re.IGNORECASE)
@@ -182,8 +368,9 @@ class DetectionKeywordService:
                         e,
                     )
             logger.debug(
-                "[DETECT_SVC] Compiled %d exclusion patterns",
+                "[DETECT_SVC] Compiled %d exclusion patterns (%d user)",
                 len(cls._exclusion_patterns),
+                user_count,
             )
         return cls._exclusion_patterns
 
@@ -191,12 +378,27 @@ class DetectionKeywordService:
     def get_separators(cls) -> list[str]:
         """Get game separator strings.
 
+        Merges built-in separators with user-defined separators from database.
+        User separators with higher priority come first.
+
         Returns:
             List of separators like ' vs ', ' @ ', ' at ', etc.
         """
         if cls._separators is None:
-            cls._separators = list(GAME_SEPARATORS)
-            logger.debug("[DETECT_SVC] Loaded %d game separators", len(cls._separators))
+            # Load user-defined separators first (higher priority)
+            user_keywords = _load_user_keywords("separators")
+            user_seps = [kw["keyword"] for kw in user_keywords]
+
+            # Merge: user separators first, then built-in not in user list
+            user_seps_lower = {s.lower() for s in user_seps}
+            cls._separators = user_seps + [
+                s for s in GAME_SEPARATORS if s.lower() not in user_seps_lower
+            ]
+            logger.debug(
+                "[DETECT_SVC] Loaded %d game separators (%d user)",
+                len(cls._separators),
+                len(user_seps),
+            )
         return cls._separators
 
     # ==========================================================================
