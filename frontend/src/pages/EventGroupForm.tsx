@@ -26,6 +26,7 @@ import { LeaguePicker } from "@/components/LeaguePicker"
 import { ChannelProfileSelector } from "@/components/ChannelProfileSelector"
 import { StreamProfileSelector } from "@/components/StreamProfileSelector"
 import { TestPatternsModal, type PatternState } from "@/components/TestPatternsModal"
+import type { EPGSource } from "@/api/settings"
 
 // Group mode
 type GroupMode = "single" | "multi" | null
@@ -372,6 +373,14 @@ export function EventGroupForm() {
           }
           if (shouldClear(group.display_name, formData.display_name)) {
             updateData.clear_display_name = true
+          }
+          if (
+            shouldClear(
+              group.unmatched_channel_epg_source_id,
+              formData.unmatched_channel_epg_source_id,
+            )
+          ) {
+            updateData.clear_unmatched_channel_epg_source_id = true;
           }
         }
 
@@ -813,7 +822,8 @@ export function EventGroupForm() {
               </div>
             </CardContent>
           </Card>}
-
+          
+          
           {/* Channel Group Assignment - hidden for child groups */}
           {!isChildGroup && <Card>
             <CardHeader>
@@ -1495,7 +1505,67 @@ export function EventGroupForm() {
               </CardContent>
             </Card>
           )}
+{/* Unmatched Stream Handling - hidden for child groups */}
+          {!isChildGroup && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Unmatched Stream Handling</CardTitle>
+                <CardDescription>
+                  Configure how to handle streams that don't match any event
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={formData.create_unmatched_channels || false}
+                    onCheckedChange={(checked) =>
+                      setFormData({
+                        ...formData,
+                        create_unmatched_channels: checked,
+                      })
+                    }
+                  />
+                  <Label className="font-normal">
+                    Create Channels for Unmatched Streams
+                  </Label>
+                </div>
 
+                {formData.create_unmatched_channels && (
+                  <div className="space-y-2 pl-6 border-l-2 border-muted ml-2">
+                    <Label htmlFor="unmatched_epg_source">
+                      Unmatched EPG Source (Optional)
+                    </Label>
+                    <Select
+                      id="unmatched_epg_source"
+                      value={
+                        formData.unmatched_channel_epg_source_id?.toString() ||
+                        ""
+                      }
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          unmatched_channel_epg_source_id: e.target.value
+                            ? Number(e.target.value)
+                            : null,
+                        })
+                      }
+                    >
+                      <option value="">None (Use default metadata)</option>
+                      {epgSources?.filter((s: EPGSource) => s.source_type === "dummy").map((source: EPGSource)=> (
+                        <option key={source.id} value={source.id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      If selected, unmatched channels will use this EPG source
+                      for placeholder data.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
           {/* Actions */}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate("/event-groups")}>
