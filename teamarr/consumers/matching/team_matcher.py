@@ -338,6 +338,24 @@ def _best_name_score(stream_norm: str, event_team) -> float:
     )
 
 
+def _has_shared_name_token(stream_norm: str, event_team) -> bool:
+    """Whether a fuzzy side match has a meaningful token in common.
+
+    Low fuzzy scores can result from coincidental character overlap alone,
+    such as ``Barrie Colts`` and ``Erie Otters``. A partial team name should
+    still contain at least one meaningful word from its full or short name.
+    """
+    stream_tokens = {token for token in stream_norm.split() if len(token) > 2}
+    if not stream_tokens:
+        return False
+
+    names = [event_team.name, getattr(event_team, "short_name", None) or ""]
+    return any(
+        stream_tokens & {token for token in normalize_text(name).split() if len(token) > 2}
+        for name in names
+    )
+
+
 @lru_cache(maxsize=65536)
 def _best_name_score_cached(
     stream_norm: str, team_name: str, team_short: str, team_abbrev: str
@@ -1948,7 +1966,14 @@ class TeamMatcher:
                     )
                 else:
                     base = _best_name_score(stream_norm, event_team)
-                return max(base, alias_score)
+                score = max(base, alias_score)
+                if (
+                    not canonical
+                    and BOTH_TEAMS_THRESHOLD <= score < HIGH_CONFIDENCE_THRESHOLD
+                    and not _has_shared_name_token(stream_norm, event_team)
+                ):
+                    return 0.0
+                return score
 
             t1_vs_home = _side_score(t1_norm, event.home_team)
             t1_vs_away = _side_score(t1_norm, event.away_team)

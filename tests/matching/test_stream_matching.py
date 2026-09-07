@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from teamarr.consumers.matching.classifier import classify_stream
 from teamarr.consumers.matching.result import MatchMethod
 from teamarr.core.types import Event, EventStatus, Team
 
@@ -316,6 +317,20 @@ class TestMatchTeamsToEventAbbreviationIntegration:
         result = matcher._match_teams_to_event("DEN", "PHI", event)
         assert result is None
 
+    def test_rejects_low_score_side_with_no_shared_team_token(self, matcher):
+        """Barrie Colts must not bind to Erie Otters on character similarity alone."""
+        classified = classify_stream(
+            "OHL  01 : 6:00 PM Kitchener Rangers @ Barrie Colts [1080p]"
+        )
+        event = _make_event(
+            _make_team("Kitchener Rangers", "KIT"),
+            _make_team("Erie Otters", "ER"),
+        )
+
+        assert classified.team1 == "OHL 01 :  Kitchener Rangers"
+        assert classified.team2 == "Barrie Colts"
+        assert matcher._match_teams_to_event(classified.team1, classified.team2, event) is None
+
     def test_brockport_the_stopword_does_not_match_random_streams(self, matcher):
         """ESPN abbreviation 'THE' for Brockport Golden Eagles must not match random streams (#705).
         """
@@ -336,4 +351,3 @@ class TestMatchTeamsToEventAbbreviationIntegration:
 
         # Two-team streams with a stop word in a phrase
         assert matcher._match_teams_to_event("BUF", "THE MOVIES", event) is None
-
