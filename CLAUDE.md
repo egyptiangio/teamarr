@@ -286,6 +286,7 @@ All `update_channel` calls go through `_safe_update_channel`, which checks `Oper
 **Dynamic Groups** (`teamarr/consumers/lifecycle/dynamic_resolver.py`):
 - `{sport}`, `{league}`, and `{conference}` wildcards (`{conference}` = home team's NCAA conference from `provider_group_cache`, #91)
 - Auto-creates in Dispatcharr
+- **Group/profile names are keyed through `_group_key` — trim + lowercase, never collapse internal whitespace (#745).** Both `create_channel_group` and `create_profile` post `name.strip()`, so a name differing only at the ends can never create what it was looking for: the cache lookup misses, Dispatcharr refuses the create as a duplicate of the group that was already there, the channel gets a null `channel_group_id`, and it repeats every run because nothing about that state changes. Collapsing *internal* runs looks like the same idea and is not safe — on a live install's 3,097 groups, trimming collided 0 keys while collapsing collided 18, all real distinct groups separated only by `\xa0` vs a regular space. Any new name→id cache against Dispatcharr must go through `_group_key` on both populate and lookup.
 
 **Per-Source Matching Types** (epic `teamarrv2-ahow`):
 - Each source declares which matching pipeline(s) it runs — three independent booleans on `event_epg_groups`: `name_match_enabled` (Stream Name → TEAM_VS_TEAM/EVENT_CARD/RACING categories), `team_streams_enabled` (Team → TEAM_ONLY), `epg_match_enabled` (EPG). Multi-select; ≥1 required (enforced in `api/routes/groups.py::require_matching_type`).

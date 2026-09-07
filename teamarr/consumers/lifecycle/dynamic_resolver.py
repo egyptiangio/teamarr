@@ -16,6 +16,28 @@ from teamarr.dispatcharr.factory import get_dispatcharr_connection
 logger = logging.getLogger(__name__)
 
 
+def _group_key(name: str) -> str:
+    """Cache key for a Dispatcharr channel-group or profile name (#745).
+
+    Trims and lowercases — and deliberately does NOT collapse internal
+    whitespace runs.
+
+    Both managers post ``name.strip()`` when creating, so a name that differs
+    from Dispatcharr's only at the ends can never resolve: the lookup misses,
+    the create is refused as a duplicate of the group that was already there,
+    the channel is left with a null group id, and the cycle repeats on every
+    run because nothing about that state changes.
+
+    Collapsing internal runs looks like the same idea and is not safe. Measured
+    against a live install's 3,097 channel groups, trimming produced 0 colliding
+    keys while collapsing produced 18 — real, distinct groups separated only by
+    a non-breaking space where the other has a regular one ("UK| ULTIMATE POOL
+    PPV" vs "UK| ULTIMATE\xa0POOL\xa0PPV"). Merging those would file channels
+    under the wrong group, which is worse than the bug this fixes.
+    """
+    return name.strip().lower()
+
+
 @dataclass
 class DynamicResolver:
     """Resolves dynamic channel groups and profiles.
@@ -114,7 +136,7 @@ class DynamicResolver:
                 groups = dispatcharr.m3u.list_groups()
                 for g in groups:
                     if g.name and g.id:
-                        self._groups_by_name[g.name.lower()] = g.id
+                        self._groups_by_name[_group_key(g.name)] = g.id
                         self._known_group_ids.add(g.id)
                 self._groups_loaded = True
             except Exception as e:
@@ -124,7 +146,7 @@ class DynamicResolver:
                 profiles = dispatcharr.channels.list_profiles()
                 for p in profiles:
                     if p.name and p.id:
-                        self._profiles_by_name[p.name.lower()] = p.id
+                        self._profiles_by_name[_group_key(p.name)] = p.id
             except Exception as e:
                 logger.warning("[RESOLVER] Failed to fetch channel profiles: %s", e)
 
@@ -316,11 +338,25 @@ class DynamicResolver:
             Group ID or None if creation failed
         """
         self._ensure_initialized()
-        name_lower = name.lower()
+
+        # Match Dispatcharr's own trimming (#745). create_channel_group already
+        # posts name.strip(), so an untrimmed name could never create the group
+        # it was looking for — it looked up a key nothing holds, then asked
+        # Dispatcharr to create a name that already existed and got a duplicate
+        # 400 back. Every run, forever, because nothing about that state changes.
+        name = name.strip()
+        if not name:
+            logger.warning(
+                "[RESOLVER] Refusing to resolve an empty channel-group name "
+                "(pattern resolved to whitespace only) — channel left ungrouped"
+            )
+            return None
+
+        key = _group_key(name)
 
         # Check cache
-        if name_lower in self._groups_by_name:
-            return self._groups_by_name[name_lower]
+        if key in self._groups_by_name:
+            return self._groups_by_name[key]
 
         # Create new group
         dispatcharr = self._get_dispatcharr()
@@ -333,7 +369,7 @@ class DynamicResolver:
             if result.success and result.data:
                 gid = result.data.get("id")
                 if gid:
-                    self._groups_by_name[name_lower] = gid
+                    self._groups_by_name[key] = gid
                     logger.info("[RESOLVER] Created channel group '%s' (id=%d)", name, gid)
                     return gid
             else:
@@ -353,11 +389,20 @@ class DynamicResolver:
             Profile ID or None if creation failed
         """
         self._ensure_initialized()
-        name_lower = name.lower()
+
+        # Same trimming contract as _get_or_create_group (#745): create_profile
+        # posts name.strip(), so an untrimmed lookup can only ever miss and then
+        # ask Dispatcharr for a duplicate.
+        name = name.strip()
+        if not name:
+            logger.warning("[RESOLVER] Refusing to resolve an empty channel-profile name")
+            return None
+
+        key = _group_key(name)
 
         # Check cache
-        if name_lower in self._profiles_by_name:
-            return self._profiles_by_name[name_lower]
+        if key in self._profiles_by_name:
+            return self._profiles_by_name[key]
 
         # Create new profile
         dispatcharr = self._get_dispatcharr()
@@ -370,7 +415,7 @@ class DynamicResolver:
             if result.success and result.data:
                 pid = result.data.get("id")
                 if pid:
-                    self._profiles_by_name[name_lower] = pid
+                    self._profiles_by_name[key] = pid
                     logger.info("[RESOLVER] Created channel profile '%s' (id=%d)", name, pid)
                     return pid
             else:
