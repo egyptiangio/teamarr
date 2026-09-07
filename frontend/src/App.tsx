@@ -1,29 +1,94 @@
+import { lazy, Suspense } from "react"
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from "react-router"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { LoaderCircle } from "lucide-react"
 import { MainLayout } from "@/layouts/MainLayout"
 import { EpgLayout } from "@/components/EpgLayout"
 import { ChannelsLayout } from "@/components/ChannelsLayout"
-import { ChannelLifecycle } from "@/pages/channels/ChannelLifecycle"
-import { ChannelConsolidation } from "@/pages/channels/ChannelConsolidation"
-import { ChannelNumbering } from "@/pages/channels/ChannelNumbering"
-import { ChannelStreamPriority } from "@/pages/channels/ChannelStreamPriority"
-import { ChannelDispatcharrOutput } from "@/pages/channels/ChannelDispatcharrOutput"
 import { GenerationProvider } from "@/contexts/GenerationContext"
 import { StartupOverlay } from "@/components/StartupOverlay"
-import {
-  Dashboard,
-  Subscriptions,
-  DetectionLibrary,
-  Templates,
-  TemplateForm,
-  EpgOutput,
-  Teams,
-  TeamImport,
-  EventGroups,
-  EventGroupForm,
-  EventGroupImport,
-  Settings,
-} from "@/pages"
+import { Dashboard } from "@/pages/Dashboard"
+
+/**
+ * Every page below the landing route is code-split (#737).
+ *
+ * All 19 pages used to be imported statically through the `@/pages` barrel, so
+ * the build emitted one 1.03 MB bundle and every visitor downloaded, parsed and
+ * compiled the whole app to look at the dashboard.
+ *
+ * Two rules keep it that way:
+ *   - Import the page MODULE, never the `@/pages` barrel. Going through the
+ *     barrel pulls every page into the same chunk and quietly undoes this.
+ *   - Dashboard stays eager. It is the landing route, so lazy-loading it just
+ *     adds a round trip to the most common entry point.
+ *
+ * The pages use named exports, hence the `.then` unwrap.
+ */
+const Subscriptions = lazy(() =>
+  import("@/pages/Subscriptions").then((m) => ({ default: m.Subscriptions })),
+)
+const DetectionLibrary = lazy(() =>
+  import("@/pages/DetectionLibrary").then((m) => ({ default: m.DetectionLibrary })),
+)
+const Templates = lazy(() =>
+  import("@/pages/Templates").then((m) => ({ default: m.Templates })),
+)
+const TemplateForm = lazy(() =>
+  import("@/pages/TemplateForm").then((m) => ({ default: m.TemplateForm })),
+)
+const EpgOutput = lazy(() =>
+  import("@/pages/EpgOutput").then((m) => ({ default: m.EpgOutput })),
+)
+const Teams = lazy(() => import("@/pages/Teams").then((m) => ({ default: m.Teams })))
+const TeamImport = lazy(() =>
+  import("@/pages/TeamImport").then((m) => ({ default: m.TeamImport })),
+)
+const EventGroups = lazy(() =>
+  import("@/pages/EventGroups").then((m) => ({ default: m.EventGroups })),
+)
+const EventGroupForm = lazy(() =>
+  import("@/pages/EventGroupForm").then((m) => ({ default: m.EventGroupForm })),
+)
+const EventGroupImport = lazy(() =>
+  import("@/pages/EventGroupImport").then((m) => ({ default: m.EventGroupImport })),
+)
+const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })))
+const ChannelLifecycle = lazy(() =>
+  import("@/pages/channels/ChannelLifecycle").then((m) => ({ default: m.ChannelLifecycle })),
+)
+const ChannelConsolidation = lazy(() =>
+  import("@/pages/channels/ChannelConsolidation").then((m) => ({
+    default: m.ChannelConsolidation,
+  })),
+)
+const ChannelNumbering = lazy(() =>
+  import("@/pages/channels/ChannelNumbering").then((m) => ({ default: m.ChannelNumbering })),
+)
+const ChannelStreamPriority = lazy(() =>
+  import("@/pages/channels/ChannelStreamPriority").then((m) => ({
+    default: m.ChannelStreamPriority,
+  })),
+)
+const ChannelDispatcharrOutput = lazy(() =>
+  import("@/pages/channels/ChannelDispatcharrOutput").then((m) => ({
+    default: m.ChannelDispatcharrOutput,
+  })),
+)
+
+/**
+ * Shown while a route chunk downloads.
+ *
+ * Deliberately plain: chunks are served from the same origin and are small, so
+ * on anything but a cold first visit this is a flash. A skeleton that mimicked
+ * page structure would be more distracting than a spinner, not less.
+ */
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center py-24" role="status" aria-label="Loading">
+      <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +119,7 @@ function AppContent() {
     <>
       <StartupOverlay />
       <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Dashboard />} />
@@ -112,6 +178,7 @@ function AppContent() {
             <Route path="templates/:templateId" element={<Redirect to="/epg/templates/:templateId" />} />
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </>
   )
