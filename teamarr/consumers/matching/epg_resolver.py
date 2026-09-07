@@ -29,6 +29,7 @@ fetched by the resolved key yet keyed by the stream tvg_id the matcher carries.
 
 import logging
 import re
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,57 @@ _PROXY_STREAM_UUID = re.compile(
 _SYNTHETIC_EVENT_TVG_PREFIXES = ("teamarr-event-", "apex-event-")
 
 
+@dataclass(frozen=True)
+class EpgCatalogIndex:
+    """The three lookups ``resolve_program_tvg_ids`` derives from the EPGData catalog.
+
+    Split out so a caller resolving many stream batches against ONE catalog
+    builds them once (#734). They depend only on the catalog and the active
+    source set — never on the streams — but the resolver used to rebuild all
+    three on every call, which on a 50k-row catalog is ~220ms of pure CPU per
+    call, paid once per event group per run.
+
+    Attributes:
+        by_id: EPGData row id -> row (curated ``epg_data_id`` lookups).
+        tvg_ids: every ACTIVE imported ``tvg_id`` (direct match).
+        name_to_tvg_ids: normalized name -> distinct tvg_ids; >1 is ambiguous.
+    """
+
+    by_id: dict
+    tvg_ids: set
+    name_to_tvg_ids: dict
+
+
+def build_epg_catalog_index(
+    epg_data_list: list[dict],
+    active_source_ids: set[int] | None = None,
+) -> EpgCatalogIndex:
+    """Build the catalog-derived lookups for :func:`resolve_program_tvg_ids`.
+
+    ``active_source_ids`` scopes the direct and name lookups to enabled EPG
+    sources; the id lookup stays full-catalog because curated channel links are
+    trusted regardless of whether their source is currently enabled. None means
+    "every row" (back-compat / unit tests).
+    """
+    by_id = {e["id"]: e for e in epg_data_list if e.get("id") is not None}
+
+    if active_source_ids is not None:
+        imported = [e for e in epg_data_list if e.get("epg_source") in active_source_ids]
+    else:
+        imported = epg_data_list
+
+    tvg_ids = {e["tvg_id"] for e in imported if e.get("tvg_id")}
+
+    name_to_tvg_ids: dict[str, set[str]] = {}
+    for e in imported:
+        norm = normalize_channel_name(e.get("name") or "")
+        tvg = e.get("tvg_id")
+        if norm and tvg:
+            name_to_tvg_ids.setdefault(norm, set()).add(tvg)
+
+    return EpgCatalogIndex(by_id=by_id, tvg_ids=tvg_ids, name_to_tvg_ids=name_to_tvg_ids)
+
+
 def resolve_program_tvg_ids(
     streams: list[dict],
     epg_data_list: list[dict],
@@ -97,6 +149,7 @@ def resolve_program_tvg_ids(
     active_source_ids: set[int] | None = None,
     channel_by_uuid: dict[str, dict] | None = None,
     own_source_id: int | None = None,
+    catalog: EpgCatalogIndex | None = None,
 ) -> tuple[dict[str, str], dict[str, int]]:
     """Map each candidate stream's ``tvg_id`` -> an EPG-source ``tvg_id``.
 
@@ -125,6 +178,11 @@ def resolve_program_tvg_ids(
         stream_channel_map: ``stream id -> channel dict`` (``epg_data_id``).
         active_source_ids: Enabled EPG-source ids for direct/name matching; None
             uses every row.
+        catalog: Pre-built catalog lookups (see :func:`build_epg_catalog_index`).
+            Supply it to resolve several stream batches against one catalog
+            without rebuilding the indexes each time (#734); when omitted they
+            are built from ``epg_data_list`` and ``active_source_ids``, which is
+            what every single-batch caller wants.
 
     Returns:
         (resolution, stats) where ``resolution`` is ``{stream_tvg_id:
@@ -140,7 +198,9 @@ def resolve_program_tvg_ids(
     # placeholder blocks (a sibling install's) that bind the stream to every
     # session of the named event. Generated-guide links don't terminate the
     # cascade.
-    epgdata_by_id = {e["id"]: e for e in epg_data_list if e.get("id") is not None}
+    if catalog is None:
+        catalog = build_epg_catalog_index(epg_data_list, active_source_ids)
+    epgdata_by_id = catalog.by_id
 
     def _resolved_tvg(ed: dict | None) -> str | None:
         """The program tvg_id ``ed`` resolves to, or None if it must not resolve."""
@@ -154,19 +214,9 @@ def resolve_program_tvg_ids(
         return tvg
 
     # Direct + name match only the ACTIVE imported EPG (honor enabled sources).
-    if active_source_ids is not None:
-        imported = [e for e in epg_data_list if e.get("epg_source") in active_source_ids]
-    else:
-        imported = epg_data_list
-    epgdata_tvgids = {e["tvg_id"] for e in imported if e.get("tvg_id")}
-
+    epgdata_tvgids = catalog.tvg_ids
     # Normalized name -> set of distinct tvg_ids; >1 means ambiguous (skip).
-    name_to_tvgids: dict[str, set[str]] = {}
-    for e in imported:
-        norm = normalize_channel_name(e.get("name") or "")
-        tvg = e.get("tvg_id")
-        if norm and tvg:
-            name_to_tvgids.setdefault(norm, set()).add(tvg)
+    name_to_tvgids = catalog.name_to_tvg_ids
 
     resolution: dict[str, str] = {}
     stats = {

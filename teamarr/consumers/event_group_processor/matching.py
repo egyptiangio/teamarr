@@ -6,6 +6,7 @@ resolution and UFC/racing segment expansion of the matched-stream list.
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from sqlite3 import Connection
 from typing import TYPE_CHECKING, Any
@@ -14,6 +15,10 @@ from teamarr.consumers.event_group_processor.stream_fetcher import (
     managed_channel_ids,
 )
 from teamarr.consumers.matching import BatchMatchResult, StreamCategory, StreamMatcher
+from teamarr.consumers.matching.epg_resolver import (
+    EpgCatalogIndex,
+    build_epg_catalog_index,
+)
 from teamarr.database.groups import EventEPGGroup
 from teamarr.database.settings import get_feed_separation_settings
 from teamarr.utilities.tz import get_user_timezone, to_utc
@@ -40,6 +45,23 @@ def _separation_applies(event: Any, separation_sports: list[str] | None) -> bool
     return sport in separation_sports
 
 
+@dataclass(frozen=True)
+class _EpgResolutionInputs:
+    """Everything ``resolve_program_tvg_ids`` needs that does not vary by group.
+
+    Built once per generation run by ``StreamMatching._epg_resolution_inputs``
+    (#734). ``catalog`` is the pre-derived index over ``epg_data_list``; both
+    are carried so the resolver's own back-compat path stays available.
+    """
+
+    epg_data_list: list[dict]
+    stream_channels: dict
+    channel_by_uuid: dict
+    active_source_ids: "set[int] | None"
+    own_source_id: "int | None"
+    catalog: EpgCatalogIndex
+
+
 class StreamMatching:
     """Matches streams to events and shapes the matched-stream list.
 
@@ -58,6 +80,8 @@ class StreamMatching:
         _get_all_known_leagues: Any
         _load_sport_durations: Any
         _get_lifecycle_service: Any
+        # Run-scoped memo for _epg_resolution_inputs (#734).
+        _epg_inputs_cache: Any
 
     def _match_streams(
         self,
@@ -215,28 +239,20 @@ class StreamMatching:
 
         # Resolve stream tvg_ids -> EPG-source tvg_ids. Needs the EPGData catalog
         # (for direct + name matching) and the stream->channel map (for the
-        # curated channel fallback). Both are single scoped fetches.
-        try:
-            epg_data_list = self._dispatcharr_client.channels.get_epg_data_list()
-            # Teamarr's own output channels must not claim stream->channel slots
-            # (#512): last-write-wins would let them mask a shared stream's
-            # curated channel and break tier-1 (curated) EPG resolution.
-            stream_channels, channel_by_uuid = self._dispatcharr_client.channels.get_channel_maps(
-                exclude_channel_ids=managed_channel_ids(self._db_factory)
-            )
-        except Exception as e:
-            logger.warning("[EPG-MATCH] Failed to load EPG resolution data: %s", e)
+        # curated channel fallback). Fetched and indexed once per RUN, not per
+        # group (#734).
+        inputs = self._epg_resolution_inputs()
+        if inputs is None:
             return None
 
-        # Direct/name matching must only use the ACTIVE imported EPG (curated
-        # channel links are trusted regardless). _Teamarr (our own output) is
-        # excluded so we never resolve a stream to our generated guide.
-        active_source_ids = self._active_epg_source_ids()
         resolution, _stats = resolve_program_tvg_ids(
-            streams, epg_data_list, stream_channels,
-            active_source_ids=active_source_ids,
-            channel_by_uuid=channel_by_uuid,
-            own_source_id=self._own_epg_source_id(),
+            streams,
+            inputs.epg_data_list,
+            inputs.stream_channels,
+            active_source_ids=inputs.active_source_ids,
+            channel_by_uuid=inputs.channel_by_uuid,
+            own_source_id=inputs.own_source_id,
+            catalog=inputs.catalog,
         )
 
         # Window mirrors the event match window so programs overlapping any
@@ -276,6 +292,66 @@ class StreamMatching:
             group.id, index.program_count(), len(index.tvg_ids()),
         )
         return index
+
+    def _epg_resolution_inputs(self) -> "_EpgResolutionInputs | None":
+        """The run-invariant inputs to ``resolve_program_tvg_ids``, fetched once (#734).
+
+        None when the Dispatcharr fetches fail — the caller then skips EPG
+        matching for the group, exactly as it did when the fetch was inline.
+
+        None of these depend on the group, but ``_build_epg_index`` runs per
+        group, so every EPG-enabled source used to re-pay for all of them. On a
+        real install that was ~2.6s of duplicate HTTP per group per run:
+        ``get_epg_data_list`` is a single unpaginated response of every EPGData
+        row Dispatcharr holds (50k+ on the profiled install, 1.5s), and
+        ``get_channel_maps`` walks the whole channel list again (1.0s).
+
+        Cached for the life of the processor, which is one generation run —
+        ``process_all_groups`` clears it alongside ``_shared_events`` so a
+        second run on the same instance re-fetches. A failure is NOT cached:
+        one transient Dispatcharr blip must not disable EPG matching for every
+        remaining group in the run.
+        """
+        cached = getattr(self, "_epg_inputs_cache", None)
+        if cached is not None:
+            return cached
+
+        try:
+            epg_data_list = self._dispatcharr_client.channels.get_epg_data_list()
+            # Teamarr's own output channels must not claim stream->channel slots
+            # (#512): last-write-wins would let them mask a shared stream's
+            # curated channel and break tier-1 (curated) EPG resolution.
+            stream_channels, channel_by_uuid = self._dispatcharr_client.channels.get_channel_maps(
+                exclude_channel_ids=managed_channel_ids(self._db_factory)
+            )
+        except Exception as e:
+            logger.warning("[EPG-MATCH] Failed to load EPG resolution data: %s", e)
+            return None
+
+        # Direct/name matching must only use the ACTIVE imported EPG (curated
+        # channel links are trusted regardless). _Teamarr (our own output) is
+        # excluded so we never resolve a stream to our generated guide.
+        active_source_ids = self._active_epg_source_ids()
+        inputs = _EpgResolutionInputs(
+            epg_data_list=epg_data_list,
+            stream_channels=stream_channels,
+            channel_by_uuid=channel_by_uuid,
+            active_source_ids=active_source_ids,
+            own_source_id=self._own_epg_source_id(),
+            catalog=build_epg_catalog_index(epg_data_list, active_source_ids),
+        )
+        logger.info(
+            "[EPG-MATCH] Loaded EPG resolution inputs for this run: "
+            "%d EPGData rows, %d stream->channel entries",
+            len(epg_data_list),
+            len(stream_channels),
+        )
+        self._epg_inputs_cache = inputs
+        return inputs
+
+    def clear_epg_resolution_cache(self) -> None:
+        """Drop the run-scoped EPG resolution inputs (#734)."""
+        self._epg_inputs_cache = None
 
     def _own_epg_source_id(self) -> "int | None":
         """The app's OWN configured EPG-source id (``dispatcharr_epg_id`` setting).
