@@ -6,7 +6,7 @@ JSON for storage in PersistentTTLCache (SQLite-backed).
 
 from datetime import datetime
 
-from teamarr.core import Event, EventStatus, Team, TeamStats, Venue
+from teamarr.core import GENERATED_PREVIEW_FIELDS, Event, EventStatus, Team, TeamStats, Venue
 from teamarr.core.types import Bout, RacingResult, RacingSession
 
 
@@ -48,9 +48,7 @@ def event_to_dict(event: Event) -> dict:
         "game_event_note": event.game_event_note,
         "soccer_match_note": event.soccer_match_note,
         "game_preview": event.game_preview,
-        "series_summary": event.series_summary,
-        "home_last_five": event.home_last_five,
-        "away_last_five": event.away_last_five,
+        **{field_name: getattr(event, field_name) for field_name in GENERATED_PREVIEW_FIELDS},
         # Betting odds — the has_odds condition and odds vars read this; a
         # cache hit must not silently drop it (#366).
         "odds_data": event.odds_data,
@@ -194,9 +192,12 @@ def dict_to_event(data: dict) -> Event:
         game_event_note=data.get("game_event_note", ""),
         soccer_match_note=data.get("soccer_match_note", ""),
         game_preview=data.get("game_preview", ""),
-        series_summary=data.get("series_summary", ""),
-        home_last_five=data.get("home_last_five", ""),
-        away_last_five=data.get("away_last_five", ""),
+        **{
+            field_name: data.get(
+                field_name, Event.__dataclass_fields__[field_name].default
+            )
+            for field_name in GENERATED_PREVIEW_FIELDS
+        },
         # Betting odds (#366) — absent in pre-upgrade cache entries
         odds_data=data.get("odds_data"),
         # UFC-specific fields

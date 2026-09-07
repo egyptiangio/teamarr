@@ -8,6 +8,7 @@ from teamarr.templates.variables import (  # noqa: F401 - side effect imports
     broadcast,
     combat,
     conference,
+    generated_preview,
     home_away,
     identity,
     motorsports,

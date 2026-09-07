@@ -237,6 +237,7 @@ These shine in [filler condition rows](#filler-condition-rows), where the refere
 | Condition | Value | Description |
 |-----------|-------|-------------|
 | `has_preview` | - | Provider preview blurb is available (populates same-day pregame) |
+| `has_generated_preview` | - | Optional generated preview is available from typed provider facts |
 | `has_recap` | - | Provider recap headline is available (populates once the game is final) |
 | `has_structured_preview` | - | Recent-form data is available (populates days ahead) |
 | `has_event_note` | - | Marquee/playoff note is available (`NBA Finals - Game 5`, `CFP Quarterfinal at the Cotton Bowl Classic`); empty for ordinary games |

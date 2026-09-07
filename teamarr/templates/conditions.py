@@ -26,6 +26,7 @@ Condition Types:
   the disjoint pair keeps migrated final/not-final per-field semantics exact)
 - has_recap: Provider recap headline available (postgame)
 - has_preview: Provider preview blurb available (same-day pregame)
+- has_generated_preview: Deterministic generated preview is available
 - has_structured_preview: Recent-form data available (days-ahead)
 - has_event_note: Marquee/playoff note available ('NBA Finals - Game 5')
 - has_match_note: Soccer competition note available ('FIFA World Cup, Group C')
@@ -326,6 +327,14 @@ class ConditionEvaluator:
         """Check if the provider's pregame preview blurb is available."""
         event = game_ctx.event
         return bool(event and event.game_preview)
+
+    def _eval_has_generated_preview(
+        self, value: str | None, ctx: TemplateContext, game_ctx: GameContext
+    ) -> bool:
+        """Check that deterministic generated-preview prose can be rendered."""
+        from teamarr.templates.generated_preview import build_generated_preview
+
+        return bool(build_generated_preview(game_ctx.event))
 
     def _eval_has_structured_preview(
         self, value: str | None, ctx: TemplateContext, game_ctx: GameContext

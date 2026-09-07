@@ -17,7 +17,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast, overload
 
-from teamarr.core import Event, SportsProvider, Team, TeamStats
+from teamarr.core import GENERATED_PREVIEW_FIELDS, Event, SportsProvider, Team, TeamStats
 from teamarr.database import get_db
 from teamarr.database.provider_cache import (
     dict_to_event,
@@ -74,6 +74,7 @@ _EVENT_NOT_FOUND = {"__event_not_found__": True}
 # a team that comes back into season is picked up within a few hours.
 _NOT_FOUND = {"__not_found__": True}
 
+
 # Sentinel distinguishing "no usable cache entry" from a legitimately cached
 # empty result (e.g. a league with no games that day, cached as []). A distinct
 # class (not bare object()) lets callers narrow the load_from_cache() union with
@@ -102,7 +103,6 @@ def _cached_team_identity(provider: str, team_id: str, league: str) -> dict | No
     hit = _TEAM_IDENTITY_MEMO.get(key)
     if hit is not None and now - hit[0] < _TEAM_IDENTITY_MEMO_TTL:
         return hit[1]
-
 
     with get_db() as conn:
         cached = get_team_identity(conn, provider, team_id, league)
@@ -661,10 +661,7 @@ class SportsDataService:
         # they must overlay from the fresh fetch (the scoreboard-parsed original
         # has them empty). The summary call is already made here; zero extra cost.
         "game_preview",
-        "series_summary",
-        # Structured preview (tvnk.15) — same summary payload, zero extra cost.
-        "home_last_five",
-        "away_last_five",
+        *GENERATED_PREVIEW_FIELDS,
     )
 
     def refresh_event_status(self, event: Event) -> Event:
@@ -702,9 +699,7 @@ class SportsDataService:
 
         fresh_event = self.get_event(event.id, event.league)
         if not fresh_event:
-            logger.debug(
-                "[SPORTS_DATA] Could not refresh event %s, using cached status", event.id
-            )
+            logger.debug("[SPORTS_DATA] Could not refresh event %s, using cached status", event.id)
             return event
 
         logger.debug(
@@ -733,6 +728,15 @@ class SportsDataService:
                 # None before the game — so {home_team_score}/{final_score}
                 # rendered empty. For scores, only None means "not provided".
                 overlay[field_name] = fresh_val if fresh_val is not None else orig_val
+            elif field_name in GENERATED_PREVIEW_FIELDS:
+                # Generated-preview facts are a pregame snapshot, not a live box score.
+                # Never attach summary facts first observed after kickoff, and
+                # never replace a snapshot already carried by this event.
+                fresh_state = fresh_event.status.state if fresh_event.status else ""
+                if fresh_state in {"in_progress", "in", "live", "final", "post"}:
+                    overlay[field_name] = orig_val
+                else:
+                    overlay[field_name] = orig_val or fresh_val
             else:
                 overlay[field_name] = fresh_val if fresh_val else orig_val
         return replace(event, **overlay)
@@ -745,10 +749,12 @@ class SportsDataService:
     # summary call.
     PREVIEW_LOOKAHEAD_DAYS = 7
     PREVIEW_CACHE_TTL = 6 * 3600  # parsed preview fields; clamped to gametime
+    PREVIEW_SPARSE_CACHE_TTL = 30 * 60  # retry after ESPN publishes richer facts
+    PREVIEW_SNAPSHOT_AFTER_START_TTL = 12 * 3600
     PREVIEW_FETCH_BUDGET = 40  # summary fetches per budget window
     PREVIEW_BUDGET_WINDOW = 3600
 
-    _PREVIEW_FIELDS = ("game_preview", "series_summary", "home_last_five", "away_last_five")
+    _PREVIEW_FIELDS = ("game_preview", *GENERATED_PREVIEW_FIELDS)
 
     def enrich_event_preview(self, event: Event) -> Event:
         """Overlay days-ahead preview fields onto a future event, cheaply.
@@ -762,8 +768,18 @@ class SportsDataService:
         """
         if not event or not event.start_time:
             return event
-        if event.home_last_five or event.away_last_five:
-            return event  # already enriched (e.g. via refresh overlay)
+        preview_key = make_cache_key("event_preview_v2", event.league, event.id)
+        cached = self._cache.get(preview_key)
+        if isinstance(cached, dict):
+            return replace(
+                event,
+                **{f: cached.get(f) or getattr(event, f) for f in self._PREVIEW_FIELDS},
+            )
+        from teamarr.templates.generated_preview import has_generated_preview_enrichment
+
+        if has_generated_preview_enrichment(event):
+            return event  # already fully enriched (e.g. via refresh overlay)
+
         now = datetime.now(UTC)
         start = event.start_time
         if start.tzinfo is None:
@@ -771,14 +787,6 @@ class SportsDataService:
         seconds_to_start = (start - now).total_seconds()
         if seconds_to_start <= 0 or seconds_to_start > self.PREVIEW_LOOKAHEAD_DAYS * 86400:
             return event
-
-        preview_key = make_cache_key("event_preview", event.league, event.id)
-        cached = self._cache.get(preview_key)
-        if isinstance(cached, dict):
-            return replace(
-                event,
-                **{f: cached.get(f) or getattr(event, f) for f in self._PREVIEW_FIELDS},
-            )
 
         budget_key = make_cache_key("event_preview_budget", "window")
         spent = self._cache.get(budget_key) or 0
@@ -794,15 +802,37 @@ class SportsDataService:
 
         fresh = self.get_event(event.id, event.league)
         fields = {
-            f: (getattr(fresh, f, "") or "") if fresh else "" for f in self._PREVIEW_FIELDS
+            field_name: getattr(fresh, field_name, None) if fresh else None
+            for field_name in self._PREVIEW_FIELDS
         }
-        ttl = max(300, min(self.PREVIEW_CACHE_TTL, int(seconds_to_start)))
+        candidate = replace(
+            event,
+            **{
+                field_name: value if value not in (None, "") else getattr(event, field_name)
+                for field_name, value in fields.items()
+            },
+        )
+        complete = has_generated_preview_enrichment(candidate)
+        cache_ttl = self.PREVIEW_CACHE_TTL if complete else self.PREVIEW_SPARSE_CACHE_TTL
+        # Complete snapshots deliberately survive kickoff. A later live
+        # summary contains in-game leaders/team stats and must not rewrite the
+        # guide description. Event-id scoping naturally drops the snapshot
+        # when the channel advances to its next game.
+        ttl = cache_ttl
+        if complete:
+            ttl += self.PREVIEW_SNAPSHOT_AFTER_START_TTL
         # Negative results cache too — a league without lastFiveGames data
         # shouldn't re-spend budget every run.
         self._cache.set(preview_key, fields, ttl)
         if not any(fields.values()):
             return event
-        return replace(event, **{f: fields[f] or getattr(event, f) for f in self._PREVIEW_FIELDS})
+        return replace(
+            event,
+            **{
+                field_name: value if value not in (None, "") else getattr(event, field_name)
+                for field_name, value in fields.items()
+            },
+        )
 
     def get_team_stats(self, team_id: str, league: str) -> TeamStats | None:
         """Get detailed team statistics."""

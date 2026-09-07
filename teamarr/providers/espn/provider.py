@@ -664,6 +664,11 @@ class ESPNProvider(UFCParserMixin, TennisParserMixin, TournamentParserMixin, Spo
             )
             event.home_last_five = home_form
             event.away_last_five = away_form
+            # Typed provider facts used by public variables and the optional
+            # generated-preview formatter. Betting payloads are never parsed.
+            from teamarr.providers.espn.preview import apply_generated_preview_fields
+
+            apply_generated_preview_fields(data, event)
         return event
 
     @staticmethod

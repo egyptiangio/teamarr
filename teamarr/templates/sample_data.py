@@ -1547,6 +1547,14 @@ _SHAPE_OVERRIDES: dict[str, dict[str, str]] = {
         "soccer_match_note": "Placeholder Premier League, Group Z",
         "game_preview": "The Tropics look to close out the series against the Mean Time.",
         "game_preview.next": "Flint visits the Pinchy Crabs to open the next round.",
+        "generated_preview": (
+            "The Greenwich Mean Time visit the Flint Tropics at The Coconut Coliseum. "
+            "Greenwich enters at 34-28 after winning two of its last five games. "
+            "Flint enters at 42-20 after winning four of its last five games."
+        ),
+        "generated_preview.next": (
+            "The Flint Tropics visit the Pinchy Crabs at The Crab Pot Pavilion."
+        ),
         "series_summary": "Tropics lead series 3-1",
         "home_last_five": "4-1",
         "away_last_five": "2-3",

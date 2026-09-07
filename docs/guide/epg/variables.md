@@ -453,11 +453,41 @@ Provider editorial/context copy for a game, passed through raw. These are **spar
 |----------|-------------|----------|--------|
 | `{game_recap}` | Postgame recap headline — short, self-contained, carries the result. Empty until a game is final | base, .next, .last | `Brunson scores 45, and New York tops Spurs for title` |
 | `{game_preview}` | Pregame preview blurb. Empty once a game is final (use `{game_recap}` then) | base, .next, .last | `Toronto Blue Jays (35-38) vs. Boston Red Sox` |
+| `{generated_preview}` | Opt-in sport-specific preview for baseball, football, and basketball, with a generic matchup sentence for other sports; composed from public fields and never betting information | base, .next, .last | `The Packers visit the Broncos at Empower Field...` |
+| `{week}` | Provider-reported football week number | base, .next, .last | `3` |
+| `{home_probable_starter}` / `{away_probable_starter}` | Baseball probable starter with ESPN-reported record and ERA | base, .next, .last | `M. Boyd (8-2, 4.02 ERA)` |
+| `{home_home_runs_leader}` / `{away_home_runs_leader}` | Exact home-run leader fact | base, .next, .last | `S. Ohtani — 30 home runs` |
+| `{home_batting_average_leader}` / `{away_batting_average_leader}` | Exact batting-average leader fact | base, .next, .last | `R. Arozarena — .272 batting average` |
+| `{home_rbi_leader}` / `{away_rbi_leader}` | Exact RBI leader fact | base, .next, .last | `J. Ramírez — 82 RBI` |
+| `{home_passing_leader}` / `{away_passing_leader}` | Exact football passing-leader fact | base, .next, .last | `B. Nix — 18/25, 246 YDS` |
+| `{home_rushing_leader}` / `{away_rushing_leader}` | Exact football rushing-leader fact | base, .next, .last | `J. Dobbins — 12 CAR, 68 YDS` |
+| `{home_receiving_leader}` / `{away_receiving_leader}` | Exact football receiving-leader fact | base, .next, .last | `C. Sutton — 6 REC, 84 YDS` |
+| `{home_points_leader}` / `{away_points_leader}` | Exact basketball points leader fact | base, .next, .last | `K. Cardoso — 14.7 points per game` |
+| `{home_rebounds_leader}` / `{away_rebounds_leader}` | Exact basketball rebounds leader fact | base, .next, .last | `K. Cardoso — 8.8 rebounds per game` |
+| `{home_assists_leader}` / `{away_assists_leader}` | Exact basketball assists leader fact | base, .next, .last | `N. Cloud — 5.0 assists per game` |
+| `{home_total_yards_per_game}` / `{away_total_yards_per_game}` | Football team total yards per game | base, .next, .last | `360` |
+| `{home_rushing_yards_per_game}` / `{away_rushing_yards_per_game}` | Football team rushing yards per game | base, .next, .last | `162` |
+| `{home_points_allowed_per_game}` / `{away_points_allowed_per_game}` | Basketball points allowed per game | base, .next, .last | `87.0` |
 | `{game_event_note}` | Marquee/playoff designation. Empty for ordinary regular-season games | base, .next, .last | `NBA Finals - Game 5` |
 | `{series_summary}` | Playoff/season-series state. Empty when there's no series context | base, .next, .last | `Series tied 1-1` |
 | `{home_last_five}` | Home team's W-L over its last five games (populates days ahead) | base, .next, .last | `4-1` |
 | `{away_last_five}` | Away team's W-L over its last five games | base, .next, .last | `2-3` |
 | `{last_five_summary}` | Recent-form prose for both teams; empty without data — pair with `has_structured_preview` | base, .next, .last | `The Rays have won 2 of their last five; the Red Sox have won 4 of their last five.` |
+
+`{generated_preview}` is not included in any starter template. To opt in, add
+the `has_generated_preview` condition and use `{generated_preview}` in that
+row. The formatter omits missing facts. Baseball includes the probable starter
+and home-run leader, falling back to the batting-average or RBI leader when the
+home-run leader is unavailable. Football includes every available passing,
+rushing, and receiving leader; basketball likewise includes every available
+points, rebounds, and assists leader. Records and recent form are added when
+available, as are football yardage and basketball points-for/points-allowed team stats.
+Hockey and other sports receive only a complete generic matchup sentence using
+the away team, home team, and venue. All prose is deterministic, source-grounded,
+and excludes betting data.
+
+Dedicated prose for additional sports, including hockey, can be added separately
+once representative provider payloads are available for validation.
 
 {: .note }
 Because these populate only for some games, pair them with other content or a static fallback so a template never renders blank. In main descriptions, gate them with condition rows (`has_preview`, `has_recap`, …); in filler registers, use [filler condition rows](conditions#filler-condition-rows) — the starter set's postgame `has_recap → {game_recap.last}` row is the canonical example. `{game_recap}` and `{game_event_note}` come free from the scoreboard; `{game_preview}` and `{series_summary}` come from the per-event summary fetch that EPG generation already makes (no extra API calls).

@@ -28,28 +28,36 @@ from tests.fakes import FakeCache
 
 def _team(name, id_):
     return Team(
-        id=id_, provider="espn", name=name, short_name=name,
-        abbreviation=name[:3].upper(), league="mlb", sport="baseball",
+        id=id_,
+        provider="espn",
+        name=name,
+        short_name=name,
+        abbreviation=name[:3].upper(),
+        league="mlb",
+        sport="baseball",
     )
 
 
 def _event(start_in_hours=48.0, **kw):
     base = dict(
-        id="401", provider="espn", name="TB @ BOS", short_name="TB @ BOS",
+        id="401",
+        provider="espn",
+        name="TB @ BOS",
+        short_name="TB @ BOS",
         start_time=datetime.now(UTC) + timedelta(hours=start_in_hours),
         home_team=_team("Boston Red Sox", "2"),
         away_team=_team("Tampa Bay Rays", "30"),
-        status=EventStatus(state="pre"), league="mlb", sport="baseball",
+        status=EventStatus(state="pre"),
+        league="mlb",
+        sport="baseball",
     )
     base.update(kw)
     return Event(**base)
 
 
 def _ctx(event):
-    gc = GameContext(event=event, is_home=True, team=event.home_team,
-                     opponent=event.away_team)
-    tc = TeamChannelContext(team_id="2", league="mlb", sport="baseball",
-                            team_name="Boston Red Sox")
+    gc = GameContext(event=event, is_home=True, team=event.home_team, opponent=event.away_team)
+    tc = TeamChannelContext(team_id="2", league="mlb", sport="baseball", team_name="Boston Red Sox")
     return TemplateContext(game_context=gc, team_config=tc, team_stats=None), gc
 
 
@@ -76,9 +84,7 @@ def test_parse_last_five():
 def test_parse_last_five_absent_or_malformed():
     event = _event()
     assert ESPNProvider._parse_last_five([], event) == ("", "")
-    assert ESPNProvider._parse_last_five(
-        [{"team": {}, "events": []}], event
-    ) == ("", "")
+    assert ESPNProvider._parse_last_five([{"team": {}, "events": []}], event) == ("", "")
     # Unknown team id doesn't attach anywhere
     assert ESPNProvider._parse_last_five(
         [{"team": {"id": "99"}, "events": [{"gameResult": "W"}]}], event
@@ -103,18 +109,66 @@ def test_enrich_gates_past_and_far_events():
     assert past.home_last_five == "" and far.home_last_five == ""
 
 
-def test_enrich_skips_already_enriched():
+def test_cached_preview_snapshot_survives_kickoff():
     svc = _service()
+    cached_fields = {
+        "game_preview": "Pregame copy",
+        "series_summary": "",
+        "home_last_five": "4-1",
+        "away_last_five": "2-3",
+        "home_probable_starter": "Starter One (8-2, 3.10 ERA)",
+    }
+    svc._cache.set("event_preview_v2:mlb:401", cached_fields, 3600)
     with patch.object(SportsDataService, "get_event") as fetch:
+        event = svc.enrich_event_preview(_event(start_in_hours=-2))
+    assert fetch.call_count == 0
+    assert event.game_preview == "Pregame copy"
+    assert event.home_probable_starter == "Starter One (8-2, 3.10 ERA)"
+
+
+def test_status_refresh_cannot_replace_frozen_preview_with_live_stats():
+    svc = _service()
+    original = _event(
+        home_team_ppg="117.2",
+        home_points_leader="Player — 28.4 points per game",
+    )
+    fresh = _event(
+        status=EventStatus(state="in_progress"),
+        home_team_ppg="7",
+        home_points_leader="Live Player — 5 points",
+    )
+    with patch.object(SportsDataService, "get_event", return_value=fresh):
+        refreshed = svc.refresh_event_status(original)
+    assert refreshed.status.state == "in_progress"
+    assert refreshed.home_team_ppg == "117.2"
+    assert refreshed.home_points_leader == "Player — 28.4 points per game"
+
+
+def test_status_refresh_does_not_create_preview_from_live_summary():
+    svc = _service()
+    original = _event()
+    fresh = _event(status=EventStatus(state="in_progress"), home_team_ppg="7")
+    with patch.object(SportsDataService, "get_event", return_value=fresh):
+        refreshed = svc.refresh_event_status(original)
+    assert refreshed.status.state == "in_progress"
+    assert refreshed.home_team_ppg == ""
+
+
+def test_partial_last_five_does_not_block_richer_refresh():
+    svc = _service()
+    fresh = _event(home_last_five="4-1", home_probable_starter="Starter (8-2, 3.10 ERA)")
+    with patch.object(SportsDataService, "get_event", return_value=fresh) as fetch:
         ev = svc.enrich_event_preview(_event(home_last_five="4-1"))
-        assert fetch.call_count == 0
+        assert fetch.call_count == 1
     assert ev.home_last_five == "4-1"
+    assert ev.home_probable_starter == "Starter (8-2, 3.10 ERA)"
 
 
 def test_enrich_fetches_caches_and_overlays():
     svc = _service()
-    fresh = _event(home_last_five="4-1", away_last_five="2-3",
-                   series_summary="BOS leads series 3-2")
+    fresh = _event(
+        home_last_five="4-1", away_last_five="2-3", series_summary="BOS leads series 3-2"
+    )
     with patch.object(SportsDataService, "get_event", return_value=fresh) as fetch:
         first = svc.enrich_event_preview(_event())
         second = svc.enrich_event_preview(_event())  # served from preview cache
@@ -176,10 +230,15 @@ def test_has_structured_preview_condition():
 
 def test_starters_carry_structured_preview_tier():
     by_name = {s["name"]: s for s in DEFAULT_TEMPLATE_SET}
-    for name in ("Default Team (Starter)", "Default Event (Starter)",
-                 "International Event (Starter)", "Soccer Team (Starter)",
-                 "Soccer Club Event (Starter)", "College Team (Starter)",
-                 "College Event (Starter)"):
+    for name in (
+        "Default Team (Starter)",
+        "Default Event (Starter)",
+        "International Event (Starter)",
+        "Soccer Team (Starter)",
+        "Soccer Club Event (Starter)",
+        "College Team (Starter)",
+        "College Event (Starter)",
+    ):
         conds = by_name[name]["conditional_descriptions"]
         tiers = [(c.get("condition"), c["priority"]) for c in conds]
         assert ("has_preview", 10) in tiers, name

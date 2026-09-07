@@ -81,6 +81,8 @@ def extract_home_team_ppg(ctx: TemplateContext, game_ctx: GameContext | None) ->
     if not game_ctx or not game_ctx.event:
         return ""
     event = game_ctx.event
+    if event.home_team_ppg:
+        return event.home_team_ppg
     is_home = event.home_team.id == ctx.team_config.team_id
     if is_home and ctx.team_stats:
         return _format_ppg(ctx.team_stats.ppg)
@@ -99,6 +101,8 @@ def extract_away_team_ppg(ctx: TemplateContext, game_ctx: GameContext | None) ->
     if not game_ctx or not game_ctx.event:
         return ""
     event = game_ctx.event
+    if event.away_team_ppg:
+        return event.away_team_ppg
     is_home = event.home_team.id == ctx.team_config.team_id
     if not is_home and ctx.team_stats:
         return _format_ppg(ctx.team_stats.ppg)

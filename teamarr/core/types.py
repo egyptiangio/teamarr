@@ -18,6 +18,47 @@ SEASON_POSTSEASON = "postseason"
 SEASON_OFFSEASON = "offseason"
 
 
+# Canonical Event fields that form the generated-preview snapshot. Cache,
+# refresh, rendering, and registry parity all derive from this tuple so adding
+# a field cannot silently omit it from one of those paths.
+GENERATED_PREVIEW_FIELDS = (
+    "series_summary",
+    "home_last_five",
+    "away_last_five",
+    "home_team_record",
+    "away_team_record",
+    "week",
+    "home_probable_starter",
+    "away_probable_starter",
+    "home_home_runs_leader",
+    "away_home_runs_leader",
+    "home_batting_average_leader",
+    "away_batting_average_leader",
+    "home_rbi_leader",
+    "away_rbi_leader",
+    "home_passing_leader",
+    "away_passing_leader",
+    "home_rushing_leader",
+    "away_rushing_leader",
+    "home_receiving_leader",
+    "away_receiving_leader",
+    "home_total_yards_per_game",
+    "away_total_yards_per_game",
+    "home_rushing_yards_per_game",
+    "away_rushing_yards_per_game",
+    "home_points_leader",
+    "away_points_leader",
+    "home_rebounds_leader",
+    "away_rebounds_leader",
+    "home_assists_leader",
+    "away_assists_leader",
+    "home_team_ppg",
+    "away_team_ppg",
+    "home_points_allowed_per_game",
+    "away_points_allowed_per_game",
+)
+
+
 @dataclass(frozen=True)
 class Venue:
     """Event location."""
@@ -152,6 +193,46 @@ class Event:
     # preview prose which only populates ~T-0/T-1.
     home_last_five: str = ""
     away_last_five: str = ""
+    # Typed, provider-grounded pregame facts. Every field has a matching public
+    # template variable (or reuses an existing one); generated prose reads only
+    # these fields and never consumes odds/betting payloads.
+    home_team_record: str = ""
+    away_team_record: str = ""
+    week: int | None = None
+
+    # Baseball
+    home_probable_starter: str = ""
+    away_probable_starter: str = ""
+    home_home_runs_leader: str = ""
+    away_home_runs_leader: str = ""
+    home_batting_average_leader: str = ""
+    away_batting_average_leader: str = ""
+    home_rbi_leader: str = ""
+    away_rbi_leader: str = ""
+
+    # Football
+    home_passing_leader: str = ""
+    away_passing_leader: str = ""
+    home_rushing_leader: str = ""
+    away_rushing_leader: str = ""
+    home_receiving_leader: str = ""
+    away_receiving_leader: str = ""
+    home_total_yards_per_game: str = ""
+    away_total_yards_per_game: str = ""
+    home_rushing_yards_per_game: str = ""
+    away_rushing_yards_per_game: str = ""
+
+    # Basketball
+    home_points_leader: str = ""
+    away_points_leader: str = ""
+    home_rebounds_leader: str = ""
+    away_rebounds_leader: str = ""
+    home_assists_leader: str = ""
+    away_assists_leader: str = ""
+    home_team_ppg: str = ""
+    away_team_ppg: str = ""
+    home_points_allowed_per_game: str = ""
+    away_points_allowed_per_game: str = ""
 
     # MMA-specific: when main card begins (prelims start at start_time)
     main_card_start: datetime | None = None

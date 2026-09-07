@@ -77,3 +77,21 @@ class TestReconstructInvalidatesStaleShortName:
         assert event is not None
         assert event.home_team.name == ""
         assert event.home_team.short_name == ""
+
+    def test_generated_preview_fields_survive_match_cache(self):
+        """A cached match must retain the facts used by generated prose."""
+        cached = _make_cached("Phillies", "Athletics")
+        cached.update(
+            {
+                "away_team_record": "72-59",
+                "home_probable_starter": "Tyler Phillips (3-6, 3.67 ERA)",
+                "away_home_runs_leader": "Willson Contreras — 26 home runs",
+            }
+        )
+
+        event = _matcher()._reconstruct_event(cached)
+
+        assert event is not None
+        assert event.away_team_record == "72-59"
+        assert event.home_probable_starter == "Tyler Phillips (3-6, 3.67 ERA)"
+        assert event.away_home_runs_leader == "Willson Contreras — 26 home runs"

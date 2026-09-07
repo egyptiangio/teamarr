@@ -192,6 +192,35 @@ def _nba_event(**kw):
         series_summary="Series tied 1-1",
         home_last_five="4-1",
         away_last_five="2-3",
+        home_team_record="10-2",
+        away_team_record="8-4",
+        week=3,
+        home_probable_starter="Home Starter (8-2, 3.10 ERA)",
+        away_probable_starter="Away Starter (7-3, 3.40 ERA)",
+        home_home_runs_leader="Home Slugger — 30 home runs",
+        away_home_runs_leader="Away Slugger — 28 home runs",
+        home_batting_average_leader="Home Hitter — .310 batting average",
+        away_batting_average_leader="Away Hitter — .305 batting average",
+        home_rbi_leader="Home Hitter — 80 RBI",
+        away_rbi_leader="Away Hitter — 77 RBI",
+        home_passing_leader="Home QB — 18/25, 246 YDS",
+        away_passing_leader="Away QB — 17/24, 221 YDS",
+        home_rushing_leader="Home RB — 12 CAR, 68 YDS",
+        away_rushing_leader="Away RB — 14 CAR, 73 YDS",
+        home_receiving_leader="Home WR — 6 REC, 84 YDS",
+        away_receiving_leader="Away WR — 5 REC, 79 YDS",
+        home_total_yards_per_game="360",
+        away_total_yards_per_game="340",
+        home_rushing_yards_per_game="162",
+        away_rushing_yards_per_game="145",
+        home_points_leader="J. Tatum — 28.1 points per game",
+        away_points_leader="C. Cunningham — 25.4 points per game",
+        home_rebounds_leader="K. Porzingis — 8.1 rebounds per game",
+        away_rebounds_leader="J. Duren — 10.2 rebounds per game",
+        home_assists_leader="J. Holiday — 6.0 assists per game",
+        away_assists_leader="C. Cunningham — 9.1 assists per game",
+        home_points_allowed_per_game="108.2",
+        away_points_allowed_per_game="111.4",
     )
     defaults.update(kw)
     return _event(_NBA_HOME, _NBA_AWAY, "nba", "basketball", **defaults)
@@ -592,6 +621,26 @@ def sparse():
     return _wrap(game, home, "echl", "hockey")
 
 
+def incomplete_matchup():
+    """Unsupported event missing a team name cannot form generic prose."""
+    home = _team("", "TOL", "echl", "hockey", "1")
+    away = _team("Fort Wayne Komets", "FW", "echl", "hockey", "2")
+    ev = Event(
+        id="e2",
+        provider="espn",
+        name="Incomplete matchup",
+        short_name="FW @ TOL",
+        start_time=NOW + timedelta(days=1),
+        home_team=home,
+        away_team=away,
+        status=EventStatus(state="pre"),
+        league="echl",
+        sport="hockey",
+    )
+    game = GameContext(event=ev, is_home=True, team=home, opponent=away)
+    return _wrap(game, home, "echl", "hockey")
+
+
 def no_event():
     """No games at all (offseason): contextless-suffix and guard coverage."""
     return _wrap(GameContext(event=None), _NBA_HOME, "nba", "basketball")
@@ -614,6 +663,7 @@ CONTEXTS = {
     "racing_race_final": racing_race_final,
     "tennis": tennis,
     "sparse": sparse,
+    "incomplete_matchup": incomplete_matchup,
     "no_event": no_event,
 }
 
@@ -777,6 +827,7 @@ CONDITION_CASES: dict[str, tuple[str | None, str, str]] = {
     "is_not_final": (None, "us_pro_rich", "us_pro_final"),
     "has_recap": (None, "us_pro_rich", "sparse"),
     "has_preview": (None, "us_pro_rich", "sparse"),
+    "has_generated_preview": (None, "us_pro_rich", "incomplete_matchup"),
     "has_structured_preview": (None, "us_pro_rich", "sparse"),
     "has_event_note": (None, "us_pro_rich", "sparse"),
     "has_match_note": (None, "soccer", "us_pro_rich"),

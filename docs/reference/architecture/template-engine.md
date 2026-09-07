@@ -129,6 +129,7 @@ Any variable can be piped through chainable value transforms: `{home_team|pascal
 | `is_not_final` | Reference game exists and is not final | No |
 | `has_recap` | Provider postgame recap headline available | No |
 | `has_preview` | Provider pregame preview blurb available | No |
+| `has_generated_preview` | Optional generated pregame description available | No |
 | `has_structured_preview` | Structured preview data (recent form) available | No |
 | `is_neutral_site` | Game at a neutral site (bowls, tournaments) | No |
 | `has_event_note` | Provider marquee/playoff note available | No |

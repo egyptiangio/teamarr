@@ -49,7 +49,15 @@ from teamarr.consumers.matching.result import (
     MatchOutcome,
 )
 from teamarr.consumers.stream_match_cache import StreamMatchCache, event_to_cache_data
-from teamarr.core.types import Event, EventStatus, RacingResult, RacingSession, Team, Venue
+from teamarr.core.types import (
+    GENERATED_PREVIEW_FIELDS,
+    Event,
+    EventStatus,
+    RacingResult,
+    RacingSession,
+    Team,
+    Venue,
+)
 from teamarr.services.sports_data import SportsDataService
 from teamarr.utilities.constants import TEAM_ALIASES
 from teamarr.utilities.fuzzy_match import get_matcher, normalize_text
@@ -2646,6 +2654,20 @@ class TeamMatcher:
                 season_type=cached_data.get("season_type"),
                 venue=venue,
                 broadcasts=broadcasts,
+                season_year=cached_data.get("season_year"),
+                neutral_site=bool(cached_data.get("neutral_site", False)),
+                broadcast_markets=cached_data.get("broadcast_markets") or {},
+                odds_data=cached_data.get("odds_data"),
+                game_recap=cached_data.get("game_recap", ""),
+                game_event_note=cached_data.get("game_event_note", ""),
+                soccer_match_note=cached_data.get("soccer_match_note", ""),
+                game_preview=cached_data.get("game_preview", ""),
+                **{
+                    field_name: cached_data.get(
+                        field_name, Event.__dataclass_fields__[field_name].default
+                    )
+                    for field_name in GENERATED_PREVIEW_FIELDS
+                },
                 segment_times=segment_times,
                 main_card_start=main_card_start,
                 circuit_name=cached_data.get("circuit_name"),
