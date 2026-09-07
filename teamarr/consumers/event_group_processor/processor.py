@@ -40,7 +40,7 @@ from teamarr.utilities.art_url import read_art_base_url
 from teamarr.utilities.tz import now_utc
 from teamarr.utilities.xmltv import merge_xmltv_content
 
-from .matching import StreamMatching
+from .matching import StreamMatching, _separation_applies
 from .persistence import MatchPersistence
 from .preview import PreviewBuilder
 from .results import (
@@ -711,6 +711,7 @@ class EventGroupProcessor(
                 matched_streams,
                 feed_settings.detect_team_names,
                 feed_settings.enabled,
+                feed_settings.sports,
             )
 
             # Sort channels: sport → league → time → event_id (fixed order since v59)
@@ -754,20 +755,32 @@ class EventGroupProcessor(
                 result.channels_deleted = cleanup_count
                 logger.info("[EVENT_EPG] Cleaned up %d channels due to team filter", cleanup_count)
 
-            # Reclaim feed-separated channels once the master toggle goes off (#672).
-            # Runs BEFORE channel processing so the freed streams re-land on the base
-            # channel in this same pass instead of duplicating it for a day.
-            if not feed_settings.enabled:
-                feed_cleanup_count = self._cleanup_feed_separated_channels(
-                    group, conn, passed_event_ids
+            # Reclaim feed-separated channels that lost eligibility — the master
+            # toggle went off (#672) or their sport left feed_separation.sports
+            # (#732). Runs BEFORE channel processing so the freed streams re-land
+            # on the base channel in this same pass instead of duplicating it for
+            # a day. Events still eligible are exempt, so this is a no-op on the
+            # steady-state run rather than something gated on the toggle.
+            separated_event_ids = (
+                {
+                    eid
+                    for m in matched_streams
+                    if (eid := _effective_event_id(m))
+                    and _separation_applies(m.get("event"), feed_settings.sports)
+                }
+                if feed_settings.enabled
+                else set()
+            )
+            feed_cleanup_count = self._cleanup_feed_separated_channels(
+                group, conn, passed_event_ids, separated_event_ids
+            )
+            if feed_cleanup_count > 0:
+                result.channels_deleted += feed_cleanup_count
+                logger.info(
+                    "[EVENT_EPG] Reclaimed %d feed-separated channel(s) — "
+                    "feed separation no longer applies",
+                    feed_cleanup_count,
                 )
-                if feed_cleanup_count > 0:
-                    result.channels_deleted += feed_cleanup_count
-                    logger.info(
-                        "[EVENT_EPG] Reclaimed %d feed-separated channel(s) — "
-                        "feed separation is off",
-                        feed_cleanup_count,
-                    )
 
             # Build stream dict for cleanup (fingerprint-based content change detection)
             current_streams = {sid: s for s in streams if (sid := s.get("id"))}

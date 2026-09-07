@@ -494,12 +494,14 @@ GROUPS: dict[str, GroupSpec] = {
                 FeedSeparationSettings,
                 columns={
                     "enabled": "feed_separation_enabled",
+                    "sports": "feed_separation_sports",
                     "home_terms": "feed_home_terms",
                     "away_terms": "feed_away_terms",
                     "detect_team_names": "feed_detect_team_names",
                     "label_style": "feed_label_style",
                 },
                 hooks={
+                    "sports": {"parse": _parse_str_list([])},
                     "home_terms": {"parse": _parse_str_list(["HOME"])},
                     "away_terms": {"parse": _parse_str_list(["AWAY"])},
                 },

@@ -225,6 +225,8 @@ export interface ExceptionKeywordListResponse {
 
 export interface FeedSeparationSettings {
   enabled: boolean
+  // Sport codes the split applies to; [] = every sport (#732)
+  sports: string[]
   home_terms: string[]
   away_terms: string[]
   detect_team_names: boolean
@@ -233,6 +235,7 @@ export interface FeedSeparationSettings {
 
 export interface FeedSeparationSettingsUpdate {
   enabled?: boolean
+  sports?: string[]
   home_terms?: string[]
   away_terms?: string[]
   detect_team_names?: boolean

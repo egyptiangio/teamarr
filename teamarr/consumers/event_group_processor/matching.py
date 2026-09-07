@@ -21,6 +21,25 @@ from teamarr.utilities.tz import get_user_timezone, to_utc
 logger = logging.getLogger(__name__)
 
 
+def _separation_applies(event: Any, separation_sports: list[str] | None) -> bool:
+    """Whether feed separation splits channels for this event's sport (#732).
+
+    An empty or missing list means every sport — separation was global before
+    #732, so that is both the upgrade default and the "no opinion" answer.
+
+    An event with no sport is never excluded by a non-empty list: the sport is
+    the only thing the list can speak about, so not knowing it means the list
+    has nothing to say, and the master toggle stands. Excluding here would
+    silently un-split channels whenever a provider omitted the field.
+    """
+    if not separation_sports:
+        return True
+    sport = getattr(event, "sport", None)
+    if not sport:
+        return True
+    return sport in separation_sports
+
+
 class StreamMatching:
     """Matches streams to events and shapes the matched-stream list.
 
@@ -423,6 +442,7 @@ class StreamMatching:
         matched_streams: list[dict],
         detect_team_names: bool,
         separation_enabled: bool,
+        separation_sports: list[str] | None = None,
     ) -> list[dict]:
         """Resolve feed hints to actual teams (Phase 2 feed separation).
 
@@ -454,6 +474,10 @@ class StreamMatching:
             detect_team_names: Whether to scan stream names for team name patterns
             separation_enabled: Whether resolved teams also create feed-separated
                 channels (feed_separation.enabled master toggle)
+            separation_sports: Sport codes the split applies to (#732). Empty or
+                None means every sport — the pre-#732 behavior, and what
+                existing installs upgrade to. Narrows the master toggle only;
+                it can never turn separation on where the toggle is off.
         """
         for entry in matched_streams:
             event = entry.get("event")
@@ -493,8 +517,10 @@ class StreamMatching:
                             source = "team_name_detect"
                             break
 
+            splits = separation_enabled and _separation_applies(event, separation_sports)
+
             entry["stream_feed_team"] = feed_team
-            entry["feed_team"] = feed_team if separation_enabled else None
+            entry["feed_team"] = feed_team if splits else None
 
             if feed_team:
                 logger.info(
@@ -502,7 +528,7 @@ class StreamMatching:
                     entry["stream"]["name"][:50],
                     feed_team.name,
                     source,
-                    "on" if separation_enabled else "off",
+                    "on" if splits else "off",
                 )
 
         return matched_streams
@@ -512,17 +538,24 @@ class StreamMatching:
         group: EventEPGGroup,
         conn: Connection,
         passed_event_ids: set[str],
+        separated_event_ids: set[str] | None = None,
     ) -> int:
-        """Reclaim feed-separated channels after the master toggle is turned off (#672).
+        """Reclaim feed-separated channels that are no longer eligible to be split (#672).
 
-        Disabling ``feed_separation.enabled`` makes ``_resolve_feed_teams``
-        stop populating ``feed_team``, so every lookup this run carries
+        Ineligibility has two causes and one symptom. Turning off
+        ``feed_separation.enabled``, or dropping an event's sport from
+        ``feed_separation.sports`` (#732), both make ``_resolve_feed_teams``
+        stop populating ``feed_team``, so every lookup for that event carries
         ``feed_team_id=None``. ``find_existing_channel`` then constrains on
         ``feed_team_id IS NULL`` and matches (or creates) the base channel —
         the rows already carrying a feed team are never returned, so they are
         never synced, never renamed and never deleted. They sat beside a
         freshly created duplicate base channel until their scheduled deletion,
         consuming the numbers of their feed block the whole time.
+
+        Narrowing the sport list is therefore the same bug as #672 in a
+        different disguise, which is why this runs every pass on the events
+        that lost eligibility rather than only when the master toggle is off.
 
         Scoped to events that survived the team filter this run, so every
         deleted feed channel has a base channel to land on in the same pass —
@@ -533,6 +566,9 @@ class StreamMatching:
             group: The event group being processed
             conn: Database connection
             passed_event_ids: Segment-aware event IDs that passed team filtering
+            separated_event_ids: Of those, the IDs still eligible for splitting
+                this run. None or empty means none are — the master toggle is
+                off, which is the original #672 case.
 
         Returns:
             Number of channels deleted.
@@ -542,10 +578,13 @@ class StreamMatching:
         if not passed_event_ids:
             return 0
 
+        still_separated = separated_event_ids or set()
         reclaimable = [
             ch
             for ch in get_managed_channels_for_group(conn, group.id)
-            if getattr(ch, "feed_team_id", None) and ch.event_id in passed_event_ids
+            if getattr(ch, "feed_team_id", None)
+            and ch.event_id in passed_event_ids
+            and ch.event_id not in still_separated
         ]
         if not reclaimable:
             return 0
@@ -563,7 +602,7 @@ class StreamMatching:
                 deleted += 1
                 logger.info(
                     "[FEED] Reclaimed feed channel '%s' (event_id=%s, feed_team_id=%s) "
-                    "— feed separation is off",
+                    "— feed separation no longer applies",
                     channel.channel_name,
                     channel.event_id,
                     channel.feed_team_id,
