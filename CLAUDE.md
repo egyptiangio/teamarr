@@ -14,6 +14,8 @@ When changing support-bundle schemas, archive layout, collection limits, redacti
 
 **Stack**: Python 3.11+, FastAPI, SQLite | Frontend: React + TypeScript + Vite + Tailwind
 
+**Frontend routes are code-split (#737).** Pages are `React.lazy`'d in `App.tsx` from their own modules; Dashboard alone stays eager because it is the landing route. When adding a page, import the **module** (`@/pages/Thing`), never the `@/pages` barrel — a barrel import pulls every page back into one chunk and the only symptom is the entry bundle quietly growing (it was 1.03 MB before this). `vite.config.ts` also pins React/Router/Query into a `vendor` chunk so a release invalidates app code only.
+
 ## Start of Session
 
 1. Re-read this file and follow it exactly

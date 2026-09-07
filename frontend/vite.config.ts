@@ -39,6 +39,27 @@ export default defineConfig({
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
+        // Keep the framework in its own chunk (#737). Teamarr ships often and
+        // its own code changes every release; React/Router/Query do not, so
+        // splitting them means an upgrade re-downloads the app chunks and
+        // leaves the largest single dependency in the browser cache.
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return
+          // Matched on the package directory, not a bare substring, so
+          // 'react-router' can't sweep in every package with 'react' in its
+          // name. Rolldown wants the function form; the object map that older
+          // Vite accepted is a type error here.
+          const framework = [
+            '/react/',
+            '/react-dom/',
+            '/react-router/',
+            '/scheduler/',
+            '/@tanstack/react-query/',
+          ]
+          if (framework.some((pkg) => id.includes(`node_modules${pkg}`))) {
+            return 'vendor'
+          }
+        },
       },
     },
   },
