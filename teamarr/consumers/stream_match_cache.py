@@ -117,6 +117,26 @@ class StreamMatchCache:
             finally:
                 self._session_conn = None
 
+    def _commit(self, conn) -> None:
+        """Commit this write, unless a session is batching them.
+
+        ``session()`` pins one connection so a batch of cache operations shares
+        it, and its context exit commits once. Every write method still called
+        ``conn.commit()`` itself, so the batching only ever saved the connection
+        setup — never the fsync. On a run that matches a couple of thousand
+        streams that is a couple of thousand fsyncs, and on network-backed
+        storage (the usual Kubernetes/NAS deployment) an fsync costs far more
+        than the write it durably commits; it profiled as the single largest
+        cost in the match phase (#742).
+
+        Losing an uncommitted tail to a crash is acceptable here in a way it
+        would not be elsewhere: this table is a cache, every entry is
+        re-derivable by matching again, and a session that ends normally — the
+        only way the match loop ends — commits.
+        """
+        if self._session_conn is None:
+            conn.commit()
+
     @contextmanager
     def _conn(self):
         """Yield the session connection if one is pinned, else a fresh one."""
@@ -271,7 +291,7 @@ class StreamMatchCache:
                         match_method,
                     ),
                 )
-                conn.commit()
+                self._commit(conn)
                 self._stats["sets"] += 1
                 logger.debug(
                     "[STREAM_CACHE_SET] stream_id=%d event_id=%s method=%s",
@@ -333,7 +353,7 @@ class StreamMatchCache:
                         generation,
                     ),
                 )
-                conn.commit()
+                self._commit(conn)
                 self._stats["failed_cached"] += 1
                 logger.debug("[STREAM_CACHE_FAILED] stream_id=%d (no match)", stream_id)
                 return True
@@ -397,7 +417,7 @@ class StreamMatchCache:
                         cached_json,
                     ),
                 )
-                conn.commit()
+                self._commit(conn)
                 self._stats["user_corrections"] += 1
                 logger.info(
                     "[STREAM_CACHE_CORRECTED] stream_id=%d event_id=%s", stream_id, event_id
@@ -429,7 +449,7 @@ class StreamMatchCache:
                     """,
                     (fingerprint,),
                 )
-                conn.commit()
+                self._commit(conn)
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
             logger.warning("[STREAM_CACHE_ERROR] Remove user correction: %s", e)
@@ -467,7 +487,7 @@ class StreamMatchCache:
                     """,
                     (generation, fingerprint),
                 )
-                conn.commit()
+                self._commit(conn)
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
             logger.warning("[STREAM_CACHE_ERROR] Touch failed: %s", e)
@@ -527,7 +547,7 @@ class StreamMatchCache:
                         )
                     purged_total += success_purged
 
-                conn.commit()
+                self._commit(conn)
 
                 if purged_total > 0:
                     self._stats["purged"] += purged_total
@@ -564,7 +584,7 @@ class StreamMatchCache:
                     "DELETE FROM stream_match_cache WHERE fingerprint = ?",
                     (fingerprint,),
                 )
-                conn.commit()
+                self._commit(conn)
                 deleted = cursor.rowcount > 0
                 if deleted:
                     logger.debug("[STREAM_CACHE_DELETE] stream_id=%d", stream_id)
@@ -591,7 +611,7 @@ class StreamMatchCache:
                     (group_id,),
                 )
                 cleared = cursor.rowcount
-                conn.commit()
+                self._commit(conn)
                 logger.info("[STREAM_CACHE_CLEAR] group=%d entries=%d", group_id, cleared)
                 return cleared
         except sqlite3.Error as e:
@@ -608,7 +628,7 @@ class StreamMatchCache:
             with self._conn() as conn:
                 cursor = conn.execute("DELETE FROM stream_match_cache")
                 cleared = cursor.rowcount
-                conn.commit()
+                self._commit(conn)
                 logger.info("[STREAM_CACHE_CLEAR] All entries cleared: %d", cleared)
                 return cleared
         except sqlite3.Error as e:

@@ -1210,12 +1210,18 @@ class TeamMatcher:
             {league_hint} if isinstance(league_hint, str) else set(league_hint or [])
         )
 
-        for league, event in events:
-            # Validate event is within search window (lifecycle handles exclusions)
-            if not ctx.is_event_in_search_window(event):
-                gated_rejected += 1
-                continue
+        # Validate events are within the search window (lifecycle handles
+        # exclusions). Hoisted out of the loop below (#742): the window depends
+        # only on ctx.target_date and the event, so re-deciding it for every
+        # STREAM in the group re-answered the same question 772k times in a
+        # profiled run — and rejected nothing, because the prefetch is bounded
+        # by the same MATCH_WINDOW_DAYS this gate tests. It stays as a real
+        # gate rather than being deleted: candidates also arrive from
+        # shared_events, filled by other groups whose target_date may differ.
+        in_window = [pair for pair in events if ctx.is_event_in_search_window(pair[1])]
+        gated_rejected += len(events) - len(in_window)
 
+        for league, event in in_window:
             # EPG anchored matching (bead t5e): the candidate must air within the
             # tolerance of the program's broadcast instant, else it is a different
             # occurrence — an encore/replay or the next game in the series. This is
@@ -1724,9 +1730,6 @@ class TeamMatcher:
         Returns:
             Tuple of (method, confidence) if matched, None otherwise
         """
-        # Normalize event team names for comparison
-        home_normalized = normalize_text(event.home_team.name)
-        away_normalized = normalize_text(event.away_team.name)
 
         # Pipe-separated content is NOT handled here (#652). This function
         # scores whatever it is given; token_set_ratio charges for the extra
@@ -1746,7 +1749,7 @@ class TeamMatcher:
             # gives a spurious 100 when a code is a literal word of an
             # unrelated name ("SEA" in "Portland Sea Dogs") and useless
             # scores for real abbreviations ("SF" vs the Giants = 9).
-            def _side_score(stream_norm: str, event_team, event_name_norm: str) -> float:
+            def _side_score(stream_norm: str, event_team) -> float:
                 # Per-side alias resolution (#480 round 2): an alias is a
                 # statement about ONE team, so its canonical name scores
                 # this side directly — a single-sided alias must be able to
@@ -1767,10 +1770,26 @@ class TeamMatcher:
                     base = _best_name_score(stream_norm, event_team)
                 return max(base, alias_score)
 
-            t1_vs_home = _side_score(t1_norm, event.home_team, home_normalized)
-            t1_vs_away = _side_score(t1_norm, event.away_team, away_normalized)
-            t2_vs_home = _side_score(t2_norm, event.home_team, home_normalized)
-            t2_vs_away = _side_score(t2_norm, event.away_team, away_normalized)
+            t1_vs_home = _side_score(t1_norm, event.home_team)
+            t1_vs_away = _side_score(t1_norm, event.away_team)
+
+            # Short-circuit: the final score can never exceed team1's best side.
+            #
+            #   best = max(min(t1h, t2a), min(t1a, t2h))  and  min(x, y) <= x
+            #   =>   best <= max(t1h, t1a)
+            #
+            # so when team1 clears neither side, no value of t2 can rescue the
+            # pair and the two remaining side scores are wasted. The result is
+            # identical — this is the same inequality the min() already encodes,
+            # just evaluated before paying for it. Most candidates in a run are
+            # unrelated fixtures, so this is the common path: it halves the
+            # per-pair scoring work, and with it the alias lookups, short-code
+            # checks and fuzzy comparisons underneath (#742).
+            if max(t1_vs_home, t1_vs_away) < BOTH_TEAMS_THRESHOLD:
+                return None
+
+            t2_vs_home = _side_score(t2_norm, event.home_team)
+            t2_vs_away = _side_score(t2_norm, event.away_team)
 
             # Try both valid assignments (each stream team matches a different event team)
             # Option 1: team1 → home, team2 → away

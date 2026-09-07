@@ -913,3 +913,4 @@
 {"id":"int-f58f3fe4b8554fbc00fdf365efd415ac","kind":"field_change","created_at":"2026-09-07T01:32:49.603360724Z","actor":"luke","issue_id":"teamarrv2-m6z4.1","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
 {"id":"int-892c018b3b620679672936e76d0b8691","kind":"field_change","created_at":"2026-09-07T01:48:09.890972544Z","actor":"luke","issue_id":"teamarrv2-m6z4.1","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-f8d27ef6feb45c97fa2e45d5d0870e07","kind":"field_change","created_at":"2026-09-07T01:48:10.824423957Z","actor":"luke","issue_id":"teamarrv2-m6z4.3","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-72164c3620c5fbdc89105ab091aec375","kind":"field_change","created_at":"2026-09-07T02:40:57.259755303Z","actor":"luke","issue_id":"teamarrv2-m6z4.6","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
