@@ -7,6 +7,7 @@ Supports two modes:
 """
 
 import logging
+import os
 import re
 import threading
 from collections.abc import Sequence
@@ -20,6 +21,10 @@ from zoneinfo import ZoneInfo
 from rapidfuzz import fuzz
 
 from teamarr.consumers.matching import MATCH_WINDOW_DAYS
+from teamarr.consumers.matching.candidate_index import (
+    CandidateTokenIndex,
+    tokenize,
+)
 from teamarr.consumers.matching.classifier import ClassifiedStream, StreamCategory
 from teamarr.consumers.matching.constants import (
     ABBREVIATION_STOPWORDS,
@@ -143,6 +148,17 @@ class _DateWindow:
 # Process-wide memo for the team identity index (#609). Rebuilt on expiry so a
 # team_cache refresh is picked up without a restart; the window is generous
 # because team identity barely moves and a generation run is far shorter.
+def _token_index_enabled() -> bool:
+    """Whether candidate narrowing is on (#747). Default OFF.
+
+    Read per call rather than captured at import so a soak can be started and
+    stopped by restarting the process, and so tests can toggle it with
+    monkeypatch without reloading the module. Matches the ``ESPN_MAX_WORKERS``
+    convention for perf knobs that are not user-facing settings.
+    """
+    return os.environ.get("TEAMARR_TOKEN_INDEX", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 _IDENTITY_INDEX_TTL = 900.0  # seconds
 _identity_index_cache: tuple[float, TeamIdentityIndex] | None = None
 _identity_index_lock = threading.Lock()
@@ -447,6 +463,14 @@ class TeamMatcher:
         self._candidates_memo: dict[
             tuple[tuple[str, ...], _DateWindow | None], tuple[tuple[str, Event], ...]
         ] = {}
+        # Window-filtered candidates per (candidate tuple, target date, tz).
+        # Loop-invariant across the streams of a batch (#742/#747).
+        self._in_window_memo: dict[tuple[int, Any, Any], tuple[tuple[str, Event], ...]] = {}
+        # Token index per in-window candidate tuple (#747), keyed by identity.
+        # Shared by every stream in the batch — see candidate_index.
+        self._token_index_memo: dict[int, CandidateTokenIndex] = {}
+        # league -> count per candidate tuple, for the narrowed fixture count (#747).
+        self._league_counts_memo: dict[int, dict[str, int]] = {}
         # Global team identity index (epic goax), built lazily on first use so
         # matchers constructed without a db_factory (tests, racing/tennis paths)
         # cost nothing. _identity_loaded distinguishes "not tried yet" from
@@ -1013,6 +1037,9 @@ class TeamMatcher:
         if self._candidates_source is not prefetched_events:
             self._candidates_source = prefetched_events
             self._candidates_memo = {}
+            self._in_window_memo = {}
+            self._token_index_memo = {}
+            self._league_counts_memo = {}
 
         key = (tuple(leagues_to_search), window)
         cached = self._candidates_memo.get(key)
@@ -1132,6 +1159,123 @@ class TeamMatcher:
         """Multi-league entry point: candidates already carry their league."""
         return self._match_against_candidates(ctx, events)
 
+    def _league_counts(
+        self, candidates: Sequence[tuple[str, Event]]
+    ) -> dict[str, int]:
+        """``league -> candidate count``, memoized for the shared batch tuple (#747)."""
+        if not isinstance(candidates, tuple):
+            counts: dict[str, int] = {}
+            for _lg, event in candidates:
+                counts[event.league] = counts.get(event.league, 0) + 1
+            return counts
+
+        cached = self._league_counts_memo.get(id(candidates))
+        if cached is None:
+            cached = {}
+            for _lg, event in candidates:
+                cached[event.league] = cached.get(event.league, 0) + 1
+            self._league_counts_memo[id(candidates)] = cached
+        return cached
+
+    def _fixture_rejected_outside(
+        self,
+        in_window: Sequence[tuple[str, Event]],
+        kept: Sequence[tuple[str, Event]],
+        fixture_leagues: set[str],
+        hinted_leagues: set[str],
+    ) -> int:
+        """How many narrowed-away candidates the fixture gate would have vetoed.
+
+        See the call site for why this exists. Counting by league rather than by
+        candidate is exact for the gate itself, because ``_fixture_vetoes`` reads
+        nothing but the league.
+        """
+        total = self._league_counts(in_window)
+        kept_counts = self._league_counts(kept)
+        rejected = 0
+        for league, count in total.items():
+            remaining = count - kept_counts.get(league, 0)
+            if not remaining or league in hinted_leagues:
+                continue
+            if self._fixture_vetoes(fixture_leagues, league):
+                rejected += remaining
+        return rejected
+
+    def _in_window_candidates(
+        self,
+        ctx: MatchContext,
+        events: Sequence[tuple[str, Event]],
+    ) -> Sequence[tuple[str, Event]]:
+        """``events`` restricted to the search window, memoized per batch (#742/#747).
+
+        The window depends only on the candidate set and the batch's
+        target_date/timezone, never on the stream, so every stream in a batch
+        gets the same answer. Memoizing it removes a full pass per stream — and
+        it is what gives the token index a candidate sequence with a STABLE
+        identity to key on, which is the difference between building the index
+        once per batch and once per stream.
+
+        Only the shared tuple from ``_prefetched_candidates`` is memoized. A
+        per-stream list (the single-league fallback) has no stable identity, so
+        it is filtered inline exactly as before.
+        """
+        if not isinstance(events, tuple):
+            return [pair for pair in events if ctx.is_event_in_search_window(pair[1])]
+
+        key = (id(events), ctx.target_date, ctx.user_tz)
+        cached = self._in_window_memo.get(key)
+        if cached is None:
+            cached = tuple(
+                pair for pair in events if ctx.is_event_in_search_window(pair[1])
+            )
+            self._in_window_memo[key] = cached
+        return cached
+
+    def _narrow_candidates(
+        self,
+        ctx: MatchContext,
+        events: Sequence[tuple[str, Event]],
+    ) -> Sequence[tuple[str, Event]]:
+        """Shrink the candidate list to events sharing a word with the stream (#747).
+
+        Returns ``events`` unchanged whenever the index cannot speak, so this is
+        an optimization that can only remove candidates no scorer could have
+        accepted — an event sharing no word with the stream cannot clear a
+        ``token_set_ratio`` floor.
+
+        Deliberately narrow in scope:
+
+        * **Off by default** — gated on ``TEAMARR_TOKEN_INDEX``.
+        * **TEAM_VS_TEAM only.** Tennis, racing and event-card streams match
+          through their own routes, and the safety measurement behind this did
+          not cover them; they keep the full scan.
+        * **Only the shared candidate tuple.** ``_prefetched_candidates``
+          returns one tuple per batch, so the index is built once and reused by
+          every stream. A per-stream list (the single-league fallback path) is
+          both unindexed and already small, so it is left alone — building an
+          index for one stream would cost more than the scan it saves.
+        * **No tokens, no opinion.** A stream that tokenizes to nothing keeps
+          the full list rather than matching nothing.
+        """
+        if not _token_index_enabled():
+            return events
+        if ctx.classified.category != StreamCategory.TEAM_VS_TEAM:
+            return events
+        if not isinstance(events, tuple):
+            return events
+
+        tokens = tokenize(f"{ctx.team1 or ''} {ctx.team2 or ''}")
+        if not tokens:
+            return events
+
+        index = self._token_index_memo.get(id(events))
+        if index is None:
+            index = CandidateTokenIndex(events)
+            self._token_index_memo[id(events)] = index
+
+        narrowed = index.narrow(tokens, events)
+        return events if narrowed is None else narrowed
+
     def _match_against_candidates(
         self,
         ctx: MatchContext,
@@ -1205,6 +1349,8 @@ class TeamMatcher:
         # A multi-league source offers candidates from every league it covers,
         # so a shared city has many more wrong events to land on there.
         fixture_leagues = self._fixture_leagues(ctx)
+
+
         league_hint = ctx.classified.league_hint
         hinted_leagues = (
             {league_hint} if isinstance(league_hint, str) else set(league_hint or [])
@@ -1218,10 +1364,37 @@ class TeamMatcher:
         # by the same MATCH_WINDOW_DAYS this gate tests. It stays as a real
         # gate rather than being deleted: candidates also arrive from
         # shared_events, filled by other groups whose target_date may differ.
-        in_window = [pair for pair in events if ctx.is_event_in_search_window(pair[1])]
+        in_window = self._in_window_candidates(ctx, events)
         gated_rejected += len(events) - len(in_window)
 
-        for league, event in in_window:
+        # Token narrowing (#747) runs AFTER the window gate on purpose, so
+        # gated_rejected keeps counting exactly what it always did and the
+        # failure taxonomy below reads the same with the flag on or off.
+        candidates = self._narrow_candidates(ctx, in_window)
+        narrowed_away = len(in_window) - len(candidates)
+
+        # Narrowing removed candidates the loop would have counted, and the
+        # fixture gate is the one whose count the user sees: a stream naming two
+        # real teams that never meet reports FIXTURE_NOT_IN_LEAGUE rather than a
+        # generic "no event found" — the difference between a useful answer and
+        # sending someone hunting for a scheduling gap that isn't there (epic
+        # goax). Restore it without re-walking candidates: _fixture_vetoes reads
+        # nothing but the LEAGUE, so per-league counts answer it in O(leagues).
+        #
+        # This mirrors the loop's own gate exactly, league-hint hatch (#627)
+        # included — dropping the hatch flipped one measured stream from
+        # NO_EVENT_FOUND to FIXTURE_NOT_IN_LEAGUE. It remains an approximation
+        # in one direction only: a narrowed-away candidate that the anchor or
+        # sport-hint gate would have rejected before the fixture gate is counted
+        # here as a fixture rejection. Those fire on EPG-anchored matches and on
+        # sport-hinted streams without a league hint, and across the measured
+        # corpus every stream now reports the reason the full scan reports.
+        if narrowed_away and fixture_leagues is not None:
+            fixture_rejected += self._fixture_rejected_outside(
+                in_window, candidates, fixture_leagues, hinted_leagues
+            )
+
+        for league, event in candidates:
             # EPG anchored matching (bead t5e): the candidate must air within the
             # tolerance of the program's broadcast instant, else it is a different
             # occurrence — an encore/replay or the next game in the series. This is
@@ -1411,10 +1584,17 @@ class TeamMatcher:
             # meet (epic goax). "No event found" would send the user hunting for
             # a scheduling gap that isn't there.
             reason = FailedReason.FIXTURE_NOT_IN_LEAGUE
-        elif gated_rejected and not scored:
+        elif gated_rejected and not scored and not narrowed_away:
             # Every candidate was skipped before scoring — nothing was ever
             # compared, so "no event found" would be a claim about scores that
             # never happened (#662).
+            #
+            # Token-narrowed candidates (#747) are excluded from this branch:
+            # they were not "skipped before scoring" in the sense this reason
+            # means. Sharing no word with the stream IS a comparison — it proves
+            # the candidate could not clear the floor — so the honest answer
+            # stays NO_EVENT_FOUND, which is what the same stream reports with
+            # the flag off.
             reason = FailedReason.CANDIDATES_GATED
         else:
             reason = FailedReason.NO_EVENT_FOUND
