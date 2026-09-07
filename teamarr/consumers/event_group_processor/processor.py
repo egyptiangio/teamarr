@@ -257,6 +257,7 @@ class EventGroupProcessor(
 
         # Clear caches at start of new generation run
         self._shared_events.clear()
+        self.clear_epg_resolution_cache()
         if hasattr(self, "_subscription_leagues_cache"):
             del self._subscription_leagues_cache
         self._lifecycle_service = None
