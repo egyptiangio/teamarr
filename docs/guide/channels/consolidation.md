@@ -66,10 +66,31 @@ Feed **identification** always runs — every stream's resolved feed team *and* 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Feed Separation** | Off | Master toggle for the feature |
+| **Apply To Sports** | *(empty — all sports)* | Restrict splitting to the selected sports — see below |
 | **Home Feed Terms** | `HOME` | Comma-separated terms that indicate a home feed |
 | **Away Feed Terms** | `AWAY` | Comma-separated terms that indicate an away feed |
 | **Detect Team Names** | On | Also match team names in stream names (e.g., "Orioles Feed") |
 | **Feed Label Style** | Team Name | How feed channels are labeled — see below |
+
+### Scoping It To Certain Sports
+
+Home and away feeds are a regional-sports-network phenomenon. They're real and
+common in baseball, basketball, hockey and football, and they don't exist at
+all in racing, combat sports, tennis and golf — those have no home or away
+side to broadcast from.
+
+**Apply To Sports** restricts the split to the sports you pick. Leave it empty
+and separation applies everywhere, which is how it has always behaved and what
+existing setups keep on upgrade. Pick Baseball, say, and MLB events split into
+home and away feed channels while every other sport keeps a single shared
+channel per event.
+
+The list only ever *narrows* the master toggle — it can't switch separation on
+for a sport while the toggle is off. And it changes only the channel splitting:
+feed **identification** still runs for every sport, so the Specific Team's Feed
+and Feed Side stream-priority rules keep working in sports you left unselected.
+
+The sports offered are the ones your subscribed leagues cover.
 
 ### Turning It Off
 
@@ -79,6 +100,9 @@ event's shared channel in that same pass, freeing the channel numbers the feed
 block held. Only events matched by that run are reclaimed — a feed channel for
 an event that isn't in today's slate keeps its normal end-of-event deletion
 rather than being pulled mid-broadcast.
+
+Removing a sport from **Apply To Sports** un-splits that sport the same way, on
+the same schedule — the reclaim isn't limited to the master toggle.
 
 ### Label Styles
 

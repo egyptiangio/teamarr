@@ -453,6 +453,7 @@ CREATE TABLE IF NOT EXISTS settings (
     -- Feed Separation (HOME/AWAY stream detection)
     -- When enabled, detects feed indicators in stream names and creates separate channels per feed
     feed_separation_enabled BOOLEAN DEFAULT 0,          -- Master toggle (off by default)
+    feed_separation_sports JSON DEFAULT '[]',           -- Sport codes to split ([] = every sport, #732)
     feed_home_terms JSON DEFAULT '["HOME"]',            -- Terms that indicate home feed
     feed_away_terms JSON DEFAULT '["AWAY"]',            -- Terms that indicate away feed
     feed_detect_team_names BOOLEAN DEFAULT 1,           -- Also detect team names as feed indicators

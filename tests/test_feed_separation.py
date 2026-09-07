@@ -1225,16 +1225,19 @@ class TestCleanupFeedSeparatedChannels:
         )
 
 
-class TestToggleGatesTheCleanupPass:
-    """The reclaim runs only while the master toggle is off (#672).
+class TestCleanupPassEligibility:
+    """What the reclaim sweep is told is still eligible to be split (#672, #732).
 
-    Pipeline-level guard: _process_group_internal must not reach the sweep
-    while separation is enabled — that would delete the very channels the
-    feature just created.
+    The sweep now runs every pass; the eligible-event set is what protects the
+    channels separation just created. Passing an event id in that set is the
+    only thing standing between a live feed channel and deletion, so these
+    tests pin the set itself rather than whether the call happened.
     """
 
     @staticmethod
-    def _run_pipeline(db_conn, db_factory, monkeypatch, *, separation_enabled):
+    def _run_pipeline(
+        db_conn, db_factory, monkeypatch, *, separation_enabled, separation_sports=None
+    ):
         from datetime import date
         from unittest.mock import MagicMock
 
@@ -1253,7 +1256,9 @@ class TestToggleGatesTheCleanupPass:
             "INSERT INTO subscription_templates (template_id) VALUES (?)", (cur.lastrowid,)
         )
         gid = create_group(db_conn, name="G", leagues=["nfl"])
-        update_feed_separation_settings(db_conn, enabled=separation_enabled)
+        update_feed_separation_settings(
+            db_conn, enabled=separation_enabled, sports=separation_sports
+        )
         db_conn.commit()
         group = get_group(db_conn, gid)
 
@@ -1304,7 +1309,7 @@ class TestToggleGatesTheCleanupPass:
         monkeypatch.setattr(
             proc,
             "_cleanup_feed_separated_channels",
-            lambda g, conn, passed: calls.append(passed) or 0,
+            lambda g, conn, passed, separated=None: calls.append((passed, separated)) or 0,
         )
 
         result = proc._process_group_internal(db_conn, group, date(2026, 3, 1))
@@ -1313,14 +1318,168 @@ class TestToggleGatesTheCleanupPass:
         assert reached == ["_process_channels"]
         return calls
 
-    def test_sweep_runs_when_separation_is_off(self, db_conn, db_factory, monkeypatch):
+    def test_nothing_eligible_when_separation_is_off(
+        self, db_conn, db_factory, monkeypatch
+    ):
         calls = self._run_pipeline(
             db_conn, db_factory, monkeypatch, separation_enabled=False
         )
-        assert calls == [{"123"}]
+        assert calls == [({"123"}, set())]
 
-    def test_sweep_skipped_when_separation_is_on(self, db_conn, db_factory, monkeypatch):
+    def test_everything_eligible_when_separation_is_on(
+        self, db_conn, db_factory, monkeypatch
+    ):
+        # The sweep still runs — it is simply a no-op, because every event that
+        # passed the filter is also still eligible to be split.
         calls = self._run_pipeline(
             db_conn, db_factory, monkeypatch, separation_enabled=True
         )
-        assert calls == []
+        assert calls == [({"123"}, {"123"})]
+
+    def test_event_in_a_selected_sport_stays_eligible(
+        self, db_conn, db_factory, monkeypatch
+    ):
+        calls = self._run_pipeline(
+            db_conn,
+            db_factory,
+            monkeypatch,
+            separation_enabled=True,
+            separation_sports=["football"],
+        )
+        assert calls == [({"123"}, {"123"})]
+
+    def test_event_outside_the_selected_sports_loses_eligibility(
+        self, db_conn, db_factory, monkeypatch
+    ):
+        # The football event is no longer eligible, so its feed channels are
+        # handed to the sweep for reclaim — the #672 bug in #732 clothing.
+        calls = self._run_pipeline(
+            db_conn,
+            db_factory,
+            monkeypatch,
+            separation_enabled=True,
+            separation_sports=["baseball"],
+        )
+        assert calls == [({"123"}, set())]
+
+
+class TestPerSportScope:
+    """feed_separation.sports narrows which sports get split (#732)."""
+
+    @staticmethod
+    def _event(sport: str | None):
+        from dataclasses import dataclass
+
+        @dataclass
+        class MockEvent:
+            home_team: object
+            away_team: object
+            broadcast_markets: dict
+
+        @dataclass
+        class SportedEvent(MockEvent):
+            sport: str
+
+        team_kwargs = {"provider": "espn", "league": "mlb", "sport": sport or "baseball"}
+        home = MockTeam(
+            id="28", name="Miami Marlins", short_name="Marlins",
+            abbreviation="MIA", **team_kwargs,
+        )
+        away = MockTeam(
+            id="23", name="Pittsburgh Pirates", short_name="Pirates",
+            abbreviation="PIT", **team_kwargs,
+        )
+        if sport is None:
+            return MockEvent(home_team=home, away_team=away, broadcast_markets={})
+        return SportedEvent(
+            home_team=home, away_team=away, broadcast_markets={}, sport=sport
+        )
+
+    # --- _separation_applies ---------------------------------------------
+
+    def test_empty_list_means_every_sport(self):
+        from teamarr.consumers.event_group_processor.matching import _separation_applies
+
+        assert _separation_applies(self._event("baseball"), []) is True
+        assert _separation_applies(self._event("baseball"), None) is True
+
+    def test_listed_sport_applies(self):
+        from teamarr.consumers.event_group_processor.matching import _separation_applies
+
+        assert _separation_applies(self._event("baseball"), ["baseball", "hockey"]) is True
+
+    def test_unlisted_sport_does_not_apply(self):
+        from teamarr.consumers.event_group_processor.matching import _separation_applies
+
+        assert _separation_applies(self._event("racing"), ["baseball"]) is False
+
+    def test_event_without_a_sport_is_never_excluded(self):
+        # The list can only speak about sports; not knowing the sport means it
+        # has nothing to say, so the master toggle stands. Excluding here would
+        # silently un-split channels whenever a provider omitted the field.
+        from teamarr.consumers.event_group_processor.matching import _separation_applies
+
+        assert _separation_applies(self._event(None), ["baseball"]) is True
+        assert _separation_applies(None, ["baseball"]) is True
+
+    # --- the gate in _resolve_feed_teams ---------------------------------
+
+    @staticmethod
+    def _resolve(event, separation_sports):
+        from teamarr.consumers.event_group_processor.matching import StreamMatching
+
+        entry = {
+            "stream": {"name": "MLB | Miami Marlins"},
+            "event": event,
+            "feed_hint": None,
+            "matched_side": "home",
+        }
+        StreamMatching._resolve_feed_teams(
+            StreamMatching(), [entry], True, True, separation_sports
+        )
+        return entry
+
+    def test_listed_sport_splits(self):
+        event = self._event("baseball")
+        entry = self._resolve(event, ["baseball"])
+        assert entry["feed_team"] is event.home_team
+
+    def test_unlisted_sport_does_not_split(self):
+        entry = self._resolve(self._event("baseball"), ["hockey"])
+        assert entry["feed_team"] is None
+
+    def test_identification_survives_the_sport_gate(self):
+        # #527's invariant: identification is never gated. A sport left out of
+        # the list must still resolve its feed team for the team_feed /
+        # feed_side stream-ordering rules — only the channel split stops.
+        event = self._event("baseball")
+        entry = self._resolve(event, ["hockey"])
+        assert entry["stream_feed_team"] is event.home_team
+        assert entry["feed_team"] is None
+
+    # --- settings persistence --------------------------------------------
+
+    def test_sports_round_trip(self, db_conn):
+        from teamarr.database.settings import (
+            get_feed_separation_settings,
+            update_feed_separation_settings,
+        )
+
+        assert update_feed_separation_settings(db_conn, sports=["baseball", "hockey"])
+        assert get_feed_separation_settings(db_conn).sports == ["baseball", "hockey"]
+
+    def test_default_is_every_sport(self, db_conn):
+        from teamarr.database.settings import get_feed_separation_settings
+
+        assert get_feed_separation_settings(db_conn).sports == []
+
+    def test_unknown_sport_code_is_rejected(self, db_conn):
+        # A typo would match no event and so disable separation everywhere —
+        # a silent failure, hence a hard reject rather than a filter.
+        from teamarr.database.settings import (
+            get_feed_separation_settings,
+            update_feed_separation_settings,
+        )
+
+        assert not update_feed_separation_settings(db_conn, sports=["baseballl"])
+        assert get_feed_separation_settings(db_conn).sports == []

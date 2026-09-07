@@ -450,6 +450,7 @@ class FeedSeparationSettingsModel(BaseModel):
     """Feed separation settings for HOME/AWAY stream detection."""
 
     enabled: bool = False  # Master toggle
+    sports: list[str] = []  # Sport codes to split; [] = all sports (#732)
     home_terms: list[str] = ["HOME"]  # Terms that indicate home feed
     away_terms: list[str] = ["AWAY"]  # Terms that indicate away feed
     detect_team_names: bool = True  # Also detect team names as feed indicators
@@ -460,6 +461,7 @@ class FeedSeparationSettingsUpdate(BaseModel):
     """Update model for feed separation settings (all fields optional)."""
 
     enabled: bool | None = None
+    sports: list[str] | None = None
     home_terms: list[str] | None = None
     away_terms: list[str] | None = None
     detect_team_names: bool | None = None

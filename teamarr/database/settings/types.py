@@ -313,9 +313,15 @@ class FeedSeparationSettings:
     When enabled, detects feed indicators (HOME/AWAY tokens or team names)
     in stream names and creates separate channels per feed, resolving
     to actual team names.
+
+    ``sports`` scopes the split (#732). Home/away feeds are an RSN phenomenon —
+    real for baseball/basketball/hockey/football, absent by definition in
+    racing, combat sports, tennis and golf (see lifecycle/feed_side.py). An
+    empty list means every sport, which is what existing installs upgrade to.
     """
 
     enabled: bool = False  # Master toggle
+    sports: list[str] = field(default_factory=list)  # Sport codes; [] = all sports
     home_terms: list[str] = field(default_factory=lambda: ["HOME"])
     away_terms: list[str] = field(default_factory=lambda: ["AWAY"])
     detect_team_names: bool = True  # Also match team names as feed indicators

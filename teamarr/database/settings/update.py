@@ -469,6 +469,7 @@ def update_update_check_settings(
 def update_feed_separation_settings(
     conn: Connection,
     enabled: bool | None = None,
+    sports: list[str] | None = None,
     home_terms: list[str] | None = None,
     away_terms: list[str] | None = None,
     detect_team_names: bool | None = None,
@@ -477,7 +478,7 @@ def update_feed_separation_settings(
     """Update feed separation settings.
 
     Returns:
-        True if updated (False on invalid label_style)
+        True if updated (False on invalid label_style or unknown sport code)
     """
     if label_style is not None:
         valid_styles = ("team_name", "short_name", "home_away")
@@ -489,8 +490,24 @@ def update_feed_separation_settings(
             )
             return False
 
+    if sports:
+        # An unknown code would never match a real event, silently disabling
+        # separation everywhere rather than failing visibly (#732).
+        known = {
+            row["sport_code"] for row in conn.execute("SELECT sport_code FROM sports")
+        }
+        unknown = sorted(set(sports) - known)
+        if unknown:
+            logger.warning(
+                "[FEED_SEP] Unknown sport code(s) %s, must be one of %s",
+                unknown,
+                sorted(known),
+            )
+            return False
+
     provided = _skip_none(
         enabled=enabled,
+        sports=sports,
         home_terms=home_terms,
         away_terms=away_terms,
         detect_team_names=detect_team_names,

@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { SaveButton } from "@/components/ui/save-button"
 import { ToggleCard } from "@/components/ui/toggle-card"
@@ -6,10 +7,15 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Select } from "@/components/ui/select"
+import { CheckboxListPicker } from "@/components/ui/checkbox-list-picker"
 import {
   useFeedSeparationSettings,
   useUpdateFeedSeparationSettings,
 } from "@/hooks/useSettings"
+import { useSports } from "@/hooks/useSports"
+import { useSubscription } from "@/hooks/useSubscription"
+import { getLeagues } from "@/api/teams"
+import { getSportDisplayName } from "@/lib/utils"
 import type { FeedSeparationSettings } from "@/api/settings"
 
 /**
@@ -23,11 +29,40 @@ export function FeedSeparationCard() {
 
   const [feedSeparation, setFeedSeparation] = useState<FeedSeparationSettings>({
     enabled: false,
+    sports: [],
     home_terms: [],
     away_terms: [],
     detect_team_names: false,
     label_style: "team_name",
   })
+
+  // Sport options come from the subscribed leagues, not the full sports table —
+  // offering to scope separation to a sport the user has no leagues for is noise.
+  const { data: sportsData } = useSports()
+  const sportsMap = useMemo(() => sportsData?.sports ?? {}, [sportsData])
+
+  const { data: subscription } = useSubscription()
+  const { data: leaguesData } = useQuery({
+    queryKey: ["leagues"],
+    queryFn: () => getLeagues(),
+  })
+
+  const sportItems = useMemo(() => {
+    const subscribed = subscription?.leagues ?? []
+    const codes = new Set(
+      (leaguesData?.leagues ?? [])
+        .filter((l) => subscribed.includes(l.slug))
+        .map((l) => l.sport)
+        .filter(Boolean)
+    )
+    // Before the league cache loads (or on a fresh install with no subscription)
+    // fall back to every known sport, so the picker is never empty while a
+    // saved selection is on screen.
+    const source = codes.size > 0 ? [...codes] : Object.keys(sportsMap)
+    return source
+      .map((sport) => ({ value: sport, label: getSportDisplayName(sport, sportsMap) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [subscription, leaguesData, sportsMap])
 
   // Sync the form from the server data during render (React's "adjusting
   // state when a prop changes" pattern) — re-seeds on every refetch, exactly
@@ -58,7 +93,25 @@ export function FeedSeparationCard() {
       }
     >
       <div className="space-y-4 pl-2 border-l-2 border-muted ml-1">
-        {/* Home terms */}
+        {/* Sports scope — first because it gates everything below it */}
+            <div className="space-y-1.5">
+              <Label>Apply To Sports</Label>
+              <CheckboxListPicker
+                selected={feedSeparation.sports}
+                onChange={(sports) => setFeedSeparation({ ...feedSeparation, sports })}
+                items={sportItems}
+                searchPlaceholder="Search sports..."
+                maxHeight="max-h-36"
+              />
+              <p className="text-xs text-muted-foreground">
+                Only split feeds for these sports. Leave empty to apply to every sport.
+                Home/away feeds are a regional-sports-network thing — useful for baseball,
+                basketball, hockey and football, and meaningless for racing, combat sports,
+                tennis and golf.
+              </p>
+            </div>
+
+            {/* Home terms */}
             <div className="space-y-1.5">
               <Label htmlFor="feed-home-terms">Home Feed Terms</Label>
               <Input

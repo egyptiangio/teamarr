@@ -78,7 +78,7 @@ Both **Stream Type** (team streams) and **Specific Team's Feed** rules let you p
 
 ### How team-feed detection works
 
-The **Specific Team's Feed** rule first checks the **resolved feed team** stored during matching — the [Feed Separation](consolidation#feed-separation) engine's verdict from broadcast-market listings, team-branded names (`Brewers.TV`), and tvg-id/tvg-name. Identification always runs, whether or not the Feed Separation toggle is on (the toggle only controls channel splitting), and team streams (`MLB | Milwaukee Brewers`) carry their matched team the same way. When no team was resolved, it falls back to scanning the stream name for your selected teams plus a feed indicator — a matchup (`vs`, `at`, `@`), a side (`home`/`away`), a camera label, or a `(Team feed)` marker. Generic streams with neither are left for other rules.
+The **Specific Team's Feed** rule first checks the **resolved feed team** stored during matching — the [Feed Separation](consolidation#feed-separation) engine's verdict from broadcast-market listings, team-branded names (`Brewers.TV`), and tvg-id/tvg-name. Identification always runs, whether or not the Feed Separation toggle is on and whatever its [sport scope](consolidation#scoping-it-to-certain-sports) is (both control only channel splitting), and team streams (`MLB | Milwaukee Brewers`) carry their matched team the same way. When no team was resolved, it falls back to scanning the stream name for your selected teams plus a feed indicator — a matchup (`vs`, `at`, `@`), a side (`home`/`away`), a camera label, or a `(Team feed)` marker. Generic streams with neither are left for other rules.
 
 ## Teamarr keeps Dispatcharr's order in step
 
