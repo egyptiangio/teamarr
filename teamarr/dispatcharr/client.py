@@ -12,7 +12,9 @@ Retry Strategy:
 
 import logging
 import random
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
 import httpx
@@ -24,6 +26,15 @@ logger = logging.getLogger(__name__)
 
 # Retryable HTTP status codes (server-side transient errors)
 RETRYABLE_STATUS_CODES = {502, 503, 504}
+
+# Concurrency for page-numbered pagination (see paginated_get). Matches the M3U
+# stream lister's bound (#610) — Dispatcharr is one Django app, often on the
+# same host, so this is about overlapping latency, not saturating it.
+_MAX_PAGE_WORKERS = 8
+
+# Connection-pool size. Keepalive is held equal to it on purpose — see
+# DispatcharrClient._get_client.
+_POOL_MAX_CONNECTIONS = 100
 
 
 def _calculate_backoff(
@@ -55,6 +66,50 @@ def _calculate_backoff(
     # Add jitter: ±50%
     jitter = random.uniform(0.5, 1.5)
     return delay * jitter
+
+
+def _next_path(data: dict) -> str | None:
+    """Path+query of a paginated response's ``next`` link, if any.
+
+    Dispatcharr sometimes answers with an absolute URL and sometimes a path;
+    the client only ever speaks in paths, so absolutes are reduced.
+    """
+    next_url = data.get("next")
+    if not next_url:
+        return None
+    if str(next_url).startswith("http"):
+        parsed = urlparse(next_url)
+        return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+    return next_url
+
+
+def _page_url(endpoint: str, page: int) -> str:
+    """``endpoint`` with its ``page`` parameter replaced by ``page``."""
+    base, _, query = endpoint.partition("?")
+    params = [p for p in query.split("&") if p and not p.startswith("page=")]
+    params.insert(0, f"page={page}")
+    return f"{base}?{'&'.join(params)}"
+
+
+def _page_count(first: dict, endpoint: str) -> int | None:
+    """Total pages implied by a first page's ``count``, or None if unknowable.
+
+    Needs both an integer ``count`` and the page size actually in effect. The
+    endpoint's own ``page_size`` is not evidence of that — /api/epg/epgdata/
+    ignores it entirely — so the length of page 1 is what we measure, and a
+    first page shorter than ``count`` but not evenly divisible is left to the
+    serial `next` walk rather than guessed at.
+    """
+    count = first.get("count")
+    results = first.get("results")
+    if not isinstance(count, int) or not isinstance(results, list):
+        return None
+    page_size = len(results)
+    if page_size <= 0:
+        return None
+    if page_size >= count:
+        return 1
+    return -(-count // page_size)
 
 
 class DispatcharrClient:
@@ -98,17 +153,31 @@ class DispatcharrClient:
         self._timeout = timeout
         self._max_retries = max_retries
         self._client: httpx.Client | None = None
+        self._client_lock = threading.Lock()
 
     def _get_client(self) -> httpx.Client:
-        """Get or create HTTP client with connection pooling."""
+        """Get or create the pooled HTTP client (thread-safe).
+
+        Double-checked locking, matching ``providers/base_client.py``: the
+        generation run drives this client from thread pools, and an unguarded
+        lazy init lets two threads each build a client, one of which is then
+        dropped on the floor with its connections still open.
+
+        Keepalive matches max_connections deliberately. Capping it lower means
+        that past that many concurrent requests every extra one closes its
+        connection on completion and the next pays a fresh TCP+TLS handshake —
+        which is exactly the regime the parallel pushes put this client in.
+        """
         if self._client is None:
-            self._client = httpx.Client(
-                timeout=self._timeout,
-                limits=httpx.Limits(
-                    max_connections=100,
-                    max_keepalive_connections=20,
-                ),
-            )
+            with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.Client(
+                        timeout=self._timeout,
+                        limits=httpx.Limits(
+                            max_connections=_POOL_MAX_CONNECTIONS,
+                            max_keepalive_connections=_POOL_MAX_CONNECTIONS,
+                        ),
+                    )
         return self._client
 
     def request(
@@ -268,36 +337,96 @@ class DispatcharrClient:
         Returns:
             List of all items from all pages
         """
-        all_items: list[dict] = []
-        next_page: str | None = initial_endpoint
-
-        while next_page:
-            response = self.get(next_page)
+        def fetch(url: str) -> dict | list | None:
+            """One page. ``None`` means the request failed — never an empty page."""
+            response = self.get(url)
             if response is None or response.status_code != 200:
                 status = response.status_code if response else "No response"
                 logger.error("[DISPATCHARR] Failed to get %s: %s", error_context, status)
-                break
+                return None
+            return response.json()
 
-            data = response.json()
+        def follow(data: dict, into: list[dict]) -> None:
+            """Walk `next` links from an already-fetched page, appending."""
+            next_page = _next_path(data)
+            while next_page:
+                page = fetch(next_page)
+                if page is None:
+                    return
+                if not isinstance(page, dict):
+                    into.extend(page)
+                    return
+                into.extend(page.get("results", []))
+                next_page = _next_path(page)
 
-            if isinstance(data, dict) and "results" in data:
-                all_items.extend(data["results"])
-                next_url = data.get("next")
-                if next_url:
-                    # Handle absolute URLs by extracting path+query
-                    if next_url.startswith("http"):
-                        parsed = urlparse(next_url)
-                        next_page = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
-                    else:
-                        next_page = next_url
-                else:
-                    next_page = None
-            elif isinstance(data, list):
-                all_items.extend(data)
-                next_page = None
-            else:
-                next_page = None
+        first = fetch(initial_endpoint)
+        if first is None:
+            return []
 
+        # A non-paginated endpoint answers with the whole collection at once
+        # (/api/epg/epgdata/ does exactly this, page_size and all).
+        if isinstance(first, list):
+            return list(first)
+        if "results" not in first:
+            return []
+
+        all_items: list[dict] = list(first.get("results", []))
+        pages = _page_count(first, initial_endpoint)
+
+        if pages is None or pages <= 1:
+            # No usable count, or nothing beyond page 1: walk `next` as before.
+            follow(first, all_items)
+            return all_items
+
+        # Pages 2..N are independently addressable, so fetch them at once rather
+        # than paying a round trip each (#735; same shape as m3u.list_streams,
+        # #610). Order is restored by page number afterwards, because callers
+        # like get_channel_maps build last-write-wins maps whose result depends
+        # on it.
+        by_page: dict[int, list[dict]] = {}
+        last = first
+        with ThreadPoolExecutor(
+            max_workers=min(_MAX_PAGE_WORKERS, pages - 1),
+            thread_name_prefix="dispatcharr-page",
+        ) as executor:
+            futures = {
+                executor.submit(fetch, _page_url(initial_endpoint, n)): n
+                for n in range(2, pages + 1)
+            }
+            for future in as_completed(futures):
+                page_no = futures[future]
+                try:
+                    data = future.result()
+                except Exception as e:  # noqa: BLE001 - treated as a failed page
+                    logger.error("[DISPATCHARR] %s page %d failed: %s", error_context, page_no, e)
+                    data = None
+                if data is None:
+                    continue
+                by_page[page_no] = data.get("results", []) if isinstance(data, dict) else data
+                if isinstance(data, dict) and page_no == pages:
+                    last = data
+
+        # The serial walk this replaces returned a contiguous PREFIX when a page
+        # failed — it broke out of the loop — so that is the contract callers
+        # were written against. Concurrency makes a hole possible instead (a
+        # later page can land while an earlier one fails), which no caller can
+        # distinguish from a genuinely smaller collection, so stop at the first
+        # page that did not arrive and drop everything after it. Every page is
+        # awaited before assembling: the requests were already in flight, and
+        # bailing early is what lets a hole through.
+        for page_no in range(2, pages + 1):
+            page_items = by_page.get(page_no)
+            if page_items is None:
+                logger.error(
+                    "[DISPATCHARR] Truncating %s at page %d of %d (page failed)",
+                    error_context, page_no, pages,
+                )
+                return all_items
+            all_items.extend(page_items)
+
+        # The collection can grow between page 1 and the last page; whatever
+        # `next` still points at is picked up here.
+        follow(last, all_items)
         return all_items
 
     def parse_api_error(self, response: httpx.Response | None) -> str:

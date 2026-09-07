@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,11 @@ logger = logging.getLogger(__name__)
 class GenerationCancelled(Exception):
     """Raised when a generation run is cancelled by the user."""
 
+
+# Concurrency for the stream-order push phase (#735). Bounded well under the
+# client's pool so a run cannot monopolize Dispatcharr, and matched to what an
+# ordinary self-hosted Django instance answers comfortably.
+_ORDERING_PUSH_WORKERS = 8
 
 # Global lock to prevent concurrent EPG generation runs
 _generation_lock = threading.Lock()
@@ -1075,6 +1081,81 @@ def _sync_global_channels(
             logger.info("[GENERATION] Synced %d channel numbers to Dispatcharr", synced)
 
 
+@dataclass
+class _OrderingPlan:
+    """One channel's decided stream-ordering state, ready for the push phase.
+
+    Carries everything the push decision needs so phase 2 can run without going
+    back to the database and phase 3 can run without touching it at all (#735).
+    """
+
+    channel: Any
+    current_order: list[int] | None  # what Dispatcharr is holding (#712)
+    pinned_top: int | None  # live-event #1 pin (#232)
+    reordered_count: int
+    has_windowed: bool
+
+
+def _push_stream_orders(
+    channel_mgr: Any,
+    pushes: list[tuple["_OrderingPlan", list[int]]],
+    update_progress: Callable,
+) -> int:
+    """PATCH each channel's stream order to Dispatcharr, concurrently (#735).
+
+    One PATCH per channel used to go out serially, and since #712 any order
+    difference triggers one — so a windowed install re-pushes most of its
+    channels every run and this was the longest serial stretch left. The work
+    is pure network wait: ``update_channel`` guards only a cache write, and the
+    client pools its connections.
+
+    Failures are logged and counted, never raised: Dispatcharr still holds the
+    wrong order, so the drift check re-detects it and retries next run. Nothing
+    is rolled back for the same reason (see #712).
+
+    Returns:
+        The number of channels whose push failed.
+    """
+    workers = min(_ORDERING_PUSH_WORKERS, len(pushes))
+    failures = 0
+    done = 0
+    total = len(pushes)
+
+    def push(plan: "_OrderingPlan", ordered_ids: list[int]):
+        return plan, channel_mgr.update_channel(
+            plan.channel.dispatcharr_channel_id, {"streams": ordered_ids}
+        )
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="order-push") as executor:
+        futures = [executor.submit(push, plan, ids) for plan, ids in pushes]
+        for future in as_completed(futures):
+            done += 1
+            try:
+                plan, sync_result = future.result()
+            except Exception as e:  # noqa: BLE001 — per-channel isolation
+                failures += 1
+                logger.warning("[ORDERING] Stream-order push raised: %s", e)
+            else:
+                if not sync_result.success:
+                    failures += 1
+                    logger.warning(
+                        "[ORDERING] Failed to sync channel %s to Dispatcharr: %s",
+                        plan.channel.channel_name,
+                        sync_result.error,
+                    )
+            if done % 10 == 0 or done == total:
+                pct = 93 + int((done / total) * 2)
+                update_progress(
+                    "ordering", pct, f"Ordering streams ({done}/{total})", done, total, ""
+                )
+
+    logger.info(
+        "[ORDERING] Pushed stream order for %d channel(s) across %d worker(s); %d failed",
+        total, workers, failures,
+    )
+    return failures
+
+
 def _apply_stream_ordering(
     db_factory: Callable[[], Any],
     dispatcharr_client: Any | None,
@@ -1094,9 +1175,9 @@ def _apply_stream_ordering(
     """
     from teamarr.consumers.lifecycle import is_channel_event_live
     from teamarr.database.channels import (
+        get_all_channel_streams,
         get_all_managed_channels,
-        get_channel_streams,
-        get_ordered_stream_ids,
+        get_all_ordered_stream_ids,
         update_stream_priority,
     )
     from teamarr.database.channels.streams import (
@@ -1104,6 +1185,7 @@ def _apply_stream_ordering(
         refresh_stream_stats_bulk,
     )
     from teamarr.database.settings import get_stream_ordering_settings
+    from teamarr.utilities.tz import now_utc
 
     reorder_result: dict = {
         "channels_reordered": 0,
@@ -1164,7 +1246,16 @@ def _apply_stream_ordering(
                     logger.warning("[ORDERING] Could not read Dispatcharr stream order: %s", e)
 
             all_channels = get_all_managed_channels(conn, include_deleted=False)
-            total_channels = len(all_channels)
+
+            # One scan each instead of two queries per channel (#735). The
+            # window instant is pinned for the whole pass so every channel's
+            # attach/detach state is evaluated at the same moment — walking
+            # channels one at a time re-read the clock per channel, so a long
+            # pass could open a window partway through and treat two channels
+            # sharing a stream inconsistently.
+            window_now = now_utc().strftime("%Y-%m-%d %H:%M:%S")
+            streams_by_channel = get_all_channel_streams(conn)
+            pre_order_by_channel = get_all_ordered_stream_ids(conn, now=window_now)
 
             # stats_metric rules score against the cached stream_stats column,
             # and until now that column was only ever refreshed by the streams
@@ -1188,8 +1279,13 @@ def _apply_stream_ordering(
                     len(stat_stream_ids),
                 )
 
-            for idx, channel in enumerate(all_channels):
-                streams = get_channel_streams(conn, channel.id)
+            # Phase 1 (serial, database): recompute and persist priorities.
+            # Nothing here touches the network, so it stays on the one
+            # connection; the pushes are batched up and issued afterwards.
+            plans: list[_OrderingPlan] = []
+
+            for channel in all_channels:
+                streams = streams_by_channel.get(channel.id)
                 if not streams:
                     continue
 
@@ -1217,7 +1313,7 @@ def _apply_stream_ordering(
                     pre_order = (
                         current_order
                         if current_order is not None
-                        else get_ordered_stream_ids(conn, channel.id)
+                        else pre_order_by_channel.get(channel.id, [])
                     )
                     pinned_top = pre_order[0] if pre_order else None
                     # The pin's premise is that slot 1 is what somebody is
@@ -1259,103 +1355,112 @@ def _apply_stream_ordering(
                     reorder_result["channels_reordered"] += 1
                     reorder_result["streams_reordered"] += reordered_count
 
-                # Push the window-gated active set to Dispatcharr when priorities
-                # changed, the channel has any time-windowed stream (whose
-                # membership flips as its attach/detach window opens and closes),
-                # OR Dispatcharr is simply holding a different order than we
-                # intend (#712). An empty set IS pushed — a channel whose sole
-                # source is currently out-of-window must be cleared (it
-                # re-attaches on a later run).
-                has_windowed = any(s.attach_at for s in streams)
                 if channel_mgr and channel.dispatcharr_channel_id:
-                    ordered_ids = get_ordered_stream_ids(conn, channel.id)
-                    if (
-                        pinned_top is not None
-                        and ordered_ids
-                        and ordered_ids[0] != pinned_top
-                        and pinned_top in ordered_ids
-                    ):
-                        # Event is live: rule-truth priorities are in the DB,
-                        # but the push keeps the current #1 on top so the
-                        # stream being watched isn't displaced mid-broadcast.
-                        ordered_ids.remove(pinned_top)
-                        ordered_ids.insert(0, pinned_top)
-                        logger.info(
-                            "[STREAM_AUDIT] pin: ch='%s' (d_id=%s) live event — "
-                            "kept stream %d at #1 (#232)",
-                            channel.channel_name,
-                            channel.dispatcharr_channel_id,
-                            pinned_top,
+                    plans.append(
+                        _OrderingPlan(
+                            channel=channel,
+                            current_order=current_order,
+                            pinned_top=pinned_top,
+                            reordered_count=reordered_count,
+                            # A channel with any time-windowed stream must be
+                            # synced every run: membership flips as the window
+                            # opens and closes.
+                            has_windowed=any(s.attach_at for s in streams),
                         )
-
-                    # Compared AFTER the pin is applied, so a pinned channel is
-                    # measured against the order we actually intend to push and
-                    # doesn't re-push every run.
-                    order_drifted = current_order is not None and ordered_ids != current_order
-
-                    if reordered_count > 0 or has_windowed or order_drifted:
-                        if has_windowed:
-                            reorder_result["windows_synced"] += 1
-                        if order_drifted and reordered_count == 0 and not has_windowed:
-                            reorder_result["order_drift_synced"] += 1
-                            logger.info(
-                                "[STREAM_AUDIT] drift: ch='%s' (d_id=%s) Dispatcharr order "
-                                "%s does not match intended %s — re-pushing (#712)",
-                                channel.channel_name,
-                                channel.dispatcharr_channel_id,
-                                current_order,
-                                ordered_ids,
-                            )
-                        logger.info(
-                            "[STREAM_AUDIT] sync: ch='%s' (d_id=%s) setting streams=%s "
-                            "count=%d (reordered=%d windowed=%s drifted=%s)",
-                            channel.channel_name,
-                            channel.dispatcharr_channel_id,
-                            ordered_ids,
-                            len(ordered_ids),
-                            reordered_count,
-                            has_windowed,
-                            order_drifted,
-                        )
-                        sync_result = channel_mgr.update_channel(
-                            channel.dispatcharr_channel_id, {"streams": ordered_ids}
-                        )
-                        if not sync_result.success:
-                            # No rollback needed to keep this honest: Dispatcharr
-                            # still holds the wrong order, so the drift check above
-                            # re-detects it on the next run and retries. Before #712
-                            # the retry never came — the DB was already "correct", so
-                            # reordered_count was 0 forever after.
-                            logger.warning(
-                                "[ORDERING] Failed to sync channel %s to Dispatcharr: %s",
-                                channel.channel_name,
-                                sync_result.error,
-                            )
-
-                if (idx + 1) % 10 == 0 or idx == total_channels - 1:
-                    pct = 93 + int(((idx + 1) / total_channels) * 2)
-                    update_progress(
-                        "ordering",
-                        pct,
-                        f"Ordering streams ({idx + 1}/{total_channels})",
-                        idx + 1,
-                        total_channels,
-                        channel.channel_name,
                     )
 
-            if (
-                reorder_result["channels_reordered"] > 0
-                or reorder_result["windows_synced"] > 0
-                or reorder_result["order_drift_synced"] > 0
-            ):
-                logger.info(
-                    "[ORDERING] Reordered %d streams across %d channels; "
-                    "window-synced %d channel(s); order-drift re-pushed %d channel(s)",
-                    reorder_result["streams_reordered"],
-                    reorder_result["channels_reordered"],
-                    reorder_result["windows_synced"],
-                    reorder_result["order_drift_synced"],
+            # Phase 2 (serial, database): one scan for the post-update active
+            # sets, then decide what actually needs pushing.
+            post_order_by_channel = get_all_ordered_stream_ids(conn, now=window_now)
+            pushes: list[tuple[_OrderingPlan, list[int]]] = []
+
+            for plan in plans:
+                channel = plan.channel
+                # An empty set IS pushed — a channel whose sole source is
+                # currently out-of-window must be cleared (it re-attaches on a
+                # later run).
+                ordered_ids = list(post_order_by_channel.get(channel.id, []))
+
+                if (
+                    plan.pinned_top is not None
+                    and ordered_ids
+                    and ordered_ids[0] != plan.pinned_top
+                    and plan.pinned_top in ordered_ids
+                ):
+                    # Event is live: rule-truth priorities are in the DB, but
+                    # the push keeps the current #1 on top so the stream being
+                    # watched isn't displaced mid-broadcast.
+                    ordered_ids.remove(plan.pinned_top)
+                    ordered_ids.insert(0, plan.pinned_top)
+                    logger.info(
+                        "[STREAM_AUDIT] pin: ch='%s' (d_id=%s) live event — "
+                        "kept stream %d at #1 (#232)",
+                        channel.channel_name,
+                        channel.dispatcharr_channel_id,
+                        plan.pinned_top,
+                    )
+
+                # Compared AFTER the pin is applied, so a pinned channel is
+                # measured against the order we actually intend to push and
+                # doesn't re-push every run.
+                order_drifted = (
+                    plan.current_order is not None and ordered_ids != plan.current_order
                 )
+
+                if not (plan.reordered_count > 0 or plan.has_windowed or order_drifted):
+                    continue
+
+                if plan.has_windowed:
+                    reorder_result["windows_synced"] += 1
+                if order_drifted and plan.reordered_count == 0 and not plan.has_windowed:
+                    reorder_result["order_drift_synced"] += 1
+                    logger.info(
+                        "[STREAM_AUDIT] drift: ch='%s' (d_id=%s) Dispatcharr order "
+                        "%s does not match intended %s — re-pushing (#712)",
+                        channel.channel_name,
+                        channel.dispatcharr_channel_id,
+                        plan.current_order,
+                        ordered_ids,
+                    )
+                logger.info(
+                    "[STREAM_AUDIT] sync: ch='%s' (d_id=%s) setting streams=%s "
+                    "count=%d (reordered=%d windowed=%s drifted=%s)",
+                    channel.channel_name,
+                    channel.dispatcharr_channel_id,
+                    ordered_ids,
+                    len(ordered_ids),
+                    plan.reordered_count,
+                    plan.has_windowed,
+                    order_drifted,
+                )
+                pushes.append((plan, ordered_ids))
+
+        # Phase 3 (parallel, network only): issue the pushes. Outside the `with`
+        # so the database connection is closed before any thread runs — every
+        # decision is already made and nothing below writes to it.
+        #
+        # This was the longest serial stretch left in a run: one PATCH per
+        # channel, and since #712 any order difference triggers one, so a
+        # windowed install pushes most of its channels every run. update_channel
+        # is thread-safe (its only shared state is a locked cache write) and the
+        # client pools connections, so the wait is pure overlap.
+        if pushes:
+            failed = _push_stream_orders(channel_mgr, pushes, update_progress)
+            reorder_result["push_failures"] = failed
+
+        if (
+            reorder_result["channels_reordered"] > 0
+            or reorder_result["windows_synced"] > 0
+            or reorder_result["order_drift_synced"] > 0
+        ):
+            logger.info(
+                "[ORDERING] Reordered %d streams across %d channels; "
+                "window-synced %d channel(s); order-drift re-pushed %d channel(s)",
+                reorder_result["streams_reordered"],
+                reorder_result["channels_reordered"],
+                reorder_result["windows_synced"],
+                reorder_result["order_drift_synced"],
+            )
     except Exception as e:
         logger.warning("[ORDERING] Stream ordering failed: %s", e)
         reorder_result["error"] = str(e)
@@ -1373,7 +1478,7 @@ def _run_stream_audit(
     assignments. This is diagnostic-only — no changes are made.
     """
     from teamarr.consumers.lifecycle import is_channel_event_live
-    from teamarr.database.channels import get_all_managed_channels, get_ordered_stream_ids
+    from teamarr.database.channels import get_all_managed_channels, get_all_ordered_stream_ids
 
     if not dispatcharr_client:
         return
@@ -1389,6 +1494,8 @@ def _run_stream_audit(
 
     with db_factory() as conn:
         channels = get_all_managed_channels(conn, include_deleted=False)
+        # One scan for every channel's active set instead of a query each (#735).
+        ordered_by_channel = get_all_ordered_stream_ids(conn)
 
         for channel in channels:
             if not channel.dispatcharr_channel_id:
@@ -1404,7 +1511,7 @@ def _run_stream_audit(
             # "All channels match" on runs where Dispatcharr held a visibly
             # different order. Order is the whole point of the ordering step, so
             # the audit has to be able to see it.
-            db_stream_ids = get_ordered_stream_ids(conn, channel.id)
+            db_stream_ids = ordered_by_channel.get(channel.id, [])
 
             d_channel = channel_mgr.get_channel(channel.dispatcharr_channel_id)
             if not d_channel:
