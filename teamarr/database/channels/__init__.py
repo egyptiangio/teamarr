@@ -45,6 +45,8 @@ from .settings_helpers import (
 from .streams import (
     add_stream_to_channel,
     compute_stream_priority_from_rules,
+    get_all_channel_streams,
+    get_all_ordered_stream_ids,
     get_channel_streams,
     get_next_stream_priority,
     get_ordered_stream_ids,
@@ -81,6 +83,8 @@ __all__ = [
     # Streams
     "add_stream_to_channel",
     "compute_stream_priority_from_rules",
+    "get_all_channel_streams",
+    "get_all_ordered_stream_ids",
     "get_channel_streams",
     "get_next_stream_priority",
     "get_ordered_stream_ids",

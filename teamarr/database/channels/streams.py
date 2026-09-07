@@ -837,6 +837,68 @@ def clear_stream_stats(conn: Connection, group_id: int | None = None) -> int:
     return cursor.rowcount
 
 
+def get_all_channel_streams(
+    conn: Connection,
+) -> dict[int, list[ManagedChannelStream]]:
+    """Every active stream on every managed channel, grouped by channel id.
+
+    The bulk form of :func:`get_channel_streams` (#735). Callers that walk all
+    managed channels — stream ordering, the post-run audit — were issuing one
+    query per channel; on an install with several hundred channels that is a
+    few thousand round trips through SQLite for data one scan already has.
+
+    Channels with no active streams are simply absent, matching what the
+    per-channel call returns for them (an empty list).
+
+    Returns:
+        ``{managed_channel_id: [ManagedChannelStream, ...]}`` in priority order.
+    """
+    cursor = conn.execute(
+        """SELECT * FROM managed_channel_streams
+           WHERE removed_at IS NULL
+           ORDER BY managed_channel_id, priority, added_at"""
+    )
+    grouped: dict[int, list[ManagedChannelStream]] = {}
+    for row in cursor.fetchall():
+        stream = ManagedChannelStream.from_row(dict(row))
+        grouped.setdefault(stream.managed_channel_id, []).append(stream)
+    return grouped
+
+
+def get_all_ordered_stream_ids(
+    conn: Connection,
+    now: str | None = None,
+) -> dict[int, list[int]]:
+    """The ACTIVE, priority-ordered stream ids for every managed channel.
+
+    The bulk form of :func:`get_ordered_stream_ids` (#735), running the exact
+    same window predicate in one scan so the two cannot drift apart. Pass an
+    explicit ``now`` to evaluate every channel's attach/detach window at ONE
+    instant — walking channels one at a time re-reads the clock per channel, so
+    a long ordering pass could open a window partway through and treat two
+    channels sharing a stream inconsistently.
+
+    Returns:
+        ``{managed_channel_id: [dispatcharr_stream_id, ...]}``; channels whose
+        active set is empty are absent (callers read them as an empty list).
+    """
+    now_expr = "datetime('now')" if now is None else "?"
+    params: tuple = () if now is None else (now, now)
+    cursor = conn.execute(
+        f"""SELECT managed_channel_id, dispatcharr_stream_id
+           FROM managed_channel_streams
+           WHERE removed_at IS NULL
+             AND (attach_at IS NULL
+                  OR (attach_at <= {now_expr} AND {now_expr} < detach_at))
+           ORDER BY managed_channel_id, priority, added_at""",
+        params,
+    )
+    grouped: dict[int, list[int]] = {}
+    for channel_id, stream_id in cursor.fetchall():
+        grouped.setdefault(channel_id, []).append(stream_id)
+    return grouped
+
+
 def get_ordered_stream_ids(
     conn: Connection,
     managed_channel_id: int,
