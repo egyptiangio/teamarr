@@ -4,10 +4,12 @@ Handles M3U account listing, stream discovery, and refresh operations.
 """
 
 import logging
+import threading
 import time
 import urllib.parse
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import monotonic
 
 from teamarr.dispatcharr.client import DispatcharrClient
 from teamarr.dispatcharr.types import (
@@ -20,6 +22,15 @@ from teamarr.dispatcharr.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# How long a memoized M3U account list stands (#736). Accounts are edited by
+# hand, so this only has to be short enough that a new one shows up promptly —
+# mutations invalidate it outright.
+_ACCOUNTS_TTL_SECONDS = 60.0
+
+# Same idea for the channel-group catalog, which the Sources form loads on open
+# and which runs to several thousand entries on a real install.
+_GROUPS_TTL_SECONDS = 60.0
 
 # Concurrency for paginated stream fetches. Bounded well below the page count on
 # purpose: Dispatcharr is a single Django app, frequently on the same host, so
@@ -79,9 +90,26 @@ class M3UManager:
         """
         self._client = client
         self._groups_cache: list[DispatcharrChannelGroup] | None = None
+        # When _groups_cache was last filled from Dispatcharr (#736). The list
+        # itself is kept indefinitely for id->name lookups; this stamp only
+        # decides whether list_groups may SERVE it instead of re-fetching.
+        self._groups_fetched_at: float | None = None
+        self._groups_lock = threading.Lock()
+        # Short-lived memo for list_accounts (#736); see the method.
+        self._accounts_cache: tuple[float, list[DispatcharrM3UAccount]] | None = None
+        self._accounts_lock = threading.Lock()
 
     def list_accounts(self, include_custom: bool = False) -> list[DispatcharrM3UAccount]:
         """List all M3U accounts.
+
+        Memoized for ``_ACCOUNTS_TTL_SECONDS`` (#736). The Sources list calls
+        this on every page load purely to freshen account NAMES it already
+        stores a fallback for, and profiling put 93% of that endpoint's time
+        inside this one live request. Accounts change when a user adds or edits
+        one, which is rare and invalidates the memo explicitly below.
+
+        The memo holds the unfiltered list, so ``include_custom`` still decides
+        per call rather than poisoning the cache for the other caller.
 
         Args:
             include_custom: If False (default), excludes the "custom" account
@@ -89,15 +117,29 @@ class M3UManager:
         Returns:
             List of DispatcharrM3UAccount objects
         """
-        response = self._client.get("/api/m3u/accounts/")
-        if response is None or response.status_code != 200:
-            status = response.status_code if response else "No response"
-            logger.error("[M3U] Failed to list accounts: %s", status)
-            return []
-        accounts = [DispatcharrM3UAccount.from_api(a) for a in response.json()]
+        with self._accounts_lock:
+            cached = self._accounts_cache
+            if cached is not None and (monotonic() - cached[0]) < _ACCOUNTS_TTL_SECONDS:
+                accounts = cached[1]
+            else:
+                response = self._client.get("/api/m3u/accounts/")
+                if response is None or response.status_code != 200:
+                    status = response.status_code if response else "No response"
+                    logger.error("[M3U] Failed to list accounts: %s", status)
+                    # Not cached: a transient failure must not blank the account
+                    # names for the whole TTL.
+                    return []
+                accounts = [DispatcharrM3UAccount.from_api(a) for a in response.json()]
+                self._accounts_cache = (monotonic(), accounts)
+
         if not include_custom:
-            accounts = [a for a in accounts if a.name.lower() != "custom"]
-        return accounts
+            return [a for a in accounts if a.name.lower() != "custom"]
+        return list(accounts)
+
+    def invalidate_accounts_cache(self) -> None:
+        """Drop the memoized account list (#736) after a mutation."""
+        with self._accounts_lock:
+            self._accounts_cache = None
 
     def get_account(self, account_id: int) -> DispatcharrM3UAccount | None:
         """Get a specific M3U account by ID.
@@ -127,14 +169,24 @@ class M3UManager:
         Returns:
             List of DispatcharrChannelGroup objects
         """
-        response = self._client.get("/api/channels/groups/")
-        if response is None or response.status_code != 200:
-            status = response.status_code if response else "No response"
-            logger.error("[M3U] Failed to list channel groups: %s", status)
-            return []
+        with self._groups_lock:
+            fresh = (
+                self._groups_cache is not None
+                and self._groups_fetched_at is not None
+                and (monotonic() - self._groups_fetched_at) < _GROUPS_TTL_SECONDS
+            )
+            if fresh:
+                groups = self._groups_cache or []
+            else:
+                response = self._client.get("/api/channels/groups/")
+                if response is None or response.status_code != 200:
+                    status = response.status_code if response else "No response"
+                    logger.error("[M3U] Failed to list channel groups: %s", status)
+                    return []
 
-        groups = [DispatcharrChannelGroup.from_api(g) for g in response.json()]
-        self._groups_cache = groups  # Cache for name lookups
+                groups = [DispatcharrChannelGroup.from_api(g) for g in response.json()]
+                self._groups_cache = groups  # Cache for name lookups
+                self._groups_fetched_at = monotonic()
 
         # Filter out M3U-originated groups if requested
         if exclude_m3u:
@@ -168,6 +220,7 @@ class M3UManager:
             data = response.json()
             # Invalidate cache so new group appears
             self._groups_cache = None
+            self._groups_fetched_at = None
             return OperationResult(success=True, data=data)
 
         if response.status_code == 400:
@@ -477,6 +530,9 @@ class M3UManager:
             return RefreshResult(success=False, message="Request failed - no response")
 
         if response.status_code in (200, 202):
+            # A refresh moves the account's status and updated_at, both of which
+            # the Sources UI shows — don't serve them stale off the memo (#736).
+            self.invalidate_accounts_cache()
             return RefreshResult(success=True, message="M3U refresh initiated")
         elif response.status_code == 404:
             return RefreshResult(success=False, message="M3U account not found")
