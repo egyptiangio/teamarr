@@ -7,6 +7,7 @@ Provides a singleton pattern for the application-wide client.
 import logging
 import threading
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from teamarr.database.settings import get_dispatcharr_settings
@@ -18,6 +19,11 @@ from teamarr.dispatcharr.managers.logos import LogoManager
 from teamarr.dispatcharr.managers.m3u import M3UManager
 
 logger = logging.getLogger(__name__)
+
+# How long a connection probe's verdict stands (#736). Well under the UI's 30s
+# poll so a genuine outage still surfaces on the next tick, long enough that
+# several open tabs share one probe.
+_PROBE_TTL_SECONDS = 15.0
 
 
 @dataclass
@@ -71,6 +77,9 @@ class DispatcharrFactory:
         self._connection: DispatcharrConnection | None = None
         self._lock = threading.Lock()
         self._settings_hash: str | None = None
+        # Memo for probe_connection: (settings hash, monotonic stamp, result).
+        self._probe: tuple[str | None, float, ConnectionTestResult] | None = None
+        self._probe_lock = threading.Lock()
 
     @property
     def is_configured(self) -> bool:
@@ -134,6 +143,80 @@ class DispatcharrFactory:
         """Close the current connection."""
         with self._lock:
             self._close_connection()
+
+    def probe_connection(
+        self, max_age_seconds: float = _PROBE_TTL_SECONDS
+    ) -> "ConnectionTestResult":
+        """Cheap liveness check for the status indicator (#736).
+
+        ``test_connection`` is the wrong tool for a poll. It builds a THROWAWAY
+        client — new TLS handshake — then makes three calls, one of which pulls
+        every channel group Dispatcharr has (3,098 on the profiled install) just
+        to count them, and closes the pool on the way out. The UI polls it every
+        30 seconds from every open tab and reads two booleans off the result;
+        end to end it measured 1.09s.
+
+        This runs ONE request on the POOLED connection and memoizes the verdict
+        for ``max_age_seconds``, so a burst of tabs collapses into one probe.
+        The memo is keyed on the settings hash that ``get_connection`` already
+        uses to decide when to reconnect, so editing the Dispatcharr settings
+        invalidates it for free.
+
+        ``test_connection`` is left alone: the Test button wants a genuine,
+        uncached round trip with whatever credentials the user just typed, and
+        the counts it reports are the point of pressing it.
+        """
+        if not self.is_configured:
+            return ConnectionTestResult(success=False, error="Dispatcharr not configured")
+
+        with self._probe_lock:
+            current_hash = self._get_settings_hash()
+            cached = self._probe
+            if (
+                cached is not None
+                and cached[0] == current_hash
+                and (monotonic() - cached[1]) < max_age_seconds
+            ):
+                return cached[2]
+
+            connection = self.get_connection()
+            if connection is None:
+                result = ConnectionTestResult(success=False, error="Dispatcharr not configured")
+            else:
+                with self._db_factory() as db:
+                    settings = get_dispatcharr_settings(db)
+                try:
+                    # Smallest page the API will answer; we only care that it
+                    # answers at all with a usable token.
+                    response = connection.client.get(
+                        "/api/channels/channels/?page=1&page_size=1"
+                    )
+                except Exception as e:  # noqa: BLE001 — a probe never raises
+                    result = ConnectionTestResult(
+                        success=False, url=settings.url, error=str(e)
+                    )
+                else:
+                    if response is None:
+                        result = ConnectionTestResult(
+                            success=False,
+                            url=settings.url,
+                            error="Authentication failed or server unavailable",
+                        )
+                    elif response.status_code != 200:
+                        result = ConnectionTestResult(
+                            success=False,
+                            url=settings.url,
+                            error=f"API error: {connection.client.parse_api_error(response)}",
+                        )
+                    else:
+                        result = ConnectionTestResult(
+                            success=True,
+                            url=settings.url,
+                            username=settings.username,
+                        )
+
+            self._probe = (current_hash, monotonic(), result)
+            return result
 
     def test_connection(
         self,
